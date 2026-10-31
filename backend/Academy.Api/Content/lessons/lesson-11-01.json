@@ -1,0 +1,164 @@
+{
+  "id": "lesson-11-01",
+  "levelId": "level-11",
+  "moduleId": "mod-11-01",
+  "order": 1,
+  "title": "Arsitektur ASP.NET Core: Kestrel Server, WebApplication, dan Middleware Pipeline",
+  "slug": "aspnetcore-kestrel-middleware-pipeline",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 55,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Memahami fondasi web server Kestrel berbasis libuv/Sockets, siklus hidup HttpContext, dan perakitan rantai eksekusi Middleware (Russian Doll pattern).",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-07-03",
+      "reason": "Protokol HTTP/1.1, HTTP/2, dan semantik Request-Response"
+    },
+    {
+      "lessonId": "lesson-03-07",
+      "reason": "Delegates dan Func\u003CT\u003E yang mendasari RequestDelegate"
+    }
+  ],
+  "introduces": [
+    "Kestrel web server architecture \u0026 socket transport",
+    "WebApplication \u0026 WebApplicationBuilder (.NET 6\u002B hosting model)",
+    "HttpContext memory layout \u0026 HttpContextAccessor traps",
+    "Middleware pipeline execution (Use, Run, Map)",
+    "Short-circuiting vs downstream chaining"
+  ],
+  "learningObjectives": [
+    "Menganalisis bagaimana Kestrel menerima socket connection TCP dan mengalokasikan HttpContext per request",
+    "Membangun middleware kustom dengan pola RequestDelegate konvensional dan factory-based (IMiddleware)",
+    "Menerapkan urutan middleware standar industri (Exception Handling -\u003E HSTS/HTTPS -\u003E Routing -\u003E Auth -\u003E Endpoint)",
+    "Mendeteksi dan menghindari memory leak akibat kebocoran HttpContext pada background thread atau async scope"
+  ],
+  "markdownContent": "# Arsitektur ASP.NET Core: Kestrel Server, WebApplication, dan Middleware Pipeline\n\nDi era komputasi cloud modern, ASP.NET Core dikenal sebagai salah satu web framework performa tertinggi di dunia, secara konsisten mencetak jutaan request per detik pada benchmark TechEmpower. Kecepatan ini bukan kebetulan, melainkan hasil desain arsitektur yang sangat terukur: web server Kestrel yang ringan dan *socket transport* berbasis \u0060System.IO.Pipelines\u0060, model hosting \u0060WebApplication\u0060 yang terpadu, serta pemrosesan request berbasis rantai middleware *Russian Doll*.\n\nMateri ini membedah arsitektur internal ASP.NET Core mulai dari level socket TCP hingga eksekusi endpoint aplikasi Anda.\n\n---\n\n## 1. Web Server Kestrel \u0026 Socket Transport\n\nKestrel adalah HTTP server cross-platform *in-process* default untuk ASP.NET Core. Berbeda dengan pendahulunya di .NET Framework klasik yang terikat erat dengan IIS (melalui \u0060System.Web\u0060 dan \u0060http.sys\u0060), Kestrel berjalan murni di dalam proses runtime .NET.\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Client[\u0022Klien HTTP (Browser / Mobile)\u0022]\n    Kestrel[\u0022Kestrel Web Server (Socket Listener)\u0022]\n\n    subgraph Pipeline[\u0022ASP.NET Core Middleware Pipeline (Russian Doll Model)\u0022]\n        M1[\u00221. ExceptionHandler Middleware\u0022]\n        M2[\u00222. HttpsRedirection Middleware\u0022]\n        M3[\u00223. Authentication Middleware (JWT Validation)\u0022]\n        M4[\u00224. Authorization Middleware (Policies \u0026 Roles)\u0022]\n        Endpoint[\u00225. Endpoint Routing (Controller Action / Minimal API)\u0022]\n    end\n\n    Client --\u003E|HTTP Request| Kestrel --\u003E M1\n    M1 --\u003E|Next| M2 --\u003E|Next| M3 --\u003E|Next| M4 --\u003E|Next| Endpoint\n    Endpoint --\u003E|Response| M4 --\u003E M3 --\u003E M2 --\u003E M1 --\u003E Kestrel --\u003E|HTTP Response| Client\n\u0060\u0060\u0060\n\n### Karakteristik Kunci Kestrel:\n1. **Sockets Transport Default**: Menggunakan \u0060SocketConnectionListener\u0060 berbasis asynchronous socket I/O OS murni (epoll di Linux, IOCP di Windows, kqueue di macOS).\n2. **Pipelines vs Streams**: Kestrel membaca data socket ke dalam \u0060PipeReader\u0060 dan \u0060PipeWriter\u0060 (\u0060System.IO.Pipelines\u0060), mengeliminasi alokasi buffer byte temporer berkat penggunaan memory pool (\u0060ArrayPool\u003Cbyte\u003E\u0060).\n3. **Multi-Protocol Native**: Mendukung HTTP/1.1 (pipelining \u0026 keep-alive), HTTP/2 (multiplexing over single TCP connection), dan HTTP/3 (QUIC over UDP).\n\n---\n\n## 2. Anatomi HttpContext dan Siklus Hidupnya\n\nUntuk setiap request yang tiba, Kestrel menginstansiasi objek \u0060HttpContext\u0060 (atau mengambilnya dari object pool \u0060DefaultHttpContextPool\u0060). Objek ini membungkus:\n- \u0060HttpRequest\u0060 (Method, Headers, Path, Query, Body stream)\n- \u0060HttpResponse\u0060 (StatusCode, Headers, Body stream)\n- \u0060IHeaderDictionary\u0060\n- \u0060ClaimsPrincipal User\u0060\n- \u0060IServiceProvider RequestServices\u0060 (Scoped DI container)\n- \u0060IDictionary\u003Cobject, object?\u003E Items\u0060 (penyimpanan sementara per-request)\n\n\u0060\u0060\u0060csharp\n// HttpContext adalah per-request ephemeral object!\n// JANGAN PERNAH menyimpan HttpContext di singleton atau static variable.\n\u0060\u0060\u0060\n\n\u003E [!CAUTION]\n\u003E **Anti-Pattern: HttpContext Escape to Background Threads**\n\u003E \u0060HttpContext\u0060 tidak thread-safe dan akan didaur ulang (recycled) segera setelah pipeline middleware selesai mengembalikan response. Jika Anda meneruskan \u0060HttpContext\u0060 ke \u0060Task.Run()\u0060 tanpa menyalin data primitifnya (seperti user ID atau correlation ID), thread background Anda akan membaca memori yang sudah di-reset atau mengalami \u0060ObjectDisposedException\u0060 / data race.\n\n---\n\n## 3. Rantai Eksekusi Middleware (The Russian Doll Pattern)\n\nMiddleware adalah komponen perangkat lunak yang dirangkai ke dalam pipeline aplikasi untuk menangani request dan response HTTP. Setiap komponen:\n1. Memutuskan apakah akan meneruskan request ke komponen berikutnya (\u0060next()\u0060).\n2. Dapat mengeksekusi logika *sebelum* komponen berikutnya dipanggil.\n3. Dapat mengeksekusi logika *setelah* komponen berikutnya selesai.\n4. Dapat melakukan **Short-Circuiting** (mengembalikan response langsung tanpa memanggil \u0060next()\u0060), misalnya jika request tidak terotentikasi.\n\n\u0060\u0060\u0060mermaid\nsequenceDiagram\n    autonumber\n    participant Client\n    participant MW1 as Middleware 1 (Logging)\n    participant MW2 as Middleware 2 (Auth)\n    participant EP as Endpoint Handler\n\n    Client-\u003E\u003EMW1: HTTP Request Masuk\n    MW1-\u003E\u003EMW2: next(context)\n    MW2-\u003E\u003EEP: next(context)\n    EP--\u003E\u003EMW2: Return Result\n    MW2--\u003E\u003EMW1: Post-processing Auth\n    MW1--\u003E\u003EClient: HTTP Response Keluar\n\u0060\u0060\u0060\n\nSecara internal, middleware di ASP.NET Core dimodelkan sebagai delegasi:\n\u0060\u0060\u0060csharp\npublic delegate Task RequestDelegate(HttpContext context);\n\u0060\u0060\u0060\n\nPipeline dikonstruksi secara *reverse composition*, membungkus delegasi terdalam ke terluar.\n\n---\n\n## 4. Urutan Standar Middleware Enterprise\n\nUrutan pendaftaran middleware di \u0060Program.cs\u0060 **sangat menentukan perilaku aplikasi**. Kesalahan penempatan middleware keamanan sebelum error handler dapat menyebabkan kebocoran stack trace ke publik.\n\nUrutan baku yang direkomendasikan Microsoft:\n1. **ExceptionHandler / DeveloperExceptionPage**: Menangkap unhandled exception dari seluruh downstream middleware.\n2. **ForwardedHeaders**: Memproses \u0060X-Forwarded-For\u0060 dan \u0060X-Forwarded-Proto\u0060 dari reverse proxy (Nginx/Cloudflare).\n3. **HSTS \u0026 HttpsRedirection**: Memaksa enkripsi transport TLS.\n4. **StaticFiles**: Melayani file statis langsung tanpa overhead routing/auth.\n5. **Routing (\u0060UseRouting\u0060)**: Mencocokkan URL dengan endpoint metadata.\n6. **CORS (\u0060UseCors\u0060)**: Evaluasi cross-origin headers sebelum auth.\n7. **Authentication (\u0060UseAuthentication\u0060)**: Mengidentifikasi identitas pengguna (\u0060context.User\u0060).\n8. **Authorization (\u0060UseAuthorization\u0060)**: Memvalidasi hak akses role/policy.\n9. **Custom Domain Middleware**: Audit log, tenant identification, rate limiting.\n10. **Endpoints (\u0060MapControllers\u0060 / \u0060MapGet\u0060)**: Eksekusi handler bisnis akhir.\n\n---\n\n## 5. Implementasi Middleware: Conventions vs IMiddleware\n\nTerdapat dua pendekatan dalam menulis middleware kustom:\n\n### Pendekatan A: Conventional Middleware (Singleton Lifetime)\n\u0060\u0060\u0060csharp\npublic class PerformanceMonitoringMiddleware\n{\n    private readonly RequestDelegate _next;\n    private readonly ILogger\u003CPerformanceMonitoringMiddleware\u003E _logger;\n\n    // Dependensi Singleton di-inject lewat constructor\n    public PerformanceMonitoringMiddleware(RequestDelegate next, ILogger\u003CPerformanceMonitoringMiddleware\u003E logger)\n    {\n        _next = next;\n        _logger = logger;\n    }\n\n    // Dependensi Scoped DI-inject langsung ke parameter InvokeAsync!\n    public async Task InvokeAsync(HttpContext context, IMetricService metricService)\n    {\n        var sw = Stopwatch.StartNew();\n        try\n        {\n            await _next(context);\n        }\n        finally\n        {\n            sw.Stop();\n            metricService.RecordLatency(context.Request.Path, sw.ElapsedMilliseconds);\n            _logger.LogInformation(\u0022Path {Path} took {Elapsed}ms\u0022, context.Request.Path, sw.ElapsedMilliseconds);\n        }\n    }\n}\n\u0060\u0060\u0060\n\n### Pendekatan B: Factory-Based Middleware (\u0060IMiddleware\u0060)\nMengimplementasikan interface \u0060IMiddleware\u0060. Middleware ini didaftarkan di DI container dan dapat berstatus **Scoped**, sehingga aman meng-inject dependensi scoped di constructor-nya.\n\n---\n\n## 6. Ringkasan \u0026 Best Practice\n\n1. **Jaga Middleware Tetap Ringan**: Jangan lakukan query database yang berat di middleware global jika hanya dibutuhkan di endpoint tertentu.\n2. **Gunakan HttpContext.Items dengan Bijak**: Gunakan untuk meneruskan state per-request antar-middleware (seperti Correlation ID atau Tenant ID), bukan untuk caching data besar.\n3. **Waspadai Response Headers**: Setelah status code atau header pertama ditulis ke stream response (\u0060context.Response.HasStarted == true\u0060), Anda tidak dapat lagi mengubah headers atau status code.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Simulasi Mini Middleware Pipeline ASP.NET Core\npublic class MockHttpContext\n{\n    public string Path { get; set; } = \u0022/api/v1/orders\u0022;\n    public int StatusCode { get; set; } = 200;\n    public Dictionary\u003Cstring, string\u003E Headers { get; } = new();\n    public Dictionary\u003Cstring, object\u003E Items { get; } = new();\n}\n\npublic delegate Task RequestDelegate(MockHttpContext context);\n\npublic class PipelineBuilder\n{\n    private readonly List\u003CFunc\u003CRequestDelegate, RequestDelegate\u003E\u003E _components = new();\n\n    public PipelineBuilder Use(Func\u003CMockHttpContext, Func\u003CTask\u003E, Task\u003E middleware)\n    {\n        _components.Add(next =\u003E context =\u003E middleware(context, () =\u003E next(context)));\n        return this;\n    }\n\n    public RequestDelegate Build()\n    {\n        // Terminal handler (default fallback jika tidak ada handler)\n        RequestDelegate app = context =\u003E\n        {\n            context.StatusCode = 404;\n            Console.WriteLine(\u0022[Terminal] 404 Not Found\u0022);\n            return Task.CompletedTask;\n        };\n\n        // TODO: Balikkan urutan _components untuk merakit pipeline bergaya Russian Doll\n        // Hint: Gunakan perulangan mundur (reverse) agar middleware terluar membungkus middleware berikutnya.\n        \n        return app;\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var builder = new PipelineBuilder();\n\n        // Middleware 1: Correlation ID Generator \u0026 Logger\n        builder.Use(async (ctx, next) =\u003E\n        {\n            var correlationId = Guid.NewGuid().ToString(\u0022N\u0022)[..8];\n            ctx.Headers[\u0022X-Correlation-Id\u0022] = correlationId;\n            Console.WriteLine($\u0022[1 Pre] Inbound: {ctx.Path} | CorrId: {correlationId}\u0022);\n            await next();\n            Console.WriteLine($\u0022[1 Post] Outbound: Status={ctx.StatusCode}\u0022);\n        });\n\n        // Middleware 2: Authentication Check\n        builder.Use(async (ctx, next) =\u003E\n        {\n            Console.WriteLine(\u0022[2 Pre] Auth check passed\u0022);\n            await next();\n            Console.WriteLine(\u0022[2 Post] Auth cleanup\u0022);\n        });\n\n        // Simulasikan Request\n        var app = builder.Build();\n        var context = new MockHttpContext();\n        await app(context);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\npublic class MockHttpContext\n{\n    public string Path { get; set; } = \u0022/api/v1/orders\u0022;\n    public int StatusCode { get; set; } = 200;\n    public Dictionary\u003Cstring, string\u003E Headers { get; } = new();\n    public Dictionary\u003Cstring, object\u003E Items { get; } = new();\n}\n\npublic delegate Task RequestDelegate(MockHttpContext context);\n\npublic class PipelineBuilder\n{\n    private readonly List\u003CFunc\u003CRequestDelegate, RequestDelegate\u003E\u003E _components = new();\n\n    public PipelineBuilder Use(Func\u003CMockHttpContext, Func\u003CTask\u003E, Task\u003E middleware)\n    {\n        _components.Add(next =\u003E context =\u003E middleware(context, () =\u003E next(context)));\n        return this;\n    }\n\n    public RequestDelegate Build()\n    {\n        RequestDelegate app = context =\u003E\n        {\n            context.StatusCode = 200;\n            Console.WriteLine(\u0022[Terminal] Endpoint Executed: Order Data Returned\u0022);\n            return Task.CompletedTask;\n        };\n\n        // Rangkai secara mundur (reverse) agar middleware pertama didaftarkan membungkus seluruh downstream\n        for (int i = _components.Count - 1; i \u003E= 0; i--)\n        {\n            app = _components[i](app);\n        }\n\n        return app;\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var builder = new PipelineBuilder();\n\n        builder.Use(async (ctx, next) =\u003E\n        {\n            var correlationId = Guid.NewGuid().ToString(\u0022N\u0022)[..8];\n            ctx.Headers[\u0022X-Correlation-Id\u0022] = correlationId;\n            Console.WriteLine($\u0022[1 Pre] Inbound: {ctx.Path} | CorrId: {correlationId}\u0022);\n            await next();\n            Console.WriteLine($\u0022[1 Post] Outbound: Status={ctx.StatusCode}\u0022);\n        });\n\n        builder.Use(async (ctx, next) =\u003E\n        {\n            Console.WriteLine(\u0022[2 Pre] Auth check passed\u0022);\n            await next();\n            Console.WriteLine(\u0022[2 Post] Auth cleanup\u0022);\n        });\n\n        var app = builder.Build();\n        var context = new MockHttpContext();\n        await app(context);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-11-01-1",
+      "type": "single_choice",
+      "question": "Mengapa menyimpan referensi HttpContext ke dalam singleton service atau background thread (Task.Run) sangat berbahaya dalam ASP.NET Core?",
+      "options": [
+        "Karena HttpContext berukuran puluhan gigabyte dan akan langsung memicu OutOfMemoryException.",
+        "Karena HttpContext bersifat ephemeral dan di-recycle kembali ke pool segera setelah request HTTP selesai, memicu race condition dan ObjectDisposedException.",
+        "Karena Kestrel melarang pemanggilan Task.Run pada kode C#.",
+        "Karena compiler C# secara otomatis membatalkan eksekusi task yang menerima HttpContext."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Kestrel menggunakan object pooling untuk HttpContext demi efisiensi memori (zero-allocation). Segera setelah pipeline HTTP selesai mengembalikan response ke client, objek HttpContext di-reset dan digunakan kembali untuk request berikutnya. Menyimpan referensinya di background thread menyebabkan race condition parah atau ObjectDisposedException.",
+      "optionExplanations": [
+        "Salah. Ukuran HttpContext kecil, bahayanya terletak pada siklus daur ulangnya, bukan ukuran instans.",
+        "Benar! HttpContext di-recycle per-request; background worker harus hanya menerima DTO/data primitif yang disalin terlebih dahulu.",
+        "Salah. Kestrel tidak membatasi Task.Run.",
+        "Salah. Compiler C# tidak memiliki aturan semantik khusus yang mendeteksi HttpContext di Task.Run."
+      ],
+      "sectionRef": "2. Anatomi HttpContext dan Siklus Hidupnya",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-11-01-2",
+      "type": "single_choice",
+      "question": "Apa konsekuensi fatal jika middleware penanganan unhandled exception diletakkan paling akhir (setelah UseRouting dan UseEndpoints)?",
+      "options": [
+        "Aplikasi tidak akan bisa di-compile karena syntax error di Program.cs.",
+        "Tidak ada konsekuensi apapun, middleware pipeline selalu mengeksekusi secara acak.",
+        "Exception yang terjadi di controller atau endpoint tidak akan tertangkap oleh exception handler karena downstream middleware sudah gagal sebelum mencapai handler.",
+        "Kestrel akan otomatis menaikkan status response menjadi HTTP 200 OK."
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Middleware bekerja dengan pola Russian Doll (pembungkus). Exception handling middleware HARUS berada di urutan terluar (paling awal didaftarkan) agar blok try-catch miliknya membungkus seluruh pemanggilan downstream middleware (termasuk routing, auth, dan endpoint).",
+      "optionExplanations": [
+        "Salah. Kode tetap valid secara sintaksis C#.",
+        "Salah. Urutan pendaftaran middleware bersifat deterministic dan strictly sequential.",
+        "Benar! Exception handler yang diletakkan di akhir tidak akan pernah membungkus controller downstream, sehingga exception lolos tak tertangani hingga ke Kestrel (500 unformatted).",
+        "Salah. Kestrel akan mengembalikan 500 Internal Server Error tanpa format terstandar."
+      ],
+      "sectionRef": "4. Urutan Standar Middleware Enterprise",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-11-01",
+    "Title": "Simulasi Pipeline Middleware ASP.NET Core (Russian Doll Pattern)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Simulasikan eksekusi middleware ASP.NET Core bergaya Russian Doll (bawang).\nSetiap middleware mencetak \u0027\u003CNama\u003E:IN\u0027 sebelum meneruskan ke middleware berikutnya (\u0060next()\u0060), lalu mencetak \u0027\u003CNama\u003E:OUT\u0027 saat eksekusi kembali.\nBaca daftar nama middleware dari stdin dipisahkan koma (misal \u0027Auth, Logging, Cors\u0027).\nDi tengah pipeline (terminal endpoint), cetak \u0027ENDPOINT:HANDLED\u0027.\nCetak seluruh urutan logging pipeline.",
+    "InputFormat": "Satu baris daftar nama middleware dipisahkan koma.",
+    "OutputFormat": "Urutan baris log eksekusi pipeline IN, ENDPOINT:HANDLED, dan OUT.",
+    "Constraints": "Middleware \u003E= 1.",
+    "Examples": [
+      {
+        "Input": "Auth, Logging",
+        "Output": "Auth:IN\nLogging:IN\nENDPOINT:HANDLED\nLogging:OUT\nAuth:OUT",
+        "Explanation": "Urutan IN berurutan maju, OUT berurutan mundur (LIFO)."
+      },
+      {
+        "Input": "Cors",
+        "Output": "Cors:IN\nENDPOINT:HANDLED\nCors:OUT",
+        "Explanation": "Satu middleware membungkus endpoint."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Simulasikan pemanggilan rekursif / delegasi next() pipeline middleware.\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void ExecutePipeline(List\u003Cstring\u003E middlewares, int index)\n    {\n        if (index \u003E= middlewares.Count)\n        {\n            Console.WriteLine(\u0022ENDPOINT:HANDLED\u0022);\n            return;\n        }\n\n        string current = middlewares[index];\n        Console.WriteLine($\u0022{current}:IN\u0022);\n        ExecutePipeline(middlewares, index \u002B 1);\n        Console.WriteLine($\u0022{current}:OUT\u0022);\n    }\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n\n        var list = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries)\n            .Select(s =\u003E s.Trim())\n            .Where(s =\u003E !string.IsNullOrEmpty(s))\n            .ToList();\n\n        ExecutePipeline(list, 0);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Auth \u0026 Logging)",
+        "Description": "Contoh 1 (Auth \u0026 Logging): input \u0027Auth, Logging\u0027 -\u003E expected \u0027Auth:IN\nLogging:IN\nENDPOINT:HANDLED\nLogging:OUT\nAuth:OUT\u0027",
+        "Input": "Auth, Logging",
+        "ExpectedOutput": "Auth:IN\nLogging:IN\nENDPOINT:HANDLED\nLogging:OUT\nAuth:OUT",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Tiga Middleware",
+        "Description": "Tiga Middleware: input \u0027Cors, Auth, Cache\u0027 -\u003E expected \u0027Cors:IN\nAuth:IN\nCache:IN\nENDPOINT:HANDLED\nCache:OUT\nAuth:OUT\nCors:OUT\u0027",
+        "Input": "Cors, Auth, Cache",
+        "ExpectedOutput": "Cors:IN\nAuth:IN\nCache:IN\nENDPOINT:HANDLED\nCache:OUT\nAuth:OUT\nCors:OUT",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Satu Middleware",
+        "Description": "Satu Middleware: input \u0027RateLimit\u0027 -\u003E expected \u0027RateLimit:IN\nENDPOINT:HANDLED\nRateLimit:OUT\u0027",
+        "Input": "RateLimit",
+        "ExpectedOutput": "RateLimit:IN\nENDPOINT:HANDLED\nRateLimit:OUT",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Banyak Middleware",
+        "Description": "Banyak Middleware: input \u0027A, B, C, D\u0027 -\u003E expected \u0027A:IN\nB:IN\nC:IN\nD:IN\nENDPOINT:HANDLED\nD:OUT\nC:OUT\nB:OUT\nA:OUT\u0027",
+        "Input": "A, B, C, D",
+        "ExpectedOutput": "A:IN\nB:IN\nC:IN\nD:IN\nENDPOINT:HANDLED\nD:OUT\nC:OUT\nB:OUT\nA:OUT",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola middleware ASP.NET Core membentuk call-stack rekursif dua arah: Request Phase (IN) dan Response Phase (OUT).",
+      "Panggil fungsi secara rekursif ExecutePipeline(list, index \u002B 1) sebagai representasi next()."
+    ],
+    "Explanation": "Arsitektur middleware ASP.NET Core menghubungkan komponen pemroses HTTP request secara berantai, memungkinkan inspeksi, autentikasi, dan modifikasi response secara modular."
+  },
+  "relatedLessons": [
+    "lesson-07-03",
+    "lesson-11-02",
+    "lesson-11-03"
+  ],
+  "references": [
+    {
+      "title": "ASP.NET Core Middleware Fundamentals - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/",
+      "type": "documentation"
+    },
+    {
+      "title": "Kestrel Web Server Implementation in ASP.NET Core",
+      "url": "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel",
+      "type": "article"
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+    "id":  "lesson-13-02",
+    "levelId":  "level-13",
+    "moduleId":  "mod-13-02",
+    "order":  2,
+    "title":  "Clean Architecture vs Vertical Slice: Dependency Rule, Application Boundaries, dan CQRS",
+    "slug":  "clean-architecture-vertical-slice-cqrs",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membedah arsitektur enterprise modern di .NET: The Dependency Rule (Clean/Hexagonal Architecture), kelemahan layer horizontal, Vertical Slice Architecture, dan penerapan CQRS dengan MediatR.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-13-01",
+                              "reason":  "Prinsip SOLID \u0026 Dependency Inversion"
+                          },
+                          {
+                              "lessonId":  "lesson-11-02",
+                              "reason":  "Minimal APIs \u0026 Endpoint Modularization"
+                          }
+                      ],
+    "introduces":  [
+                       "The Dependency Rule (Inward arrows: Domain at center)",
+                       "Clean Architecture (Domain, Application, Infrastructure, Presentation)",
+                       "Vertical Slice Architecture by Jimmy Bogard",
+                       "CQRS (Command Query Responsibility Segregation)",
+                       "MediatR pipeline behaviors \u0026 validation decorators",
+                       "Choosing between Onion/Clean vs Vertical Slice"
+                   ],
+    "learningObjectives":  [
+                               "Menerapkan The Dependency Rule di mana layer Domain murni dari dependensi eksternal (POCO tanpa EF Core / ASP.NET)",
+                               "Menganalisis keterbatasan Clean Architecture berlapis horizontal saat fitur aplikasi berkembang menjadi ratusan",
+                               "Membangun fitur menggunakan pendekatan Vertical Slice Architecture (Feature Folders)",
+                               "Menerapkan pola CQRS untuk memisahkan model mutasi data (Commands) dari model pembacaan data (Queries)"
+                           ],
+    "markdownContent":  "# Clean Architecture vs Vertical Slice: Dependency Rule, Application Boundaries, dan CQRS\n\nArsitektur aplikasi backend adalah tentang bagaimana kita menata batasan (*boundaries*) kode agar sistem tetap dapat dikembangkan, diuji, dan dipelihara saat codebase berkembang dari ribuan menjadi jutaan baris kode.\n\nDua gaya arsitektur yang paling dominan di dunia .NET saat ini adalah **Clean Architecture** (berbasis *Onion / Hexagonal Architecture*) dan **Vertical Slice Architecture**.\n\n---\n\n## 1. Clean Architecture \u0026 The Dependency Rule\n\nPrinsip dasar Clean Architecture dirumuskan oleh **The Dependency Rule**:\n\u003e **Arah ketergantungan (dependencies) HARUS selalu mengarah ke dalam (inward), menuju model domain bisnis yang paling murni.**\n\n```mermaid\nflowchart TD\n    subgraph UI[\"1. Presentation Layer\"]\n        Controllers[\"REST API Controllers \u0026 Minimal APIs\"]\n    end\n\n    subgraph App[\"2. Application Layer\"]\n        UseCases[\"Use Cases, Commands (MediatR), DTOs, Interfaces\"]\n    end\n\n    subgraph Core[\"3. Domain Layer (The Core)\"]\n        Entities[\"Entities, Value Objects, Domain Events, Aggregate Roots\"]\n    end\n\n    subgraph Infra[\"4. Infrastructure Layer\"]\n        DB[\"EF Core DbContext, External Adapters, Email, Cache\"]\n    end\n\n    Controllers --\u003e|Depends on| UseCases\n    Infra --\u003e|Implements Interfaces of| UseCases\n    UseCases --\u003e|Depends on| Core\n    Infra --\u003e|Depends on| Core\n```\n\n### Aturan Ketat Domain Layer:\n1. **Zero External Dependencies**: Domain layer tidak boleh mereferensikan EF Core, ASP.NET Core, Newtonsoft.Json, atau library infrastruktur pihak ketiga apapun.\n2. **POCO Murni**: Hanya berisi Plain Old CLR Objects, business rules, dan domain exceptions.\n3. **Inversion of Control**: Jika Domain/Application butuh database, ia mendefinisikan interface (`IOrderRepository`), dan layer Infrastructure terluar yang mengimplementasikannya.\n\n---\n\n## 2. Masalah Horizontal Layering: \"Tax of Clean Architecture\"\n\nMeskipun Clean Architecture sangat rapi secara teori, dalam praktiknya pada aplikasi enterprise besar sering terjadi fenomena **Layer Coupling / Shotgun Surgery**:\n- Untuk menambahkan satu kolom baru pada tabel profil user (`Bio`), developer harus mengedit 6 file di 5 folder/project berbeda:\n  1. `Domain/Entities/User.cs`\n  2. `Application/DTOs/UserDto.cs`\n  3. `Application/Commands/UpdateUserBioCommand.cs`\n  4. `Infrastructure/Persistence/Configurations/UserConfiguration.cs`\n  5. `Infrastructure/Repositories/UserRepository.cs`\n  6. `Presentation/Controllers/UserController.cs`\n\nFitur-fitur yang tidak saling berkaitan terikat pada lapisan horizontal yang sama, menyulitkan tim untuk bekerja secara mandiri.\n\n---\n\n## 3. Vertical Slice Architecture (Jimmy Bogard)\n\nVertical Slice Architecture membalik paradigma dari pemisahan horizontal menjadi pemisahan berdasarkan **Fitur Bisnis (Features)**:\n\n```text\nFeatures/\n  â”œâ”€â”€ Orders/\n  â”‚    â”œâ”€â”€ CreateOrder/\n  â”‚    â”‚    â”œâ”€â”€ CreateOrderEndpoint.cs\n  â”‚    â”‚    â”œâ”€â”€ CreateOrderCommand.cs\n  â”‚    â”‚    â”œâ”€â”€ CreateOrderValidator.cs\n  â”‚    â”‚    â””â”€â”€ CreateOrderHandler.cs\n  â”‚    â””â”€â”€ GetOrderById/\n  â”‚         â”œâ”€â”€ GetOrderByIdEndpoint.cs\n  â”‚         â””â”€â”€ GetOrderByIdQuery.cs\n  â””â”€â”€ Users/\n       â””â”€â”€ RegisterUser/\n            â””â”€â”€ ...\n```\n\n### Keuntungan Vertical Slice:\n1. **High Cohesion, Low Coupling**: Seluruh kode yang relevan untuk satu use case (mulai dari endpoint API, validasi, hingga query database) berada dalam satu folder yang sama.\n2. **Bebas Memilih Teknologi Per-Slice**: Jika query `GetOrderById` butuh performa tinggi, handler tersebut bisa langsung menggunakan Dapper murni dengan raw SQL, tanpa harus dipaksa melewati abstraksi Generic Repository milik EF Core.\n3. **Menghapus Abstraksi Bohong**: Tidak ada lagi lapisan perantara yang hanya meneruskan parameter tanpa logika bisnis nyata.\n\n---\n\n## 4. CQRS: Command Query Responsibility Segregation\n\nCQRS memisahkan jalur penulisan data (Commands: Create, Update, Delete) dari jalur pembacaan data (Queries: Read, List, Search).\n\n```csharp\n// 1. COMMAND: Mengubah state, mengembalikan ID atau Result\npublic record CreateProductCommand(string Name, decimal Price) : IRequest\u003cGuid\u003e;\n\npublic class CreateProductHandler : IRequestHandler\u003cCreateProductCommand, Guid\u003e\n{\n    private readonly AppDbContext _db;\n    public CreateProductHandler(AppDbContext db) =\u003e _db = db;\n\n    public async Task\u003cGuid\u003e Handle(CreateProductCommand cmd, CancellationToken ct)\n    {\n        var product = new Product(cmd.Name, cmd.Price);\n        _db.Products.Add(product);\n        await _db.SaveChangesAsync(ct);\n        return product.Id;\n    }\n}\n\n// 2. QUERY: Hanya membaca, tidak boleh ada efek samping (Side-effect free)\npublic record GetProductSummaryQuery(Guid Id) : IRequest\u003cProductSummaryDto?\u003e;\n\npublic class GetProductSummaryHandler : IRequestHandler\u003cGetProductSummaryQuery, ProductSummaryDto?\u003e\n{\n    private readonly IDbConnection _db; // Bisa pakai Dapper untuk kecepatan maksimal!\n    public GetProductSummaryHandler(IDbConnection db) =\u003e _db = db;\n\n    public async Task\u003cProductSummaryDto?\u003e Handle(GetProductSummaryQuery q, CancellationToken ct)\n    {\n        return await _db.QueryFirstOrDefaultAsync\u003cProductSummaryDto\u003e(\n            \"SELECT Id, Name, Price FROM Products WHERE Id = @Id\", new { q.Id });\n    }\n}\n```\n\n---\n\n## 5. Ringkasan \u0026 Panduan Memilih\n\n| Skenario Proyek | Rekomendasi Arsitektur |\n| :--- | :--- |\n| **Sistem Inti Perbankan / Finansial Kompleks** | **Clean Architecture + DDD**: Ketika integritas domain model dan invariant bisnis jauh lebih penting daripada kecepatan rilis CRUD. |\n| **Microservices / REST API Skala Cepat** | **Vertical Slice Architecture**: Memungkinkan perombakan fitur secara terisolasi tanpa risiko regresi pada fitur lain. |\n| **Aplikasi dengan Beban Read Jauh Lebih Tinggi** | **CQRS**: Optimalkan query pembacaan langsung ke database view/replica, pisahkan dari logika validasi write yang rumit. |",
+    "starterCode":  "using System;\nusing System.Threading.Tasks;\n\n// Simulasi Mini CQRS Mediator\npublic interface IRequest\u003cTResponse\u003e { }\npublic interface IRequestHandler\u003cTRequest, TResponse\u003e where TRequest : IRequest\u003cTResponse\u003e\n{\n    Task\u003cTResponse\u003e HandleAsync(TRequest request);\n}\n\n// Command: Mutasi State\npublic record UpdateUserEmailCommand(int UserId, string NewEmail) : IRequest\u003cbool\u003e;\n\npublic class UpdateUserEmailHandler : IRequestHandler\u003cUpdateUserEmailCommand, bool\u003e\n{\n    public Task\u003cbool\u003e HandleAsync(UpdateUserEmailCommand request)\n    {\n        // TODO: Simulasikan validasi format email sederhana dan pembaruan database\n        Console.WriteLine($\"[Command] Mengupdate email user {request.UserId} menjadi {request.NewEmail}\");\n        return Task.FromResult(true);\n    }\n}\n\n// Query: Membaca State (Side-effect Free)\npublic record GetUserQuery(int UserId) : IRequest\u003cstring\u003e;\n\npublic class GetUserHandler : IRequestHandler\u003cGetUserQuery, string\u003e\n{\n    public Task\u003cstring\u003e HandleAsync(GetUserQuery request)\n    {\n        // TODO: Simulasikan pembacaan query langsung\n        return Task.FromResult($\"User {request.UserId} (user_{request.UserId}@corp.com)\");\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var commandHandler = new UpdateUserEmailHandler();\n        var queryHandler = new GetUserHandler();\n\n        // 1. Eksekusi Command\n        var cmd = new UpdateUserEmailCommand(101, \"new_ceo@enterprise.com\");\n        await commandHandler.HandleAsync(cmd);\n\n        // 2. Eksekusi Query\n        var query = new GetUserQuery(101);\n        var result = await queryHandler.HandleAsync(query);\n        Console.WriteLine($\"[Query] Hasil: {result}\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Threading.Tasks;\n\npublic interface IRequest\u003cTResponse\u003e { }\npublic interface IRequestHandler\u003cTRequest, TResponse\u003e where TRequest : IRequest\u003cTResponse\u003e\n{\n    Task\u003cTResponse\u003e HandleAsync(TRequest request);\n}\n\npublic record UpdateUserEmailCommand(int UserId, string NewEmail) : IRequest\u003cbool\u003e;\n\npublic class UpdateUserEmailHandler : IRequestHandler\u003cUpdateUserEmailCommand, bool\u003e\n{\n    public Task\u003cbool\u003e HandleAsync(UpdateUserEmailCommand request)\n    {\n        if (!request.NewEmail.Contains(\"@\"))\n        {\n            throw new ArgumentException(\"Format email tidak valid!\");\n        }\n\n        Console.WriteLine($\"[Command] Validasi sukses. Mengupdate email user {request.UserId} menjadi {request.NewEmail}\");\n        return Task.FromResult(true);\n    }\n}\n\npublic record GetUserQuery(int UserId) : IRequest\u003cstring\u003e;\n\npublic class GetUserHandler : IRequestHandler\u003cGetUserQuery, string\u003e\n{\n    public Task\u003cstring\u003e HandleAsync(GetUserQuery request)\n    {\n        Console.WriteLine($\"[Query] Mengambil data read-only untuk user {request.UserId}\");\n        return Task.FromResult($\"User {request.UserId} (user_{request.UserId}@corp.com)\");\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var commandHandler = new UpdateUserEmailHandler();\n        var queryHandler = new GetUserHandler();\n\n        var cmd = new UpdateUserEmailCommand(101, \"new_ceo@enterprise.com\");\n        await commandHandler.HandleAsync(cmd);\n\n        var query = new GetUserQuery(101);\n        var result = await queryHandler.HandleAsync(query);\n        Console.WriteLine($\"[Query] Hasil: {result}\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-13-02-1",
+                              "type":  "single_choice",
+                              "question":  "Apa aturan utama \u0027The Dependency Rule\u0027 dalam arsitektur Clean / Hexagonal?",
+                              "options":  [
+                                              "Layer Presentation harus memiliki akses langsung ke seluruh tabel database SQL.",
+                                              "Arah dependensi selalu mengarah ke dalam (inward) menuju Domain layer, sehingga Domain layer bebas dari dependensi framework, ORM, atau library eksternal apapun.",
+                                              "Semua interface harus ditaruh di folder Infrastructure.",
+                                              "Domain layer wajib meng-inherit Controller base class dari ASP.NET Core."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "The Dependency Rule menetapkan bahwa layer yang paling dalam (Domain) tidak boleh mengetahui apapun tentang layer terluar (Infrastructure, Database, Presentation). Hal ini menjamin independensi logika bisnis dari detail teknologi pihak ketiga.",
+                              "optionExplanations":  [
+                                                         "Salah. Ini melanggar separation of concerns dan membocorkan database ke UI.",
+                                                         "Benar! Domain murni berada di pusat dan tidak bergantung pada teknologi eksternal.",
+                                                         "Salah. Interface domain/use case berada di Core/Application layer.",
+                                                         "Salah. Controller adalah bagian dari Presentation layer terluar."
+                                                     ],
+                              "sectionRef":  "1. Clean Architecture \u0026 The Dependency Rule",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-13-02-2",
+                              "type":  "single_choice",
+                              "question":  "Apa keuntungan paling menonjol dari Vertical Slice Architecture dibandingkan Clean Architecture tradisional pada aplikasi berfitur banyak?",
+                              "options":  [
+                                              "Vertical Slice menghapus kebutuhan akan compiler C#.",
+                                              "High Cohesion: seluruh kode untuk satu fitur (endpoint, validasi, data access) dikelompokkan dalam satu folder, mencegah fenomena \u0027shotgun surgery\u0027 saat merombak fitur.",
+                                              "Vertical Slice menjamin kode tidak memiliki bug sama sekali.",
+                                              "Vertical Slice mewajibkan penggunaan database NoSQL saja."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Dalam Clean Architecture horizontal, menambah 1 field sering mengharuskan pengeditan 5-6 layer terpisah. Vertical Slice mengelompokkan kode per-use-case (slice), memaksimalkan kohesi dan meminimalkan coupling antar-fitur.",
+                              "optionExplanations":  [
+                                                         "Salah. C# compiler tetap digunakan.",
+                                                         "Benar! Menghilangkan beban koordinasi multi-layer untuk perubahan fitur terlokalisir.",
+                                                         "Salah. Tidak ada arsitektur yang dapat menjamin zero bug secara otomatis.",
+                                                         "Salah. Bebas menggunakan relational SQL maupun NoSQL sesuai kebutuhan per-slice."
+                                                     ],
+                              "sectionRef":  "3. Vertical Slice Architecture (Jimmy Bogard)",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-13-01",
+                           "lesson-13-03",
+                           "lesson-11-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Vertical Slice Architecture - Jimmy Bogard",
+                           "url":  "https://www.jimmybogard.com/vertical-slice-architecture/",
+                           "type":  "article"
+                       },
+                       {
+                           "title":  "CQRS Pattern - Martin Fowler",
+                           "url":  "https://martinfowler.com/bliki/CQRS.html",
+                           "type":  "article"
+                       }
+                   ]
+}

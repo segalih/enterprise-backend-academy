@@ -1,0 +1,169 @@
+{
+  "id": "lesson-01-03",
+  "levelId": "level-01",
+  "moduleId": "mod-01-02",
+  "order": 3,
+  "title": "Merancang Algoritma dengan Flowchart dan Pseudocode",
+  "slug": "algorithms-flowchart-pseudocode",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mengembangkan kemampuan computational thinking untuk memetakan masalah bisnis kompleks menjadi algoritma deterministik sebelum menulis kode, menggunakan standar simbol flowchart dan pseudocode terstruktur.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-02",
+      "title": "Paradigma Pemrograman",
+      "levelName": "LEVEL 01",
+      "context": "Memahami struktur kontrol sekuensial dan kondisional."
+    }
+  ],
+  "introduces": [
+    "Algoritma",
+    "Deterministik vs Non-Deterministik",
+    "Flowchart Standard Symbols",
+    "Pseudocode",
+    "Invariant Loop",
+    "Post-condition \u0026 Pre-condition"
+  ],
+  "learningObjectives": [
+    "Mendefinisikan algoritma sebagai rangkaian langkah komputasi terhingga yang terdefinisi dengan jelas.",
+    "Mengonversi aturan bisnis perbankan ke dalam diagram alur (Flowchart) dan Pseudocode formal.",
+    "Mengidentifikasi loop invariant dan termination condition untuk mencegah infinite loop."
+  ],
+  "markdownContent": "# Merancang Algoritma dengan Flowchart dan Pseudocode\n\n## Definisi Algoritma dalam Rekayasa Software\nAlgoritma bukanlah kode C#. **Algoritma adalah prosedur komputasi langkah demi langkah yang terdefinisi secara pasti (deterministik), menerima sekumpulan nilai sebagai input, dan menghasilkan nilai keluaran sebagai output dalam jumlah langkah yang terhingga (finite)**.\n\nKarakteristik algoritma yang berkualitas enterprise:\n1. **Unambiguous**: Setiap instruksi tidak boleh memiliki tafsir ganda.\n2. **Finiteness**: Algoritma dijamin akan berhenti setelah sejumlah operasi terhingga (tidak menghasilkan infinite loop tak terduga).\n3. **Feasibility**: Dapat dieksekusi dengan sumber daya memori dan CPU yang tersedia.\n\n---\n\n## Simbol Standar Flowchart (ISO 5807)\n\n\u0060\u0060\u0060text\n[ TERMINATOR ] ---- ( Oval / Rounded Rect ) : Menandai START atau END alur\n       |\n[  PROSES    ] ---- ( Persegi Panjang )     : Operasi kalkulasi atau penugasan variabel\n       |\n[ KEPUTUSAN  ] ---- ( Belah Ketupat / Diamond): Evaluasi Boolean (Ya / Tidak, True / False)\n       |\n[   INPUT    ] ---- ( Jajar Genjang )       : Pembacaan data dari user/database/network\n       |\n[   OUTPUT   ] ---- ( Jajar Genjang )       : Pengiriman respons HTTP atau log\n\u0060\u0060\u0060\n\n### Studi Kasus Nyata: Alur Validasi Transfer Dana Perbankan\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Start([\u0022START: Request Transfer\u0022]) --\u003E CheckBal{\u0022Apakah Saldo \u003E= Nominal?\u0022}\n    CheckBal --\u003E|TIDAK| RejectBal[\u0022Tolak: Saldo Tidak Cukup\u0022]\n    CheckBal --\u003E|YA| CheckDest{\u0022Apakah Rekening Tujuan Aktif?\u0022}\n    CheckDest --\u003E|TIDAK| RejectDest[\u0022Tolak: Rekening Tujuan Nonaktif\u0022]\n    CheckDest --\u003E|YA| LockRow[\u0022Kunci Baris DB (Row Lock)\u0022]\n    LockRow --\u003E Debit[\u0022Debet Rekening Pengirim\u0022]\n    Debit --\u003E Credit[\u0022Kredit Rekening Penerima\u0022]\n    Credit --\u003E Audit[\u0022Catat Audit Log Trail\u0022]\n    Audit --\u003E End([\u0022END: Return HTTP 200 OK\u0022])\n    RejectBal --\u003E EndErr([\u0022END: Return HTTP 400 Bad Request\u0022])\n    RejectDest --\u003E EndErr\n\u0060\u0060\u0060\n\n---\n\n## Dari Flowchart ke Pseudocode Formal\nPseudocode adalah bahasa perantara semi-formal yang independen dari sintaks bahasa pemrograman tertentu. Pseudocode menjembatani komunikasi antara Software Architect, Business Analyst, dan Backend Developer:\n\n\u0060\u0060\u0060text\nALGORITHM TransferDana(rekeningAsalId, rekeningTujuanId, nominal):\n    PRE-CONDITIONS:\n        nominal \u003E 0\n        rekeningAsalId != rekeningTujuanId\n\n    BEGIN TRANSACTION\n        rekeningAsal \u003C- CariRekeningDenganLock(rekeningAsalId)\n        rekeningTujuan \u003C- CariRekening(rekeningTujuanId)\n\n        IF rekeningAsal.Saldo \u003C nominal THEN\n            ROLLBACK TRANSACTION\n            RETURN ERROR \u0022Saldo Tidak Cukup\u0022\n        END IF\n\n        IF rekeningTujuan.Status != \u0022ACTIVE\u0022 THEN\n            ROLLBACK TRANSACTION\n            RETURN ERROR \u0022Rekening Tujuan Tidak Aktif\u0022\n        END IF\n\n        rekeningAsal.Saldo \u003C- rekeningAsal.Saldo - nominal\n        rekeningTujuan.Saldo \u003C- rekeningTujuan.Saldo \u002B nominal\n        \n        SimpanAuditLog(\u0022TRANSFER\u0022, rekeningAsalId, rekeningTujuanId, nominal)\n    COMMIT TRANSACTION\n\n    RETURN SUCCESS\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Mengimplementasikan Algoritma Transfer Dana Berdasarkan Pseudocode\npublic enum TransferStatus { Sukses, SaldoTidakCukup, RekeningTujuanTidakAktif, NominalIlegal }\n\npublic class BankAccount\n{\n    public string Id { get; set; } = \u0022\u0022;\n    public decimal Saldo { get; set; }\n    public bool IsAktif { get; set; }\n}\n\npublic class TransferService\n{\n    public static TransferStatus EksekusiTransfer(BankAccount asal, BankAccount tujuan, decimal nominal)\n    {\n        // 1. Pre-condition check\n        if (nominal \u003C= 0) return TransferStatus.NominalIlegal;\n        if (asal.Saldo \u003C nominal) return TransferStatus.SaldoTidakCukup;\n        if (!tujuan.IsAktif) return TransferStatus.RekeningTujuanTidakAktif;\n\n        // 2. Eksekusi mutasi saldo\n        asal.Saldo -= nominal;\n        tujuan.Saldo \u002B= nominal;\n\n        return TransferStatus.Sukses;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Uji coba algoritma\n        var accA = new BankAccount { Id = \u0022ACC-01\u0022, Saldo = 500_000, IsAktif = true };\n        var accB = new BankAccount { Id = \u0022ACC-02\u0022, Saldo = 100_000, IsAktif = true };\n        \n        var hasil = TransferService.EksekusiTransfer(accA, accB, 200_000);\n        Console.WriteLine($\u0022Status Transfer: {hasil}\u0022);\n        Console.WriteLine($\u0022Saldo Akhir Pengirim: Rp {accA.Saldo:N0}\u0022);\n        Console.WriteLine($\u0022Saldo Akhir Penerima: Rp {accB.Saldo:N0}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-01-03-1",
+      "type": "MultipleChoice",
+      "question": "Bentuk simbol standar ISO flowchart apakah yang digunakan secara khusus untuk merepresentasikan percabangan keputusan logika (Decision Boolean)?",
+      "options": [
+        "Persegi Panjang (Rectangle)",
+        "Jajar Genjang (Parallelogram)",
+        "Belah Ketupat (Diamond / Rhombus)",
+        "Lingkaran Kecil (Circle)"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Simbol Belah Ketupat (Diamond) digunakan khusus untuk titik evaluasi percabangan logika berkondisi Ya/Tidak atau True/False.",
+      "optionExplanations": [
+        "Salah. Persegi panjang digunakan untuk instruksi Proses kalkulasi/penugasan.",
+        "Salah. Jajar genjang digunakan untuk operasi Input / Output.",
+        "Benar! Belah ketupat adalah simbol baku evaluasi kondisi percabangan (Decision).",
+        "Salah. Lingkaran kecil digunakan sebagai konektor antar-halaman."
+      ],
+      "sectionRef": "Simbol Standar Flowchart (ISO 5807)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-01-03-2",
+      "type": "MultipleChoice",
+      "question": "Apa tujuan utama menuliskan Pre-conditions pada spesifikasi algoritma atau method backend?",
+      "options": [
+        "Mempercepat waktu kompilasi kode Roslyn",
+        "Mendefinisikan kondisi atau batasan validitas input yang wajib dipenuhi sebelum logika inti method dieksekusi",
+        "Menonaktifkan logging runtime untuk menghemat kapasitas disk",
+        "Menggantikan kebutuhan unit test otomatis"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Pre-condition adalah kontrak validasi yang menjamin algoritma hanya menerima input yang memenuhi syarat invariant (misal: nominal transfer harus \u003E 0).",
+      "optionExplanations": [
+        "Salah. Pre-condition adalah konsep rekayasa logika, bukan optimasi kompilasi.",
+        "Benar! Pre-condition memastikan integritas parameter sebelum algoritma memproses data lebih jauh.",
+        "Salah. Pre-condition tidak menonaktifkan logging.",
+        "Salah. Pre-condition justru menjadi target utama skenario pengujian unit test."
+      ],
+      "sectionRef": "Dari Flowchart ke Pseudocode Formal",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-01-03",
+    "Title": "Deteksi Bilangan Prima Efisien O(sqrt(N))",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca sebuah bilangan bulat N dari stdin.\nTentukan apakah N merupakan bilangan prima.\nCetak \u0027PRIMA\u0027 jika prima, atau \u0027BUKAN PRIMA\u0027 jika bukan prima.",
+    "InputFormat": "Satu baris bilangan bulat N.",
+    "OutputFormat": "Satu baris: \u0027PRIMA\u0027 atau \u0027BUKAN PRIMA\u0027.",
+    "Constraints": "N adalah bilangan bulat 64-bit [-10^12, 10^12].",
+    "Examples": [
+      {
+        "Input": "29",
+        "Output": "PRIMA",
+        "Explanation": "29 hanya dapat dibagi oleh 1 dan 29."
+      },
+      {
+        "Input": "1",
+        "Output": "BUKAN PRIMA",
+        "Explanation": "1 secara definisi matematis bukan bilangan prima."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (!long.TryParse(line, out long n)) return;\n        // TODO: Periksa keprimaan bilangan N dengan efisiensi O(sqrt(N)).\n        Console.WriteLine(\u0022PRIMA\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (!long.TryParse(line, out long n)) return;\n\n        if (n \u003C= 1) { Console.WriteLine(\u0022BUKAN PRIMA\u0022); return; }\n        if (n \u003C= 3) { Console.WriteLine(\u0022PRIMA\u0022); return; }\n        if (n % 2 == 0 || n % 3 == 0) { Console.WriteLine(\u0022BUKAN PRIMA\u0022); return; }\n\n        bool isPrime = true;\n        for (long i = 5; i * i \u003C= n; i \u002B= 6)\n        {\n            if (n % i == 0 || n % (i \u002B 2) == 0)\n            {\n                isPrime = false;\n                break;\n            }\n        }\n        Console.WriteLine(isPrime ? \u0022PRIMA\u0022 : \u0022BUKAN PRIMA\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Prima)",
+        "Description": "Contoh 1 (Prima): input \u002729\u0027 -\u003E expected \u0027PRIMA\u0027",
+        "Input": "29",
+        "ExpectedOutput": "PRIMA",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Bukan Prima Angka 1)",
+        "Description": "Contoh 2 (Bukan Prima Angka 1): input \u00271\u0027 -\u003E expected \u0027BUKAN PRIMA\u0027",
+        "Input": "1",
+        "ExpectedOutput": "BUKAN PRIMA",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Prima Genap 2",
+        "Description": "Prima Genap 2: input \u00272\u0027 -\u003E expected \u0027PRIMA\u0027",
+        "Input": "2",
+        "ExpectedOutput": "PRIMA",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Bilangan Negatif",
+        "Description": "Bilangan Negatif: input \u0027-7\u0027 -\u003E expected \u0027BUKAN PRIMA\u0027",
+        "Input": "-7",
+        "ExpectedOutput": "BUKAN PRIMA",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Bilangan \u003C= 1 bukan prima.",
+      "Cukup uji pembagi hingga akar kuadrat i * i \u003C= n dengan langkah 6k \u002B/- 1."
+    ],
+    "Explanation": "Uji pembagian hingga sqrt(N) memberikan kompleksitas O(sqrt(N)), sangat efisien untuk memproses input hingga 10^12."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-01-04",
+      "title": "Logika Boolean \u0026 Tabel Kebenaran",
+      "levelName": "LEVEL 01",
+      "context": "Merumuskan ekspresi kondisional yang tepat untuk diamond flowchart."
+    },
+    {
+      "lessonId": "lesson-05-01",
+      "title": "Analisis Kompleksitas Big O",
+      "levelName": "LEVEL 05",
+      "context": "Mengukur efisiensi komputasi dari algoritma yang telah dirancang."
+    }
+  ],
+  "references": [
+    {
+      "title": "Introduction to Algorithms (CLRS) - Cormen, Leiserson, Rivest, Stein",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "title": "ISO 5807 Information processing - Documentation symbols",
+      "url": "https://www.iso.org/standard/11955.html"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class PrimeAlgorithm\n{\n    public static bool IsPrime(int n)\n    {\n        if (n \u003C= 1) return false;\n        if (n == 2 || n == 3) return true;\n        if (n % 2 == 0 || n % 3 == 0) return false;\n\n        for (int i = 5; i * i \u003C= n; i \u002B= 6)\n        {\n            if (n % i == 0 || n % (i \u002B 2) == 0)\n                return false;\n        }\n\n        return true;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u00227 adalah prima: {IsPrime(7)}\u0022);\n        Console.WriteLine($\u002210 adalah prima: {IsPrime(10)}\u0022);\n    }\n}"
+}

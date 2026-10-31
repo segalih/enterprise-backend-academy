@@ -1,0 +1,107 @@
+{
+    "id":  "lesson-04-01",
+    "levelId":  "level-04",
+    "moduleId":  "mod-04-01",
+    "order":  1,
+    "title":  "LINQ Deep Dive: Deferred Execution, Yield Return, dan State Machine Generator",
+    "slug":  "linq-deferred-execution-yield-return",
+    "difficulty":  "Intermediate",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membongkar cara kerja LINQ to Objects: konsep Deferred Execution (eksekusi tertunda) vs Eager Execution, bagaimana keyword \u0027yield return\u0027 menghasilkan state machine enumerator tersembunyi, dan bahaya Multiple Enumeration.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-03-07",
+                              "title":  "Delegates, Func \u0026 Action",
+                              "levelName":  "LEVEL 03",
+                              "context":  "Memahami lambda expressions sebagai parameter LINQ."
+                          }
+                      ],
+    "introduces":  [
+                       "Deferred Execution (Lazy Evaluation)",
+                       "Eager Execution (ToList, ToArray)",
+                       "yield return \u0026 yield break",
+                       "IEnumerator\u003cT\u003e Compiler-Generated State Machine",
+                       "Multiple Enumeration Pitfall"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan kapan query LINQ didefinisikan vs kapan query benar-benar dieksekusi di memori.",
+                               "Menganalisis kode IL hasil kompilasi dari method yang menggunakan \u0027yield return\u0027.",
+                               "Menghindari bug performa dan duplikasi query akibat Multiple Enumeration pada IEnumerable."
+                           ],
+    "markdownContent":  "# LINQ Deep Dive: Deferred Execution, Yield Return, dan State Machine Generator\n\n## Apa Itu Deferred Execution (Eksekusi Tertunda)?\nBanyak developer mengira baris kode LINQ langsung memproses data seketika saat ditulis:\n```csharp\nvar query = users.Where(u =\u003e u.IsActive).Select(u =\u003e u.Email);\n```\n**Kenyataannya: Pada baris di atas, belum ada satu pun elemen array yang diproses!**\nLINQ menggunakan prinsip **Deferred Execution (Evaluasi Malas / Lazy Evaluation)**. Variabel `query` hanyalah sebuah objek resep/rencana kerja. Eksekusi data aktual baru terjadi ketika:\n1. Anda melakukan iterasi dengan loop: `foreach (var email in query)`\n2. Anda memanggil operator terminasi eager: `ToList()`, `ToArray()`, `Count()`, `First()`\n\n---\n\n## Di Balik Layar: Keajaiban `yield return`\nBagaimana C# dapat menghasilkan aliran data satu per satu tanpa mengalokasikan List penampung sementara di memori? Jawabannya adalah keyword **`yield return`**:\n\n```csharp\npublic static IEnumerable\u003cint\u003e AmbilAngkaGenap(IEnumerable\u003cint\u003e sumber)\n{\n    foreach (var n in sumber)\n    {\n        if (n % 2 == 0)\n        {\n            yield return n; // Eksekusi method BERHENTI SEMENTARA (Pause), mengembalikan n ke pemanggil\n        }\n    }\n}\n```\n\n### Apa yang Dilakukan Roslyn Compiler?\nCompiler membongkar method Anda menjadi sebuah **Class State Machine privat** yang mengimplementasikan `IEnumerator\u003cint\u003e`:\n- Setiap kali pemanggil memanggil `MoveNext()`, state machine melompat ke baris terakhir eksekusi dan mencari `yield return` berikutnya.\n- Nilai ditempatkan pada properti `Current`.\n- Jika sudah selesai, mengembalikan `false`.\n- **Hasil: Penggunaan RAM konstan O(1) bahkan saat mengolah streaming data 10 GB!**\n\n---\n\n## Bahaya Mematikan: Multiple Enumeration\nPerhatikan kode audit backend berikut:\n```csharp\npublic void ProsesLaporan(IEnumerable\u003cTransaction\u003e transaksi)\n{\n    // Evaluasi 1: Menghitung total data (Loop penuh dijalankan!)\n    if (transaksi.Count() == 0) return;\n\n    // Evaluasi 2: Mengambil transaksi terbesar (Loop penuh kedua dijalankan!)\n    var terbesar = transaksi.Max(t =\u003e t.Amount);\n\n    // Evaluasi 3: Menyimpan ke database (Loop ketiga dijalankan!)\n    foreach (var t in transaksi) { Simpan(t); }\n}\n```\nJika `transaksi` berasal dari pemanggilan query database atau pembacaan file log disk, **kode di atas mengeksekusi I/O tiga kali secara tidak sengaja!**\n\n### Best Practice Enterprise:\nJika Anda harus mengakses kumpulan data `IEnumerable` lebih dari satu kali, **materialisasikan segera ke memori menggunakan `.ToList()` atau `.ToArray()` di awal method!**",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\n// PROGRAM: Pembuktian Aliran Deferred Execution\nstatic IEnumerable\u003cint\u003e GenerateNumbers()\n{\n    for (int i = 1; i \u003c= 5; i++)\n    {\n        Console.WriteLine($\"[GENERATOR] Memproduksi angka: {i}\");\n        yield return i;\n    }\n}\n\nConsole.WriteLine(\"Langkah 1: Membuat query LINQ...\");\nvar query = GenerateNumbers().Where(n =\u003e {\n    Console.WriteLine($\"[FILTER] Mengecek angka: {n}\");\n    return n % 2 == 0;\n});\n\nConsole.WriteLine(\"Langkah 2: Query sudah dibuat, tetapi belum ada angka yang diproduksi!\");\nConsole.WriteLine(\"\\nLangkah 3: Memulai iterasi foreach (Trigger Execution)...\");\n\nforeach (var item in query)\n{\n    Console.WriteLine($\"[CONSUMER] Menerima angka genap: {item}\\n\");\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-04-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Kapan operasi filter pada query LINQ `var q = data.Where(x =\u003e x \u003e 100);` benar-benar dieksekusi memproses data?",
+                              "options":  [
+                                              "Seketika pada baris deklarasi query tersebut ditulis",
+                                              "Hanya ketika query diiterasi (misalnya melalui foreach atau pemanggilan ToList/ToArray)",
+                                              "Saat aplikasi pertama kali dicompile oleh Roslyn",
+                                              "Saat garbage collection berjalan"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "LINQ menerapkan Deferred Execution (eksekusi tertunda). Operasi Where hanya dievaluasi saat enumerator diminta bergerak maju melalui foreach atau pemanggilan method materialisasi seperti ToList().",
+                              "optionExplanations":  [
+                                                         "Salah. Itu adalah eager execution, bukan perilaku LINQ Where.",
+                                                         "Benar! Evaluasi ditunda sampai enumerasi pertama kali diminta.",
+                                                         "Salah. Kompilasi hanya memeriksa sintaks tipe.",
+                                                         "Salah. GC tidak memicu eksekusi LINQ."
+                                                     ],
+                              "sectionRef":  "Apa Itu Deferred Execution (Eksekusi Tertunda)?",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-04-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa risiko utama dari \u0027Multiple Enumeration\u0027 ketika menerima parameter bertipe `IEnumerable\u003cT\u003e` di method backend?",
+                              "options":  [
+                                              "Program akan melempar StackOverflowException",
+                                              "Query atau pembacaan stream sumber data dapat dieksekusi berulang kali (misal berkali-kali query ke DB), menurunkan performa dan memicu inkonsistensi data",
+                                              "Semua data di database otomatis terhapus",
+                                              "Variabel string berubah menjadi tipe integer"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Jika sumber data adalah query yang belum dieksekusi atau network stream, membaca IEnumerable berulang kali mengeksekusi ulang pipeline sumber dari awal setiap kali iterasi dipanggil.",
+                              "optionExplanations":  [
+                                                         "Salah. Multiple enumeration tidak memicu stack overflow.",
+                                                         "Benar! Terjadi redundansi eksekusi query berkali-kali ke sumber data asli.",
+                                                         "Salah. Data database tidak terhapus.",
+                                                         "Salah. Tipe data tidak berubah."
+                                                     ],
+                              "sectionRef":  "Bahaya Mematikan: Multiple Enumeration",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-04-02",
+                               "title":  "IEnumerable vs IQueryable",
+                               "levelName":  "LEVEL 04",
+                               "context":  "Perbedaan evaluasi in-memory LINQ dengan SQL translation."
+                           },
+                           {
+                               "lessonId":  "lesson-10-03",
+                               "title":  "EF Core Architecture",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Penerapan deferred execution pada kueri database."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "LINQ execution modes - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/concepts/linq/deferred-execution-and-lazy-evaluation-in-linq-to-xml"
+                       },
+                       {
+                           "title":  "yield statement - C# reference",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/statements/yield"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class RangeGenerator\n{\n    public static IEnumerable\u003cint\u003e GenerateEvenRange(int start, int count)\n    {\n        if (count \u003c= 0) yield break;\n\n        int current = (start % 2 == 0) ? start : start + 1;\n        for (int i = 0; i \u003c count; i++)\n        {\n            yield return current;\n            current += 2;\n        }\n    }\n\n    public static void Main()\n    {\n        foreach (var n in GenerateEvenRange(3, 4))\n        {\n            Console.Write($\"{n} \");\n        }\n        Console.WriteLine();\n    }\n}"
+}

@@ -1,0 +1,175 @@
+{
+  "id": "lesson-02-04",
+  "levelId": "level-02",
+  "moduleId": "mod-02-02",
+  "order": 4,
+  "title": "Value Types vs Reference Types: Stack vs Heap Memory Allocation",
+  "slug": "value-vs-reference-types-stack-heap",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "stack-heap",
+  "simulatorContext": "Perhatikan diagram memori interaktif di bawah: Variabel struct (Value Type) dialokasikan langsung di Stack frame method, sedangkan instance class (Reference Type) dialokasikan di Managed Heap dengan alamat memori disimpan di Stack.",
+  "description": "Memahami perbedaan mendasar antara Value Types (struct) dan Reference Types (class), mekanisme alokasi memori di Stack vs Managed Heap, pointer dereferencing, dan implikasi performa terhadap Garbage Collection.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-03",
+      "title": "Sistem Tipe C#",
+      "levelName": "LEVEL 02",
+      "context": "Memahami tipe primitif dan ukuran memorinya."
+    },
+    {
+      "lessonId": "lesson-00-08",
+      "title": "Virtual Memory \u0026 Paging",
+      "levelName": "LEVEL 00",
+      "context": "Memahami ruang alamat memori proses."
+    }
+  ],
+  "introduces": [
+    "Value Types (struct, enum)",
+    "Reference Types (class, interface, string, delegate)",
+    "Stack Memory (LIFO, Fast, Automatic Unwind)",
+    "Managed Heap (Garbage Collector, Dynamic Lifetime)",
+    "Copy-by-Value vs Copy-by-Reference",
+    "GC Pressure"
+  ],
+  "learningObjectives": [
+    "Membedakan perilaku penyalinan nilai (copy by value) vs penyalinan pointer referensi (copy by reference).",
+    "Menjelaskan bagaimana memori Stack bekerja (LIFO) dan kapan memori Managed Heap digunakan.",
+    "Menganalisis dampak GC Pressure akibat penggunaan class berlebih pada API berkecepatan tinggi."
+  ],
+  "markdownContent": "# Value Types vs Reference Types: Stack vs Heap Memory Allocation\n\n## Dikotomi Terbesar Sistem Tipe .NET\nDalam Common Type System (CTS) pada runtime .NET (CoreCLR), sistem tipe berakar pada \u0060System.Object\u0060 (\u0060object\u0060) dan terbagi menjadi dua keluarga utama: **Value Types** (diturunkan melalui \u0060System.ValueType\u0060) dan **Reference Types**.\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Obj[\u0022System.Object (Tipe Dasar Tertinggi)\u0022]\n    Val[\u0022System.ValueType (Value Types)\u003Cbr/\u003E\u2022 Primitif: int, long, double, bool, byte\u003Cbr/\u003E\u2022 struct, record struct, enum\u003Cbr/\u003E\u2022 ref struct: Span\u0026lt;T\u0026gt; (Khusus Stack)\u003Cbr/\u003E\u003Ci\u003ELokasi: Stack/Register, atau di Heap jika field class\u003C/i\u003E\u0022]\n    Ref[\u0022Reference Types (Heap Objects)\u003Cbr/\u003E\u2022 class \u0026 record class\u003Cbr/\u003E\u2022 string, Array (T[])\u003Cbr/\u003E\u2022 delegate, interface\u003Cbr/\u003E\u003Ci\u003ELokasi: Managed Heap, variabel memegang referensi\u003C/i\u003E\u0022]\n\n    Obj --\u003E Val\n    Obj --\u003E Ref\n\u0060\u0060\u0060\n\n\u003E **Catatan Arsitektur Mengenai \u0060interface\u0060 dan Lokasi Penyimpanan:**\n\u003E - **Status \u0060interface\u0060**: Secara spesifikasi CLI (ECMA-335), \u0060interface\u0060 adalah kontrak tipe referensi dan bukan \u0060class\u0060 yang mewarisi \u0060System.Object\u0060 secara langsung di rantai class inheritance. Namun, setiap referensi bertipe \u0060interface\u0060 kompatibel dan dapat dikonversi ke \u0060System.Object\u0060 (melalui referensi langsung untuk instance \u0060class\u0060, atau melalui *boxing* untuk instance \u0060struct\u0060).\n\u003E - **Lokasi Memori Tidak Bersifat Mutlak**: Klaim bahwa *\u0022Value Type selalu di Stack\u0022* adalah penyederhanaan yang keliru. Value Type disimpan **inline di tempat ia dideklarasikan**: jika sebagai variabel lokal method, ia berada di **Stack Frame** (atau CPU Register); namun jika menjadi field di dalam sebuah \u0060class\u0060 atau elemen di dalam \u0060Array\u0060 (\u0060int[]\u0060), datanya tersimpan **inline di dalam blok Managed Heap** milik objek induknya. Hanya \u0060ref struct\u0060 (seperti \u0060Span\u003CT\u003E\u0060 dan \u0060ReadOnlySpan\u003CT\u003E\u0060) yang dijamin secara ketat oleh compiler dan CLR hanya hidup di Stack.\n\nPerbedaan mendasar ini menentukan **bagaimana data dialokasikan di memori** serta **bagaimana data disalin saat dipindahkan antar-variabel atau parameter method** (*copy-by-value* vs *copy-by-reference*).\n\n---\n\n## 1. Stack Memory: Cepat, Teratur, dan Otomatis\n**Stack** adalah wilayah memori berurutan (LIFO - Last In, First Out) yang dialokasikan per OS Thread (default 1 MB di 64-bit Windows, 1.5-8 MB di Linux):\n- Ketika sebuah method dipanggil, runtime membuat **Stack Frame** baru untuk menampung variabel lokal dan parameter.\n- Alokasi memori di Stack sangat instan: CPU hanya perlu menggeser nilai register \u0060RSP\u0060 (Stack Pointer) beberapa byte.\n- Ketika method selesai (\u0060return\u0060), seluruh Stack Frame langsung dibuang (*unwind*) seketika dalam **0 siklus Garbage Collector**!\n\nVariabel lokal **Value Types (\u0060struct\u0060, primitif, \u0060enum\u0060)** yang tidak di-*capture* oleh closure lambda dialokasikan langsung di dalam Stack Frame ini.\n\n---\n\n## 2. Managed Heap: Fleksibel, Dinamis, Dikelola GC\n**Managed Heap** adalah wilayah memori dinamis yang digunakan untuk menampung instance **Reference Types** serta data yang masa hidupnya melampaui satu pemanggilan method:\n- Ketika Anda menulis \u0060new Customer()\u0060, runtime mencari ruang kosong di Managed Heap Gen 0, menginisialisasi header objek (Object Header / Sync Block Index 8 byte \u002B MethodTable Type Handle 8 byte), lalu mengembalikan alamat memori 64-bit.\n- **Variabel referensi di Stack hanya menyimpan alamat memori (pointer 8 byte) yang menunjuk ke objek di Heap!**\n- Memori Heap tidak dibebaskan saat method selesai. Pembersihan dilakukan secara asinkronus oleh **Garbage Collector (GC)** ketika tidak ada lagi *GC Root* yang mereferensikan objek tersebut.\n\n---\n\n## Pembuktian Perilaku: Copy by Value vs Copy by Reference\n\n\u0060\u0060\u0060csharp\n// VALUE TYPE (STRUCT)\nPointStruct p1 = new PointStruct { X = 10 };\nPointStruct p2 = p1; // MENYALIN SELURUH NILAI SECARA INDEPENDEN\np2.X = 999;\nConsole.WriteLine(p1.X); // Tetap 10! p1 tidak berubah!\n\n// REFERENCE TYPE (CLASS)\nCustomerClass c1 = new CustomerClass { Name = \u0022Budi\u0022 };\nCustomerClass c2 = c1; // MENYALIN ALAMAT POINTER (Kedua variabel menunjuk objek yang sama)\nc2.Name = \u0022Siti\u0022;\nConsole.WriteLine(c1.Name); // Berubah menjadi \u0022Siti\u0022!\n\u0060\u0060\u0060\n\n---\n\n## Dampak Enterprise: GC Pressure \u0026 Throughput\nPada API backend perbankan yang memproses 100.000 transaksi per detik:\n- Jika Anda membuat \u0060class TransactionDto\u0060 sementara untuk setiap kalkulasi internal, Anda mengalokasikan 100.000 objek baru di Heap setiap detik!\n- Hal ini memicu frekuensi koleksi GC Gen 0 dan Gen 1 yang tinggi (*GC Pressure*), yang dapat menambah jeda mikro (*Stop-The-World pause*) pada p99 request latency API Anda.\n- Menggunakan \u0060readonly struct\u0060 atau \u0060readonly record struct\u0060 untuk objek nilai kecil (\u003C= 16\u201324 byte) dan \u0060ReadOnlySpan\u003CT\u003E\u0060 untuk slicing buffer memungkinkan pemrosesan berlangsung dengan **Zero Heap Allocation**!",
+  "starterCode": "using System;\n\n// PROGRAM: Pembuktian Value Type vs Reference Type di C#\npublic struct CoordinateStruct\n{\n    public int X;\n    public int Y;\n}\n\npublic class CoordinateClass\n{\n    public int X;\n    public int Y;\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // 1. Uji Perilaku Struct (Value Type)\n        CoordinateStruct s1 = new CoordinateStruct { X = 100, Y = 200 };\n        CoordinateStruct s2 = s1; // Copy by value: duplikasi bit independen\n        s2.X = 999;\n        \n        Console.WriteLine($\u0022[STRUCT] s1.X: {s1.X} (Harus tetap 100)\u0022);\n        Console.WriteLine($\u0022[STRUCT] s2.X: {s2.X} (Berubah menjadi 999)\u0022);\n        \n        // 2. Uji Perilaku Class (Reference Type)\n        CoordinateClass c1 = new CoordinateClass { X = 100, Y = 200 };\n        CoordinateClass c2 = c1; // Copy by reference: menyalin pointer alamat heap\n        c2.X = 999;\n        \n        Console.WriteLine($\u0022\\n[CLASS]  c1.X: {c1.X} (Ikut berubah menjadi 999!)\u0022);\n        Console.WriteLine($\u0022[CLASS]  c2.X: {c2.X} (999)\u0022);\n        \n        // TODO: Perhatikan bahwa c1 dan c2 mereferensikan instance objek yang sama persis di Managed Heap!\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-02-04-1",
+      "type": "MultipleChoice",
+      "question": "Di manakah variabel lokal bertipe primitif int x = 50; yang dideklarasikan di dalam sebuah method dialokasikan?",
+      "options": [
+        "Di Stack Frame dari thread method yang sedang aktif",
+        "Di Gen 0 Managed Heap",
+        "Di Large Object Heap (LOH)",
+        "Di Pinned Object Heap (POH)"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Variabel lokal bertipe value type (seperti int) dialokasikan langsung di dalam Stack Frame method saat ini, dan dibersihkan otomatis saat method return.",
+      "optionExplanations": [
+        "Benar! Variabel lokal value type dialokasikan langsung di Stack Frame.",
+        "Salah. Managed Heap digunakan untuk instance class atau objek yang mengalami boxing.",
+        "Salah. LOH digunakan untuk objek berukuran \u003E= 85.000 byte di Heap.",
+        "Salah. POH digunakan untuk memori yang tidak boleh dipindahkan oleh GC."
+      ],
+      "sectionRef": "1. Stack Memory: Cepat, Teratur, dan Otomatis",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-04-2",
+      "type": "MultipleChoice",
+      "question": "Apa yang sebenarnya disalin ketika Anda melakukan penugasan variabel Reference Type: Customer c2 = c1;?",
+      "options": [
+        "Hanya alamat pointer (referensi memori 64-bit) di Stack yang disalin; keduanya menunjuk ke objek yang sama di Heap",
+        "Seluruh field dan data objek disalin ulang ke memori baru di Heap",
+        "Objek dihapus dari memori Heap",
+        "Compiler membuat deep clone otomatis"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Pada Reference Type, variabel hanyalah pointer ke memori Heap. Penugasan hanya menyalin nilai alamat memori (8 byte pada 64-bit), bukan instance objeknya.",
+      "optionExplanations": [
+        "Benar! Hanya alamat memori (pointer 8-byte) yang diduplikasi ke variabel c2.",
+        "Salah. Penyalinan seluruh data hanya terjadi pada Value Type (struct).",
+        "Salah. Objek di heap tetap utuh.",
+        "Salah. C# tidak melakukan deep clone otomatis pada penugasan biasa."
+      ],
+      "sectionRef": "Pembuktian Perilaku: Copy by Value vs Copy by Reference",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-04",
+    "Title": "Operasi Penjumlahan Aman Money Value Object Struct",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Baca dua baris dari stdin, masing-masing merepresentasikan objek Money:\nBaris 1: \u0027\u003CAmount1\u003E \u003CCurrency1\u003E\u0027\nBaris 2: \u0027\u003CAmount2\u003E \u003CCurrency2\u003E\u0027\nJika Currency1 dan Currency2 sama, cetak hasil penjumlahannya dalam format \u0027\u003CTotalAmount\u003E \u003CCurrency\u003E\u0027.\nJika mata uang berbeda, cetak \u0027CURRENCY_MISMATCH\u0027.",
+    "InputFormat": "Dua baris stdin berisi amount (decimal) dan currency code (string 3 huruf).",
+    "OutputFormat": "Satu baris: \u0027\u003CTotal\u003E \u003CCurrency\u003E\u0027 atau \u0027CURRENCY_MISMATCH\u0027.",
+    "Constraints": "Currency code 3 huruf kapital (IDR, USD, EUR).",
+    "Examples": [
+      {
+        "Input": "15000 IDR\n25000 IDR",
+        "Output": "40000 IDR",
+        "Explanation": "Mata uang sama IDR, jumlah 40000."
+      },
+      {
+        "Input": "100 USD\n50 EUR",
+        "Output": "CURRENCY_MISMATCH",
+        "Explanation": "USD dan EUR berbeda."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic readonly struct Money\n{\n    public decimal Amount { get; }\n    public string Currency { get; }\n    public Money(decimal amount, string currency) { Amount = amount; Currency = currency; }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Baca dua baris dan operasikan value object Money.\n        Console.WriteLine(\u00220 IDR\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic readonly struct Money\n{\n    public decimal Amount { get; }\n    public string Currency { get; }\n    public Money(decimal amount, string currency) { Amount = amount; Currency = currency; }\n\n    public static bool TryAdd(Money a, Money b, out Money result)\n    {\n        if (!string.Equals(a.Currency, b.Currency, StringComparison.OrdinalIgnoreCase))\n        {\n            result = default;\n            return false;\n        }\n        result = new Money(a.Amount \u002B b.Amount, a.Currency.ToUpperInvariant());\n        return true;\n    }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || string.IsNullOrWhiteSpace(l2)) return;\n\n        var p1 = l1.Trim().Split(\u0027 \u0027);\n        var p2 = l2.Trim().Split(\u0027 \u0027);\n\n        var m1 = new Money(decimal.Parse(p1[0], CultureInfo.InvariantCulture), p1[1]);\n        var m2 = new Money(decimal.Parse(p2[0], CultureInfo.InvariantCulture), p2[1]);\n\n        if (Money.TryAdd(m1, m2, out var res))\n        {\n            Console.WriteLine($\u0022{res.Amount} {res.Currency}\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022CURRENCY_MISMATCH\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Sama IDR)",
+        "Description": "Contoh 1 (Sama IDR): input \u002715000 IDR\n25000 IDR\u0027 -\u003E expected \u002740000 IDR\u0027",
+        "Input": "15000 IDR\n25000 IDR",
+        "ExpectedOutput": "40000 IDR",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Beda Currency)",
+        "Description": "Contoh 2 (Beda Currency): input \u0027100 USD\n50 EUR\u0027 -\u003E expected \u0027CURRENCY_MISMATCH\u0027",
+        "Input": "100 USD\n50 EUR",
+        "ExpectedOutput": "CURRENCY_MISMATCH",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Mata Uang Huruf Kecil",
+        "Description": "Mata Uang Huruf Kecil: input \u0027500 idr\n200 IDR\u0027 -\u003E expected \u0027700 IDR\u0027",
+        "Input": "500 idr\n200 IDR",
+        "ExpectedOutput": "700 IDR",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Nilai 0",
+        "Description": "Nilai 0: input \u00270 USD\n100 USD\u0027 -\u003E expected \u0027100 USD\u0027",
+        "Input": "0 USD\n100 USD",
+        "ExpectedOutput": "100 USD",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan readonly struct untuk mengimplementasikan Value Object yang hemat alokasi heap.",
+      "Pastikan pembandingan mata uang case-insensitive."
+    ],
+    "Explanation": "Value Object immutable berbasis readonly struct menjamin integritas data domain finansial tanpa alokasi memori berlebih di GC Managed Heap."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-05",
+      "title": "Boxing, Unboxing \u0026 Type Casting",
+      "levelName": "LEVEL 02",
+      "context": "Bahaya alokasi tersembunyi saat struct diubah menjadi object atau interface."
+    },
+    {
+      "lessonId": "lesson-08-02",
+      "title": "Garbage Collector Internals",
+      "levelName": "LEVEL 08",
+      "context": "Bagaimana alokasi Heap dikelola dan dibersihkan oleh CoreCLR GC."
+    }
+  ],
+  "references": [
+    {
+      "title": "Structure types - C# reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/struct"
+    },
+    {
+      "title": "Memory in .NET - Stack vs Heap",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/fundamentals"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic readonly struct Money\n{\n    public decimal Amount { get; }\n    public string Currency { get; }\n\n    public Money(decimal amount, string currency)\n    {\n        Amount = amount;\n        Currency = currency ?? \u0022IDR\u0022;\n    }\n\n    public Money Add(Money other)\n    {\n        if (!string.Equals(Currency, other.Currency, StringComparison.OrdinalIgnoreCase))\n        {\n            throw new InvalidOperationException(\u0022Mata uang tidak cocok.\u0022);\n        }\n\n        return new Money(Amount \u002B other.Amount, Currency);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var m1 = new Money(50000m, \u0022IDR\u0022);\n        var m2 = new Money(25000m, \u0022IDR\u0022);\n        var m3 = m1.Add(m2);\n        Console.WriteLine($\u0022Total: {m3.Amount} {m3.Currency}\u0022);\n    }\n}"
+}

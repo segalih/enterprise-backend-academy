@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-01",
+  "levelId": "level-02",
+  "moduleId": "mod-02-01",
+  "order": 1,
+  "title": "Ekosistem .NET Modern: CLR, Roslyn Compiler, dan dotnet CLI",
+  "slug": "dotnet-ecosystem-clr-roslyn",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 35,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Memahami evolusi platform .NET dari era legacy .NET Framework menuju .NET 8 modern yang open-source dan cross-platform, arsitektur CoreCLR, Base Class Library (BCL), dan penggunaan esensial dotnet CLI.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-01",
+      "title": "Eksekusi Kode: Source Code ke Machine Code",
+      "levelName": "LEVEL 01",
+      "context": "Memahami fase kompilasi C# Roslyn dan RyuJIT."
+    }
+  ],
+  "introduces": [
+    ".NET 8 SDK vs Runtime",
+    "Common Language Runtime (CoreCLR)",
+    "Base Class Library (BCL)",
+    "Target Framework Moniker (TFM: net8.0)",
+    "dotnet CLI Commands",
+    "SDK-Style csproj"
+  ],
+  "learningObjectives": [
+    "Membedakan antara .NET SDK (alat pengembang) dan .NET Runtime (lingkungan produksi).",
+    "Menguraikan komponen arsitektur CoreCLR: Type System, Garbage Collector, Thread Pool, dan RyuJIT.",
+    "Menguasai alur kerja harian menggunakan dotnet CLI: new, build, run, test, publish."
+  ],
+  "markdownContent": "# Ekosistem .NET Modern: CLR, Roslyn Compiler, dan dotnet CLI\n\n## Transformasi Bersejarah: Dari .NET Framework ke .NET Modern\nSebelum tahun 2016, ekosistem C# terikat pada Windows dan bersifat proprietary melalui **.NET Framework (versi 1.0 hingga 4.8.1)**.\nDimulai dengan .NET Core dan berpuncak pada **.NET 8 LTS (Long Term Support)** saat ini:\n- **100% Open Source**: Seluruh compiler Roslyn, runtime CoreCLR, dan libraries dikembangkan secara terbuka di GitHub.\n- **Cross-Platform**: Berjalan dengan performa native kelas satu di Linux (Ubuntu, Debian, Alpine), macOS, dan Windows.\n- **Performa Terdepan di Industri**: Secara konsisten menduduki peringkat teratas dalam benchmark web server TechEmpower (mampu melayani jutaan request per detik pada Kestrel).\n\n---\n\n## SDK vs Runtime: Jangan Salah Pasang di Server Produksi!\n1. **.NET SDK (Software Development Kit)**:\n   - Diinstal di komputer developer dan server CI/CD build runner.\n   - Berisi C# Compiler (Roslyn), MSBuild engine, template proyek, dan dotnet CLI.\n   - Ukuran instalasi: ~800 MB - 1 GB.\n2. **.NET Runtime**:\n   - Diinstal di server produksi (atau base image Docker container).\n   - Hanya berisi komponen eksekusi: **CoreCLR**, Garbage Collector, dan Base Class Library (BCL).\n   - Ukuran instalasi: sangat ringkas (~80-150 MB).\n\n\u0060\u0060\u0060mermaid\nflowchart LR\n    subgraph SDK[\u0022.NET 8 SDK (Build Time)\u0022]\n        CS[\u0022Program.cs (Kode C#)\u0022]\n        Roslyn[\u0022Roslyn Compiler (csc)\u0022]\n        IL[\u0022App.dll (CIL / MSIL Bytecode)\u0022]\n        CS --\u003E|Kompilasi| Roslyn --\u003E|Generate| IL\n    end\n\n    subgraph Runtime[\u0022.NET Runtime / CoreCLR (Execution Time)\u0022]\n        JIT[\u0022RyuJIT Compiler Engine\u0022]\n        Native[\u0022Instruksi Mesin Asli (x86-64 / ARM64)\u0022]\n        CPU[\u0022Eksekusi Langsung oleh CPU Core\u0022]\n        IL --\u003E|Load ke Memori| JIT --\u003E|Kompilasi Just-In-Time| Native --\u003E CPU\n    end\n\u0060\u0060\u0060\n\n---\n\n## 5 Perintah Esensial dotnet CLI\nSebagai enterprise backend engineer, Anda akan mengoperasikan aplikasi melalui terminal:\n\n| Perintah | Fungsi Utama | Flag Produksi Wajib |\n| :--- | :--- | :--- |\n| \u0060dotnet new webapi -n MyApp\u0060 | Membuat proyek Web API baru dari template | \u0060--use-controllers\u0060 atau \u0060--minimal\u0060 |\n| \u0060dotnet build\u0060 | Mengompilasi kode dan memvalidasi sintaks tipe | \u0060-c Release\u0060 (Kompilasi mode produksi) |\n| \u0060dotnet run\u0060 | Mengompilasi dan langsung menjalankan aplikasi | \u0060--no-build\u0060 (Mencegah build ulang) |\n| \u0060dotnet test\u0060 | Menjalankan seluruh rangkaian tes otomatis xUnit | \u0060--verbosity normal --logger console\u0060 |\n| \u0060dotnet publish\u0060 | Mengemas binary siap deploy ke server/Docker | \u0060-c Release -o /app/out\u0060 |",
+  "starterCode": "using System;\nusing System.Runtime.InteropServices;\n\n// PROGRAM: Menginspeksi Informasi Lingkungan Runtime .NET\nConsole.WriteLine(\u0022=== INFORMASI RUNTIME .NET CORECLR ===\u0022);\nConsole.WriteLine($\u0022Versi .NET: {Environment.Version}\u0022);\nConsole.WriteLine($\u0022Target Framework: {RuntimeInformation.FrameworkDescription}\u0022);\nConsole.WriteLine($\u0022Arsitektur Proses: {RuntimeInformation.ProcessArchitecture}\u0022);\nConsole.WriteLine($\u0022Sistem Operasi: {RuntimeInformation.OSDescription}\u0022);\nConsole.WriteLine($\u0022Runtime Identifier (RID): {RuntimeInformation.RuntimeIdentifier}\u0022);\n\n// Menampilkan letak direktori instalasi .NET\nConsole.WriteLine($\u0022Direktori Runtime: {RuntimeEnvironment.GetRuntimeDirectory()}\u0022);\n\n// TODO: Periksa apakah aplikasi Anda berjalan di lingkungan 64-bit menggunakan Environment.Is64BitProcess!",
+  "quizQuestions": [
+    {
+      "id": "q-02-01-1",
+      "type": "MultipleChoice",
+      "question": "Komponen paket apakah yang harus diinstal di server produksi cloud (atau Docker base image) untuk menjalankan aplikasi backend yang telah dipublish, dengan konsumsi disk minimal?",
+      "options": [
+        ".NET SDK",
+        ".NET Runtime (atau ASP.NET Core Runtime)",
+        "Visual Studio Enterprise",
+        "Mono Development Kit"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Di lingkungan produksi, kita hanya memerlukan .NET Runtime (atau ASP.NET Core Runtime) untuk mengeksekusi binary .dll yang sudah dikompilasi, tanpa overhead compiler SDK.",
+      "optionExplanations": [
+        "Salah. .NET SDK berukuran besar dan ditujukan untuk tahap development/build.",
+        "Benar! .NET Runtime menyediakan CoreCLR dan BCL yang cukup untuk menjalankan binary.",
+        "Salah. Visual Studio adalah IDE pengembangan dan tidak boleh diinstal di server produksi.",
+        "Salah. Mono adalah runtime terpisah dan tidak digunakan untuk backend .NET modern."
+      ],
+      "sectionRef": "SDK vs Runtime: Jangan Salah Pasang di Server Produksi!",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-01-2",
+      "type": "MultipleChoice",
+      "question": "Perintah dotnet CLI manakah yang digunakan untuk mengemas aplikasi beserta seluruh dependensinya ke dalam folder terisolasi yang siap di-deploy ke server atau kontainer Docker?",
+      "options": [
+        "dotnet pack",
+        "dotnet restore",
+        "dotnet publish",
+        "dotnet clean"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "\u0060dotnet publish\u0060 mengompilasi aplikasi, mengumpulkan seluruh assembly library yang dibutuhkan, dan menyiapkannya dalam folder output siap distribusi.",
+      "optionExplanations": [
+        "Salah. dotnet pack digunakan untuk membuat paket NuGet library (.nupkg).",
+        "Salah. dotnet restore hanya mengunduh dependensi NuGet.",
+        "Benar! dotnet publish menyiapkan binary siap rilis di server produksi.",
+        "Salah. dotnet clean menghapus folder bin dan obj hasil kompilasi sebelumnya."
+      ],
+      "sectionRef": "5 Perintah Esensial dotnet CLI",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-01",
+    "Title": "Parser Argumen CLI Key-Value Pair",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca satu baris string argumen command-line dari stdin (misal \u0027--port=5000 --env=Production --verbose\u0027).\nCari nilai dari kunci yang diawali prefix \u0027--port=\u0027.\nJika ditemukan, cetak nilainya. Jika tidak ditemukan, cetak \u0027DEFAULT_PORT\u0027.",
+    "InputFormat": "Satu baris string berisi daftar flag argumen CLI.",
+    "OutputFormat": "Satu baris string nilai port atau \u0027DEFAULT_PORT\u0027.",
+    "Constraints": "Panjang baris \u003C= 500 karakter.",
+    "Examples": [
+      {
+        "Input": "--port=5100 --env=Development",
+        "Output": "5100",
+        "Explanation": "Ditemukan kunci --port dengan nilai 5100."
+      },
+      {
+        "Input": "--env=Production --name=ApiGateway",
+        "Output": "DEFAULT_PORT",
+        "Explanation": "Kunci --port tidak disediakan."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Cari parameter --port= dan ekstrak nilainya.\n        Console.WriteLine(\u0022DEFAULT_PORT\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022DEFAULT_PORT\u0022); return; }\n        var parts = line.Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        string result = \u0022DEFAULT_PORT\u0022;\n        foreach (var p in parts)\n        {\n            if (p.StartsWith(\u0022--port=\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                result = p.Substring(7).Trim();\n                break;\n            }\n        }\n        Console.WriteLine(result);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Port Ada)",
+        "Description": "Contoh 1 (Port Ada): input \u0027--port=5100 --env=Development\u0027 -\u003E expected \u00275100\u0027",
+        "Input": "--port=5100 --env=Development",
+        "ExpectedOutput": "5100",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Port Absen)",
+        "Description": "Contoh 2 (Port Absen): input \u0027--env=Production --name=ApiGateway\u0027 -\u003E expected \u0027DEFAULT_PORT\u0027",
+        "Input": "--env=Production --name=ApiGateway",
+        "ExpectedOutput": "DEFAULT_PORT",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Port Huruf Kecil",
+        "Description": "Port Huruf Kecil: input \u0027--port=8080\u0027 -\u003E expected \u00278080\u0027",
+        "Input": "--port=8080",
+        "ExpectedOutput": "8080",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "String Kosong",
+        "Description": "String Kosong: input \u0027\u0027 -\u003E expected \u0027DEFAULT_PORT\u0027",
+        "Input": "",
+        "ExpectedOutput": "DEFAULT_PORT",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pecah string dengan Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries).",
+      "Gunakan StartsWith(\u0022--port=\u0022, StringComparison.OrdinalIgnoreCase)."
+    ],
+    "Explanation": "Parsing konfigurasi CLI merupakan fondasi dalam bootstrapping aplikasi ASP.NET Core saat membaca parameter startup sistem."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-02",
+      "title": "Anatomi Program C#",
+      "levelName": "LEVEL 02",
+      "context": "Menulis kode C# pertama yang akan dikompilasi oleh dotnet CLI."
+    },
+    {
+      "lessonId": "lesson-16-03",
+      "title": "Docker Multi-Stage Build untuk .NET",
+      "levelName": "LEVEL 16",
+      "context": "Menggunakan dotnet publish di dalam Docker container."
+    }
+  ],
+  "references": [
+    {
+      "title": ".NET CLI Overview - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/core/tools/"
+    },
+    {
+      "title": "CoreCLR Architectural Overview - GitHub",
+      "url": "https://github.com/dotnet/runtime/blob/main/docs/design/coreclr/botr/intro.md"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class CliCommandBuilder\n{\n    public static string BuildPublishCommand(string? projectFile, string configuration, string outputDir)\n    {\n        if (string.IsNullOrWhiteSpace(projectFile)) return \u0022\u0022;\n        string conf = string.IsNullOrWhiteSpace(configuration) ? \u0022Release\u0022 : configuration.Trim();\n        string outDir = string.IsNullOrWhiteSpace(outputDir) ? \u0022./publish\u0022 : outputDir.Trim();\n        \n        return $\u0022dotnet publish {projectFile.Trim()} -c {conf} -o {outDir}\u0022;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(BuildPublishCommand(\u0022Api.csproj\u0022, \u0022Release\u0022, \u0022/dist\u0022));\n    }\n}"
+}

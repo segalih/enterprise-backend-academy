@@ -1,0 +1,174 @@
+{
+  "id": "lesson-10-04",
+  "levelId": "level-10",
+  "moduleId": "mod-10-02",
+  "order": 4,
+  "title": "Pola Akses Data: Repository Pattern, Unit of Work, dan Boundary Transaksional",
+  "slug": "data-access-patterns-repository-unit-of-work",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Merancang layer persistensi data enterprise: apakah Repository Pattern masih relevan di atas EF Core? Pola Generic vs Specific Repository, orkestrasi transaksi multi-tabel dengan Unit of Work, dan transactional boundary di domain enterprise.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-10-03",
+      "title": "Entity Framework Core Architecture",
+      "levelName": "LEVEL 10",
+      "context": "Memahami peran DbContext sebagai Unit of Work bawaan."
+    },
+    {
+      "lessonId": "lesson-03-04",
+      "title": "Interfaces \u0026 Kontrak Abstraksi",
+      "levelName": "LEVEL 03",
+      "context": "Memahami antarmuka decoupling."
+    }
+  ],
+  "introduces": [
+    "Repository Pattern (Domain Decoupling)",
+    "Unit of Work Pattern (Transaction Orchestration)",
+    "Generic Repository Pitfalls (IQueryable Leaks)",
+    "Specific Aggregate Repositories",
+    "Ambient Transactions (TransactionScope)"
+  ],
+  "learningObjectives": [
+    "Menganalisis pro dan kontra membungkus EF Core di dalam Repository kustom.",
+    "Menghindari anti-pattern Generic Repository yang membocorkan IQueryable ke layer bisnis.",
+    "Mengorkestrasi beberapa repositori dalam satu batas transaksi atomik Unit of Work."
+  ],
+  "markdownContent": "# Pola Akses Data: Repository Pattern, Unit of Work, dan Boundary Transaksional\n\n## Perdebatan Terbesar: Butuhkah Repository di Atas EF Core?\nBanyak arsitek berdebat:\n- *\u201CEF Core sudah merupakan implementasi Repository (\u0060DbSet\u003CT\u003E\u0060) dan Unit of Work (\u0060DbContext\u0060) bawaan! Membungkusnya lagi hanyalah abstraksi sia-sia yang membuang waktu!\u201D*\n- *\u201CNamun tanpa antarmuka IRepository, logika bisnis kita terikat mati pada Entity Framework dan sangat sulit melakukan unit testing tanpa database nyata!\u201D*\n\nJawaban enterprise yang matang: **Gunakan Specific Aggregate Repository, dan HINDARI Generic Repository yang membocorkan \u0060IQueryable\u0060!**\n\n---\n\n## Bencana Anti-Pattern: Generic Repository dengan IQueryable\n\u0060\u0060\u0060csharp\n// ANTI-PATTERN: GENERIC REPOSITORY YANG MEMBOCORKAN IQUERYABLE\npublic interface IGenericRepository\u003CT\u003E\n{\n    IQueryable\u003CT\u003E GetAll(); // BENCANA ARSITEKTUR!\n}\n\u0060\u0060\u0060\n**Mengapa Ini Merusak Arsitektur?**\n1. Jika layer Controller atau Application Service menerima \u0060IQueryable\u003CT\u003E\u0060, developer bebas menulis kueri SQL kompleks di layer presentasi/API, melanggar pemisahan tanggung jawab (*Separation of Concerns*).\n2. Kueri database tersebar di ratusan file alih-alih terpusat di layer data.\n\n---\n\n## Solusi Enterprise: Specific Aggregate Repository\nHanya buat repositori untuk entitas utama (**Aggregate Root** dalam filosofi DDD), dan kembalikan data yang sudah dieksekusi (\u0060Task\u003CT\u003E\u0060 atau \u0060IReadOnlyList\u003CT\u003E\u0060):\n\n\u0060\u0060\u0060csharp\npublic interface IAccountRepository\n{\n    Task\u003CAccount?\u003E GetByIdAsync(string accountId, CancellationToken ct = default);\n    Task AddAsync(Account account, CancellationToken ct = default);\n    // Tidak ada IQueryable yang bocor keluar!\n}\n\u0060\u0060\u0060\n\n---\n\n## Pola Unit of Work: Orkestrasi Transaksi Multi-Repositori\nBagaimana jika satu operasi transfer dana melibatkan dua repositori berbeda (\u0060IAccountRepository\u0060 dan \u0060IAuditLogRepository\u0060)?\nKeduanya **wajib di-commit dalam satu transaksi atomik yang sama**!\n\n\u0060\u0060\u0060csharp\npublic interface IUnitOfWork : IDisposable\n{\n    IAccountRepository Accounts { get; }\n    IAuditLogRepository AuditLogs { get; }\n    Task\u003Cint\u003E CommitAsync(CancellationToken ct = default);\n}\n\u0060\u0060\u0060\n\n### Alur Eksekusi Bisnis yang Rapi:\n\u0060\u0060\u0060csharp\npublic async Task TransferDanaAsync(string asalId, string tujuanId, decimal amount)\n{\n    var asal = await _unitOfWork.Accounts.GetByIdAsync(asalId);\n    var tujuan = await _unitOfWork.Accounts.GetByIdAsync(tujuanId);\n\n    asal.Debet(amount);\n    tujuan.Kredit(amount);\n\n    await _unitOfWork.AuditLogs.AddAsync(new AuditEntry(\u0022TRANSFER\u0022, amount));\n\n    // SATU TITIK COMMIT TRANSAKSI: KEDUA TABEL DISIMPAN SECARA ATOMIK!\n    await _unitOfWork.CommitAsync();\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// PROGRAM: Simulasi Pola Unit of Work dan Specific Repository\npublic interface IOrderRepository\n{\n    void Add(string orderId, decimal total);\n}\n\npublic interface IUnitOfWork\n{\n    IOrderRepository Orders { get; }\n    void Commit();\n}\n\npublic class MemoryUnitOfWork : IUnitOfWork\n{\n    public class MemoryOrderRepository : IOrderRepository\n    {\n        public List\u003Cstring\u003E PendingInserts = new();\n        public void Add(string orderId, decimal total) =\u003E PendingInserts.Add($\u0022{orderId}: Rp {total:N0}\u0022);\n    }\n\n    public MemoryOrderRepository OrderRepo { get; } = new();\n    public IOrderRepository Orders =\u003E OrderRepo;\n\n    public void Commit()\n    {\n        Console.WriteLine($\u0022[TRANSACTION COMMIT] Menyimpan {OrderRepo.PendingInserts.Count} order secara atomik.\u0022);\n        foreach (var ord in OrderRepo.PendingInserts)\n        {\n            Console.WriteLine($\u0022  -\u003E Persisted: {ord}\u0022);\n        }\n        OrderRepo.PendingInserts.Clear();\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var uow = new MemoryUnitOfWork();\n        uow.Orders.Add(\u0022ORD-001\u0022, 150_000m);\n        uow.Orders.Add(\u0022ORD-002\u0022, 300_000m);\n        \n        Console.WriteLine(\u0022Memanggil Unit of Work Commit...\u0022);\n        uow.Commit();\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-10-04-1",
+      "type": "MultipleChoice",
+      "question": "Mengapa mengembalikan \u0060IQueryable\u003CT\u003E\u0060 dari dalam method Repository (seperti \u0060IQueryable\u003CT\u003E GetAll()\u0060) dianggap sebagai anti-pattern arsitektur?",
+      "options": [
+        "Karena IQueryable tidak bisa dikompilasi oleh C# 12",
+        "Karena membocorkan detail kueri database ke layer bisnis/controller, merusak pemisahan tanggung jawab dan menyulitkan pelacakan kueri database yang dieksekusi",
+        "Karena IQueryable hanya bisa menyimpan data teks",
+        "Karena IQueryable otomatis mematikan koneksi internet"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Membocorkan IQueryable memungkinkan layer di luar persistensi menulis logika query semau mereka, mengaburkan batas arsitektur dan mempersulit unit testing serta optimasi kueri.",
+      "optionExplanations": [
+        "Salah. IQueryable adalah interface resmi .NET.",
+        "Benar! Membocorkan IQueryable merusak abstraksi dan membiarkan query SQL tersebar di sembarang layer.",
+        "Salah. IQueryable mendukung seluruh objek strongly-typed.",
+        "Salah. Tidak ada hubungan dengan koneksi fisik internet."
+      ],
+      "sectionRef": "Bencana Anti-Pattern: Generic Repository dengan IQueryable",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-10-04-2",
+      "type": "MultipleChoice",
+      "question": "Apa tanggung jawab utama dari pola \u0027Unit of Work\u0027 ketika digunakan bersama beberapa Repository?",
+      "options": [
+        "Menjalankan seluruh thread di background",
+        "Mengkoordinasikan penulisan dan perubahan data dari berbagai repositori ke dalam satu batas transaksi tunggal yang di-commit secara atomik (All-or-Nothing)",
+        "Menggantikan fungsi web server Kestrel",
+        "Menyimpan file konfigurasi JSON"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Unit of Work melacak seluruh perubahan dari berbagai repositori dan menyatukannya ke dalam satu transaksi database tunggal saat Commit dipanggil.",
+      "optionExplanations": [
+        "Salah. Unit of Work bukan thread scheduler.",
+        "Benar! Menjamin konsistensi transaksional atomik lintas repositori dalam satu unit kerja bisnis.",
+        "Salah. Kestrel adalah server web HTTP.",
+        "Salah. Unit of Work bukan file storage manager."
+      ],
+      "sectionRef": "Pola Unit of Work: Orkestrasi Transaksi Multi-Repositori",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-10-04",
+    "Title": "Simulator Transaksi Unit of Work Berbasis Status Entitas",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat simulator Unit of Work yang melacak entitas dalam status: \u0027NEW\u0027, \u0027DIRTY\u0027, atau \u0027REMOVED\u0027.\nBaca daftar instruksi dari stdin dipisahkan koma: \u0027REGISTER_NEW:Order1, REGISTER_DIRTY:User2, REMOVE:Item3, COMMIT\u0027 atau \u0027... ROLLBACK\u0027.\n- Jika diakhiri \u0027COMMIT\u0027: cetak \u0027COMMITTED: Added=\u003CN\u003E, Updated=\u003CU\u003E, Deleted=\u003CD\u003E\u0027\n- Jika diakhiri \u0027ROLLBACK\u0027: batalkan seluruh perubahan dan cetak \u0027ROLLED_BACK: All changes discarded\u0027.",
+    "InputFormat": "Satu baris string perintah Unit of Work dipisahkan koma.",
+    "OutputFormat": "Satu baris status commit atau rollback.",
+    "Constraints": "Operasi diakhiri persis oleh COMMIT atau ROLLBACK.",
+    "Examples": [
+      {
+        "Input": "REGISTER_NEW:Order1, REGISTER_DIRTY:User2, COMMIT",
+        "Output": "COMMITTED: Added=1, Updated=1, Deleted=0",
+        "Explanation": "Perubahan baru dan modifikasi berhasil di-commit."
+      },
+      {
+        "Input": "REGISTER_NEW:Order1, ROLLBACK",
+        "Output": "ROLLED_BACK: All changes discarded",
+        "Explanation": "Transaksi dibatalkan."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Lacak entitas dalam HashSet/List dan evaluasi COMMIT/ROLLBACK.\n        Console.WriteLine(\u0022COMMITTED: Added=0, Updated=0, Deleted=0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n\n        var tokens = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var added = new HashSet\u003Cstring\u003E();\n        var updated = new HashSet\u003Cstring\u003E();\n        var deleted = new HashSet\u003Cstring\u003E();\n\n        foreach (var tok in tokens)\n        {\n            string t = tok.Trim();\n            if (t.Equals(\u0022ROLLBACK\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                Console.WriteLine(\u0022ROLLED_BACK: All changes discarded\u0022);\n                return;\n            }\n            if (t.Equals(\u0022COMMIT\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                Console.WriteLine($\u0022COMMITTED: Added={added.Count}, Updated={updated.Count}, Deleted={deleted.Count}\u0022);\n                return;\n            }\n\n            var parts = t.Split(\u0027:\u0027);\n            if (parts.Length == 2)\n            {\n                string op = parts[0].Trim().ToUpperInvariant();\n                string entity = parts[1].Trim();\n                if (op == \u0022REGISTER_NEW\u0022) added.Add(entity);\n                else if (op == \u0022REGISTER_DIRTY\u0022) updated.Add(entity);\n                else if (op == \u0022REMOVE\u0022) deleted.Add(entity);\n            }\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Commit)",
+        "Description": "Contoh 1 (Commit): input \u0027REGISTER_NEW:Order1, REGISTER_DIRTY:User2, COMMIT\u0027 -\u003E expected \u0027COMMITTED: Added=1, Updated=1, Deleted=0\u0027",
+        "Input": "REGISTER_NEW:Order1, REGISTER_DIRTY:User2, COMMIT",
+        "ExpectedOutput": "COMMITTED: Added=1, Updated=1, Deleted=0",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Rollback)",
+        "Description": "Contoh 2 (Rollback): input \u0027REGISTER_NEW:Order1, ROLLBACK\u0027 -\u003E expected \u0027ROLLED_BACK: All changes discarded\u0027",
+        "Input": "REGISTER_NEW:Order1, ROLLBACK",
+        "ExpectedOutput": "ROLLED_BACK: All changes discarded",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Semua Status Ada",
+        "Description": "Semua Status Ada: input \u0027REGISTER_NEW:O1, REGISTER_DIRTY:U1, REMOVE:D1, COMMIT\u0027 -\u003E expected \u0027COMMITTED: Added=1, Updated=1, Deleted=1\u0027",
+        "Input": "REGISTER_NEW:O1, REGISTER_DIRTY:U1, REMOVE:D1, COMMIT",
+        "ExpectedOutput": "COMMITTED: Added=1, Updated=1, Deleted=1",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Commit Kosong",
+        "Description": "Commit Kosong: input \u0027COMMIT\u0027 -\u003E expected \u0027COMMITTED: Added=0, Updated=0, Deleted=0\u0027",
+        "Input": "COMMIT",
+        "ExpectedOutput": "COMMITTED: Added=0, Updated=0, Deleted=0",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola Unit of Work mengumpulkan seluruh perubahan database dalam satu sesi bisnis sebelum dieksekusi atomik saat SaveChanges/Commit.",
+      "Gunakan HashSet untuk melacak entitas unik yang berubah."
+    ],
+    "Explanation": "Pola Unit of Work menjaga konsistensi transaksional dengan mencatat mutasi entitas di memory tracker dan menembakkannya dalam satu transaksi database tunggal."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-09-03",
+      "title": "Transaksi ACID \u0026 Isolation Levels",
+      "levelName": "LEVEL 09",
+      "context": "Prinsip dasar atomisitas transaksi basis data."
+    },
+    {
+      "lessonId": "lesson-13-02",
+      "title": "Clean Architecture vs Vertical Slice",
+      "levelName": "LEVEL 13",
+      "context": "Penempatan Repository dan Unit of Work pada layer Infrastructure."
+    }
+  ],
+  "references": [
+    {
+      "title": "Unit of Work Pattern - Martin Fowler (PoEAA)",
+      "url": "https://martinfowler.com/eaaCatalog/unitOfWork.html"
+    },
+    {
+      "title": "Repository Pattern - Martin Fowler (PoEAA)",
+      "url": "https://martinfowler.com/eaaCatalog/repository.html"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class TransactionCoordinator\n{\n    public static bool ExecuteTransactionalOperation(bool step1Success, bool step2Success)\n    {\n        if (step1Success \u0026\u0026 step2Success)\n        {\n            Console.WriteLine(\u0022[COMMIT] Transaction committed successfully\u0022);\n            return true;\n        }\n\n        Console.WriteLine(\u0022[ROLLBACK] Transaction rolled back\u0022);\n        return false;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(ExecuteTransactionalOperation(true, true));\n        Console.WriteLine(ExecuteTransactionalOperation(true, false));\n    }\n}"
+}

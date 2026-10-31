@@ -1,0 +1,164 @@
+{
+  "id": "lesson-12-02",
+  "levelId": "level-12",
+  "moduleId": "mod-12-01",
+  "order": 2,
+  "title": "Pola Concurrency Trap: Async Void, Deadlocks, dan Penggunaan CancellationToken yang Benar",
+  "slug": "async-traps-cancellation-tokens",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 55,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendeteksi dan memperbaiki jebakan fatal pemrograman asinkronus di C#: bahaya \u0027async void\u0027, sync-over-async deadlock (.Result / .Wait()), dan propagasi CancellationToken menyeluruh.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-12-01",
+      "reason": "Mekanisme Internal Async/Await \u0026 SynchronizationContext"
+    },
+    {
+      "lessonId": "lesson-02-09",
+      "reason": "Exception Handling di C#"
+    }
+  ],
+  "introduces": [
+    "The \u0027async void\u0027 process-crash catastrophe",
+    "Sync-over-async anti-pattern (.Result, .Wait(), .GetAwaiter().GetResult())",
+    "Thread pool starvation at scale",
+    "CancellationTokenSource \u0026 token propagation",
+    "Graceful cancellation handling (OperationCanceledException)"
+  ],
+  "learningObjectives": [
+    "Menjelaskan mengapa \u0060async void\u0060 memotong alur penanganan exception dan dapat mematikan seluruh proses aplikasi",
+    "Mendiagnosa fenomena Thread Pool Starvation akibat pemanggilan sinkronus (\u0060.Result\u0060 atau \u0060.Wait()\u0060) pada task asinkronus",
+    "Menerapkan pola propagasi \u0060CancellationToken\u0060 dari controller/endpoint hingga ke database query driver",
+    "Menggunakan \u0060CancellationTokenSource.CreateLinkedTokenSource\u0060 untuk menggabungkan user cancellation dengan timeout sistem"
+  ],
+  "markdownContent": "# Pola Concurrency Trap: Async Void, Deadlocks, dan Penggunaan CancellationToken yang Benar\n\nPemrograman asinkronus adalah pedang bermata dua. Jika digunakan dengan benar, sistem Anda dapat menangani ratusan ribu transaksi per detik. Namun jika Anda jatuh ke dalam salah satu **tiga jebakan konkurensi klasik C#**, server produksi Anda bisa mengalami deadlock total, CPU hang, atau crash seketika tanpa peringatan.\n\nMateri ini membedah akar masalah dan solusi untuk tiga jebakan terbesar: **Async Void**, **Sync-over-Async**, dan **Missing CancellationTokens**.\n\n---\n\n## 1. Jebakan 1: Bencana \u0060async void\u0060\n\nDi C#, method asinkronus seharusnya mengembalikan \u0060Task\u0060 atau \u0060Task\u003CT\u003E\u0060. Satu-satunya tempat di mana \u0060async void\u0060 diperbolehkan secara historis adalah pada **Event Handler UI** (seperti \u0060button_Click(object sender, EventArgs e)\u0060).\n\n\u0060\u0060\u0060csharp\n// BAHAYA BESAR: JANGAN PERNAH MENULIS INI DI BACKEND!\npublic async void ProcessPaymentAsync(PaymentRequest req)\n{\n    await Task.Delay(100);\n    throw new InvalidOperationException(\u0022Saldo tidak valid!\u0022);\n}\n\u0060\u0060\u0060\n\n### Mengapa \u0060async void\u0060 Mematikan Aplikasi?\n1. **Tidak Bisa Di-await**: Pemanggil tidak memiliki objek \u0060Task\u0060 untuk di-await atau dipantau statusnya.\n2. **Exception Lolos dari \u0060try-catch\u0060**: Jika Anda membungkus pemanggilan method \u0060async void\u0060 di dalam blok \u0060try-catch\u0060, exception **TIDAK AKAN TERTANGKAP**!\n3. **Process Crash**: Exception yang tidak tertangkap dari method \u0060async void\u0060 akan langsung dialirkan ke \u0060AppDomain.UnhandledException\u0060, yang secara default **langsung membunuh seluruh proses aplikasi (Process Termination)**!\n\n\u0060\u0060\u0060csharp\n// SOLUSI: Selalu kembalikan Task!\npublic async Task ProcessPaymentAsync(PaymentRequest req)\n{\n    await Task.Delay(100);\n    throw new InvalidOperationException(\u0022Saldo tidak valid!\u0022);\n}\n\u0060\u0060\u0060\n\n---\n\n## 2. Jebakan 2: Sync-over-Async \u0026 Thread Pool Starvation\n\nPola **Sync-over-Async** terjadi ketika developer memanggil kode asinkronus secara sinkronus menggunakan \u0060.Result\u0060, \u0060.Wait()\u0060, atau \u0060.GetAwaiter().GetResult()\u0060.\n\n\u0060\u0060\u0060csharp\n// ANTI-PATTERN FATAL DI BACKEND HIGH-LOAD:\npublic Order GetOrder(int id)\n{\n    return _orderService.GetOrderAsync(id).Result; // BLOCKING THREAD!\n}\n\u0060\u0060\u0060\n\n### Dampak: Thread Pool Starvation\nBayangkan server Anda memiliki 8 worker thread di ThreadPool:\n1. 8 HTTP request masuk bersamaan, masing-masing memanggil \u0060GetOrder()\u0060.\n2. Kedelapan thread tersebut sekarang **terblokir (blocked)** menunggu hasil dari \u0060GetOrderAsync()\u0060.\n3. Di dalam \u0060GetOrderAsync()\u0060, operasi database selesai dan runtime membutuhkan thread luang dari ThreadPool untuk mengeksekusi continuation.\n4. **Masalah**: TIDAK ADA THREAD YANG TERSISA di ThreadPool! Semua 8 thread sedang sibuk memblokir diri sendiri!\n5. Runtime .NET mencoba menginjeksi thread baru secara perlahan (kira-kira 1-2 thread per detik).\n6. Request-request baru yang masuk antre di queue, latency melonjak dari 10ms menjadi 30 detik, hingga akhirnya seluruh server hang (*Thread Pool Starvation*).\n\n\u003E [!IMPORTANT]\n\u003E **Aturan Emas:** *Async all the way down!* Jika Anda memulai dengan method async di controller/endpoint, seluruh method perantara hingga database driver harus menggunakan \u0060await\u0060, jangan pernah memblokir dengan \u0060.Result\u0060.\n\n---\n\n## 3. Penggunaan CancellationToken yang Benar di Enterprise\n\nDi web server, client seringkali membatalkan request sebelum server selesai merespons (misalnya pengguna menutup browser tab, atau reverse proxy timeout). Jika server terus memproses kalkulasi berat atau query database selama 10 detik padahal client sudah pergi, itu adalah pemborosan CPU dan memori!\n\nASP.NET Core menyediakan \u0060HttpContext.RequestAborted\u0060 yang dapat di-inject langsung ke parameter endpoint:\n\n\u0060\u0060\u0060csharp\napp.MapGet(\u0022/api/reports/annual\u0022, async (\n    int year, \n    IReportService reportService, \n    CancellationToken ct) =\u003E // ASP.NET Core otomatis mengisi token ini!\n{\n    // Teruskan token ke layer bawah!\n    var report = await reportService.GenerateReportAsync(year, ct);\n    return Results.Ok(report);\n});\n\u0060\u0060\u0060\n\n### Menggabungkan User Cancellation dengan Timeout Sistem:\n\u0060\u0060\u0060csharp\npublic async Task\u003CData\u003E FetchWithTimeoutAsync(CancellationToken userToken)\n{\n    // Batalkan jika user cancel ATAU jika timeout 5 detik tercapai\n    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));\n    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, timeoutCts.Token);\n\n    try\n    {\n        return await _httpClient.GetDataAsync(linkedCts.Token);\n    }\n    catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)\n    {\n        throw new TimeoutException(\u0022Operasi backend melebihi batas 5 detik.\u0022);\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 4. Ringkasan \u0026 Panduan Audit Kode\n\n1. **Haramkan \u0060async void\u0060**: Selalu gunakan \u0060async Task\u0060 kecuali pada event handler UI lawas. Pasang static code analyzer (\u0060CA2007\u0060 / linter rules) untuk memblokir \u0060async void\u0060 di CI pipeline.\n2. **Hindari Sync-over-Async**: Jangan gunakan \u0060.Result\u0060 atau \u0060.Wait()\u0060. Jika terpaksa berinteraksi dengan API legacy yang strictly synchronous, gunakan \u0060Task.Run()\u0060 di boundary terluar dengan sangat hati-hati.\n3. **Propagasi CancellationToken**: Selalu terima \u0060CancellationToken\u0060 pada method async dan teruskan ke downstream methods (\u0060HttpClient\u0060, \u0060EF Core\u0060, \u0060Stream.ReadAsync\u0060).",
+  "starterCode": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\npublic class ReportGenerator\n{\n    public async Task GenerateHeavyReportAsync(CancellationToken ct)\n    {\n        Console.WriteLine(\u0022[Report] Memulai pembuatan laporan 10 batch...\u0022);\n\n        for (int i = 1; i \u003C= 10; i\u002B\u002B)\n        {\n            // TODO: Periksa apakah token pembatalan telah diminta (ct.IsCancellationRequested atau ct.ThrowIfCancellationRequested())\n            // Simulasikan kerja per batch dengan Task.Delay(100, ct)\n            \n            Console.WriteLine($\u0022[Report] Menyelesaikan batch {i}/10\u0022);\n        }\n\n        Console.WriteLine(\u0022[Report] Selesai 100%!\u0022);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var generator = new ReportGenerator();\n        using var cts = new CancellationTokenSource();\n\n        // Jadwalkan pembatalan setelah 250ms (hanya sempat memproses 2-3 batch)\n        cts.CancelAfter(250);\n\n        try\n        {\n            await generator.GenerateHeavyReportAsync(cts.Token);\n        }\n        catch (OperationCanceledException)\n        {\n            Console.WriteLine(\u0022[Client] Operasi berhasil dibatalkan secara elegan (Graceful Cancellation).\u0022);\n        }\n    }\n}",
+  "solutionCode": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\npublic class ReportGenerator\n{\n    public async Task GenerateHeavyReportAsync(CancellationToken ct)\n    {\n        Console.WriteLine(\u0022[Report] Memulai pembuatan laporan 10 batch...\u0022);\n\n        for (int i = 1; i \u003C= 10; i\u002B\u002B)\n        {\n            // Lempar OperationCanceledException jika client membatalkan request\n            ct.ThrowIfCancellationRequested();\n\n            await Task.Delay(100, ct);\n            Console.WriteLine($\u0022[Report] Menyelesaikan batch {i}/10\u0022);\n        }\n\n        Console.WriteLine(\u0022[Report] Selesai 100%!\u0022);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var generator = new ReportGenerator();\n        using var cts = new CancellationTokenSource();\n\n        cts.CancelAfter(250);\n\n        try\n        {\n            await generator.GenerateHeavyReportAsync(cts.Token);\n        }\n        catch (OperationCanceledException)\n        {\n            Console.WriteLine(\u0022[Client] Operasi berhasil dibatalkan secara elegan (Graceful Cancellation).\u0022);\n        }\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-12-02-1",
+      "type": "single_choice",
+      "question": "Mengapa penulisan method \u0027public async void DoWork()\u0027 sangat dilarang dalam arsitektur backend C#?",
+      "options": [
+        "Karena compiler C# menolak kata \u0027void\u0027 dalam method publik.",
+        "Karena unhandled exception yang terjadi di dalam async void tidak dapat ditangkap oleh blok try-catch pemanggil dan akan langsung mematikan (crash) seluruh proses aplikasi.",
+        "Karena async void otomatis mengubah koneksi internet menjadi dial-up.",
+        "Karena async void hanya bisa dijalankan satu kali seumur hidup komputer."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Method async void tidak mengembalikan objek Task, sehingga pemanggil tidak memiliki mekanisme untuk menangkap exception. Exception yang tidak tertangani akan langsung dialirkan ke thread pool synchronization context dan memicu pemutusan proses aplikasi seketika (crash fatal).",
+      "optionExplanations": [
+        "Salah. Compiler C# mengizinkan async void demi kompatibilitas event handler UI lama.",
+        "Benar! Exception lolos dari try-catch caller dan membunuh proses OS aplikasi.",
+        "Salah. Tidak ada kaitan dengan perangkat keras koneksi fisik.",
+        "Salah. Method dapat dipanggil berkali-kali, namun sangat berbahaya."
+      ],
+      "sectionRef": "1. Jebakan 1: Bencana async void",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-12-02-2",
+      "type": "single_choice",
+      "question": "Apa fenomena berbahaya yang terjadi jika web server dengan load tinggi banyak menggunakan pemanggilan .Result atau .Wait() pada method asinkronus?",
+      "options": [
+        "Data harddisk akan terhapus secara otomatis.",
+        "Thread Pool Starvation: seluruh worker thread terblokir menunggu hasil task, sementara task yang ditunggu tidak bisa mendapatkan thread luang untuk menyelesaikan pekerjaannya.",
+        "Koneksi HTTP otomatis berubah menjadi UDP.",
+        "Ukuran RAM server akan mengecil secara permanen."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Pola sync-over-async (.Result/.Wait()) memblokir worker thread pool. Ketika volume request tinggi, seluruh thread pool habis terblokir, menciptakan kondisi starvation di mana sistem tidak memiliki thread luang tersisa untuk mengeksekusi kelanjutan task tersebut.",
+      "optionExplanations": [
+        "Salah. Harddisk tidak terpengaruh.",
+        "Benar! Thread pool starvation melumpuhkan respon server dan membuat latency melonjak tajam.",
+        "Salah. Protokol tidak berubah.",
+        "Salah. RAM tidak berkurang secara fisik."
+      ],
+      "sectionRef": "2. Jebakan 2: Sync-over-Async \u0026 Thread Pool Starvation",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-12-02",
+    "Title": "Propagasi Graceful Cancellation CancellationToken",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Simulasikan eksekusi task berantai yang memantau sinyal pembatalan \u0060CancellationToken\u0060.\nBaca dua angka dari stdin: TotalLangkah (int) dan BatasLangkahBatal (int).\nLakukan perulangan dari step 1 s/d TotalLangkah:\n- Jika step == BatasLangkahBatal, panggil \u0060cancellationTokenSource.Cancel()\u0060.\n- Pada setiap langkah, periksa \u0060token.ThrowIfCancellationRequested()\u0060.\nTangkap \u0060OperationCanceledException\u0060 dan cetak \u0027CANCELLED_AT_STEP: \u003Cstep\u003E\u0027.\nJika seluruh langkah selesai tanpa pembatalan, cetak \u0027COMPLETED_SUCCESSFULLY\u0027.",
+    "InputFormat": "Satu baris berisi TotalLangkah dan BatasLangkahBatal (angka -1 jika tidak ada pembatalan).",
+    "OutputFormat": "Satu baris status eksekusi task.",
+    "Constraints": "TotalLangkah \u003E= 1.",
+    "Examples": [
+      {
+        "Input": "10 4",
+        "Output": "CANCELLED_AT_STEP: 4",
+        "Explanation": "Pembatalan terpicu tepat pada langkah 4."
+      },
+      {
+        "Input": "5 -1",
+        "Output": "COMPLETED_SUCCESSFULLY",
+        "Explanation": "Tidak ada sinyal pembatalan, task selesai."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Gunakan CancellationTokenSource dan ThrowIfCancellationRequested.\n        Console.WriteLine(\u0022COMPLETED_SUCCESSFULLY\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 2) return;\n\n        int totalSteps = int.Parse(p[0]);\n        int cancelAt = int.Parse(p[1]);\n\n        using var cts = new CancellationTokenSource();\n        var token = cts.Token;\n        int currentStep = 0;\n\n        try\n        {\n            for (int i = 1; i \u003C= totalSteps; i\u002B\u002B)\n            {\n                currentStep = i;\n                if (i == cancelAt)\n                {\n                    cts.Cancel();\n                }\n                token.ThrowIfCancellationRequested();\n            }\n            Console.WriteLine(\u0022COMPLETED_SUCCESSFULLY\u0022);\n        }\n        catch (OperationCanceledException)\n        {\n            Console.WriteLine($\u0022CANCELLED_AT_STEP: {currentStep}\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Batal Langkah 4)",
+        "Description": "Contoh 1 (Batal Langkah 4): input \u002710 4\u0027 -\u003E expected \u0027CANCELLED_AT_STEP: 4\u0027",
+        "Input": "10 4",
+        "ExpectedOutput": "CANCELLED_AT_STEP: 4",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Selesai Sukses)",
+        "Description": "Contoh 2 (Selesai Sukses): input \u00275 -1\u0027 -\u003E expected \u0027COMPLETED_SUCCESSFULLY\u0027",
+        "Input": "5 -1",
+        "ExpectedOutput": "COMPLETED_SUCCESSFULLY",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Batal Langkah 1",
+        "Description": "Batal Langkah 1: input \u00275 1\u0027 -\u003E expected \u0027CANCELLED_AT_STEP: 1\u0027",
+        "Input": "5 1",
+        "ExpectedOutput": "CANCELLED_AT_STEP: 1",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Batal di Langkah Terakhir",
+        "Description": "Batal di Langkah Terakhir: input \u002710 10\u0027 -\u003E expected \u0027CANCELLED_AT_STEP: 10\u0027",
+        "Input": "10 10",
+        "ExpectedOutput": "CANCELLED_AT_STEP: 10",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "CancellationToken adalah pola kooperatif: pemanggil memicu Cancel(), dan target mengecek ThrowIfCancellationRequested().",
+      "Tangkap OperationCanceledException secara eksplisit."
+    ],
+    "Explanation": "Propagasi CancellationToken yang disiplin ke seluruh method asinkron mencegah kebocoran thread dan pemborosan CPU saat klien membatalkan HTTP request."
+  },
+  "relatedLessons": [
+    "lesson-12-01",
+    "lesson-12-03",
+    "lesson-11-04"
+  ],
+  "references": [
+    {
+      "title": "Async/Await - Best Practices in Asynchronous Programming - Stephen Cleary",
+      "url": "https://learn.microsoft.com/en-us/archive/msdn-magazine/2013/march/async-await-best-practices-in-asynchronous-programming",
+      "type": "article"
+    },
+    {
+      "title": "Diagnosing .NET ThreadPool Starvation",
+      "url": "https://learn.microsoft.com/en-us/dotnet/core/diagnostics/debug-threadpool-starvation",
+      "type": "documentation"
+    }
+  ]
+}

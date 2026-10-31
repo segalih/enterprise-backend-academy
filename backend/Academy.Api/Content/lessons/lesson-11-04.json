@@ -1,0 +1,164 @@
+{
+  "id": "lesson-11-04",
+  "levelId": "level-11",
+  "moduleId": "mod-11-02",
+  "order": 4,
+  "title": "Standar REST Enterprise: ProblemDetails, Versioning, Idempotency, dan Pagination",
+  "slug": "rest-enterprise-standards-idempotency",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendesain Web API berstandar enterprise: standarisasi error RFC 7807 (ProblemDetails), strategi API Versioning, penanganan Idempotency Keys untuk transaksi finansial, dan Keyset Pagination.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-07-03",
+      "reason": "HTTP Semantics, Headers, dan Status Codes"
+    },
+    {
+      "lessonId": "lesson-11-01",
+      "reason": "ASP.NET Core Middleware Pipeline"
+    }
+  ],
+  "introduces": [
+    "RFC 7807 / RFC 9457 Problem Details for HTTP APIs",
+    "API Versioning (URL segment, Header, Query string)",
+    "Idempotency Keys \u0026 Distributed Lock pattern",
+    "Offset vs Cursor/Keyset Pagination at scale",
+    "Enterprise API Contract Design"
+  ],
+  "learningObjectives": [
+    "Mengonfigurasi ProblemDetails standar RFC 7807 untuk seluruh error HTTP tanpa membocorkan internal exception",
+    "Menerapkan strategi API Versioning yang tepat untuk backward compatibility",
+    "Mengimplementasikan middleware Idempotency Key untuk mencegah duplikasi transaksi finansial pada request POST",
+    "Membandingkan kelemahan Offset Pagination pada jutaan baris data dan menggantinya dengan Keyset (Cursor) Pagination"
+  ],
+  "markdownContent": "# Standar REST Enterprise: ProblemDetails, Versioning, Idempotency, dan Pagination\n\nMembangun endpoint yang sekadar mengembalikan data JSON sangatlah mudah. Namun, membangun API berstandar enterprise yang tangguh, aman, dan dapat diandalkan oleh ribuan client eksternal membutuhkan disiplin rekayasa yang jauh lebih tinggi.\n\nEmpat pilar utama yang membedakan REST API amatir dengan API enterprise adalah:\n1. **Standarisasi Error (RFC 7807 / RFC 9457 ProblemDetails)**\n2. **Backward-Compatible API Versioning**\n3. **Idempotent State-Changing Operations**\n4. **Scalable Pagination (Offset vs Keyset/Cursor)**\n\n---\n\n## 1. Standarisasi Error: RFC 7807 / RFC 9457 (\u0060ProblemDetails\u0060)\n\nDalam API amatir, format error seringkali tidak konsisten: kadang string mentah, kadang objek \u0060{ \u0022message\u0022: \u0022error\u0022 }\u0060, atau yang paling berbahaya: stack trace internal C# yang membocorkan detail server.\n\nStandar industri modern mewajibkan format **RFC 7807 (Problem Details for HTTP APIs)**:\n\u0060\u0060\u0060json\n{\n  \u0022type\u0022: \u0022https://api.enterprise.com/errors/insufficient-balance\u0022,\n  \u0022title\u0022: \u0022Insufficient Balance\u0022,\n  \u0022status\u0022: 400,\n  \u0022detail\u0022: \u0022Saldo akun 9821 tidak mencukupi untuk transfer sebesar Rp 500.000.\u0022,\n  \u0022instance\u0022: \u0022/api/v1/transfers/tx_99812\u0022,\n  \u0022extensions\u0022: {\n    \u0022currentBalance\u0022: 120000,\n    \u0022requiredAmount\u0022: 500000,\n    \u0022traceId\u0022: \u002200-4bf92f3577b34da6a3ce929d0e0e4736-00\u0022\n  }\n}\n\u0060\u0060\u0060\n\nDi ASP.NET Core 8, kita dapat mengaktifkan ProblemDetails global dengan satu baris:\n\u0060\u0060\u0060csharp\nbuilder.Services.AddProblemDetails();\n// ...\napp.UseExceptionHandler(); // Mengonversi unhandled exception menjadi ProblemDetails otomatis!\n\u0060\u0060\u0060\n\n---\n\n## 2. Strategi API Versioning\n\nPerubahan skema (breaking changes) pada API enterprise tidak boleh merusak client yang sudah ada. ASP.NET Core mendukung tiga pola versioning utama:\n1. **URL Path Versioning** (Paling populer \u0026 transparan): \u0060/api/v1/orders\u0060 vs \u0060/api/v2/orders\u0060.\n2. **HTTP Header Versioning** (RESTful murni): \u0060X-API-Version: 2.0\u0060.\n3. **Query Parameter Versioning**: \u0060/api/orders?api-version=2.0\u0060.\n\nDi level arsitektur enterprise, gunakan pustaka resmi \u0060Asp.Versioning.Http\u0060 untuk mengatur versi secara deklaratif pada Minimal APIs atau Controllers.\n\n---\n\n## 3. Idempotency Key untuk Transaksi Finansial\n\nDalam transaksi pembayaran atau transfer uang, masalah jaringan (network timeout) sering membuat client tidak tahu apakah request \u0060POST /payments\u0060 berhasil diproses oleh server atau tidak. Jika client melakukan retry membabi buta, pengguna bisa terkena penarikan saldo ganda!\n\nSolusinya adalah **Idempotency Key**:\n1. Client mengirim header unik: \u0060Idempotency-Key: 7b2e3a1f-829d-4e12-b52b-23f46f89ef12\u0060.\n2. Server memeriksa distributed cache (misal Redis) menggunakan key tersebut.\n3. **Jika key sudah ada dan status \u0022Completed\u0022**: Server langsung mengembalikan response yang dicache sebelumnya tanpa mengeksekusi logika bisnis pembayaran ulang.\n4. **Jika key sedang diproses (\u0022In-Flight\u0022)**: Server mengembalikan \u0060409 Conflict\u0060 dengan pesan request sedang diproses.\n5. **Jika key belum ada**: Server menyimpan key dengan status \u0022In-Flight\u0022, mengeksekusi pembayaran, menyimpan hasil response ke cache, dan mengembalikan response ke client.\n\n---\n\n## 4. Scalable Pagination: Mengapa Offset Pagination Gagal di Skala Besar?\n\n### Offset Pagination (\u0060LIMIT 20 OFFSET 1000000\u0060)\n- **Masalah Database Engine**: Untuk mengambil data di halaman 50.000, database engine (PostgreSQL/SQL Server) harus membaca dan membuang 1.000.000 baris pertama sebelum mengambil 20 baris berikutnya! Ini memicu disk I/O luar biasa tinggi.\n- **Data Drifting**: Jika ada data baru disisipkan saat pengguna berpindah halaman, pengguna akan melihat data duplikat atau melewatkan data.\n\n### Keyset (Cursor) Pagination (\u0060WHERE Id \u003E @LastSeenId ORDER BY Id LIMIT 20\u0060)\n- Menggunakan B-Tree index secara langsung (seek time O(log N)).\n- Performa halaman ke-1 sama cepatnya dengan halaman ke-1.000.000!\n\n---\n\n## 5. Ringkasan \u0026 Standar Praktik\n\n1. **Gunakan ProblemDetails RFC 7807** untuk semua respon kegagalan (4xx dan 5xx). Jangan pernah membiarkan unhandled exception mentah keluar ke client.\n2. **Terapkan Idempotency Key** pada semua mutasi kritis (\u0060POST\u0060, payment creation, order placement).\n3. **Gunakan Keyset Pagination** untuk tabel-tabel transaksi berukuran jutaan baris.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Simulasi Idempotency Store\npublic record IdempotencyRecord(int StatusCode, string ResponseBody);\n\npublic class IdempotencyManager\n{\n    private readonly Dictionary\u003Cstring, IdempotencyRecord\u003E _cache = new();\n\n    public async Task\u003C(bool isCached, IdempotencyRecord? record)\u003E CheckOrExecuteAsync(\n        string idempotencyKey, \n        Func\u003CTask\u003CIdempotencyRecord\u003E\u003E operation)\n    {\n        // TODO:\n        // 1. Cek apakah idempotencyKey sudah ada di _cache.\n        //    Jika ADA: kembalikan (true, cachedRecord).\n        // 2. Jika BELUM ADA: jalankan operation(), simpan hasilnya ke _cache,\n        //    dan kembalikan (false, newRecord).\n        \n        return (false, null);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var manager = new IdempotencyManager();\n        var key = \u0022tx-order-payment-uuid-12345\u0022;\n\n        int executionCount = 0;\n        Func\u003CTask\u003CIdempotencyRecord\u003E\u003E processPayment = async () =\u003E\n        {\n            executionCount\u002B\u002B;\n            Console.WriteLine($\u0022[PAYMENT GATEWAY] Memproses transaksi debit rekening... (Eksekusi ke-{executionCount})\u0022);\n            await Task.Delay(10);\n            return new IdempotencyRecord(200, \u0022{\\\u0022status\\\u0022:\\\u0022SUCCESS\\\u0022, \\\u0022txId\\\u0022:\\\u0022TX-9982\\\u0022}\u0022);\n        };\n\n        // Panggilan 1: Request Pertama\n        Console.WriteLine(\u0022--- Request 1 Datang ---\u0022);\n        var res1 = await manager.CheckOrExecuteAsync(key, processPayment);\n        Console.WriteLine($\u0022Cached: {res1.isCached}, Status: {res1.record?.StatusCode}, Body: {res1.record?.ResponseBody}\u0022);\n\n        // Panggilan 2: Retry dari Client karena timeout jaringan\n        Console.WriteLine(\u0022\\n--- Request 2 Datang (Retry dengan Key Sama) ---\u0022);\n        var res2 = await manager.CheckOrExecuteAsync(key, processPayment);\n        Console.WriteLine($\u0022Cached: {res2.isCached}, Status: {res2.record?.StatusCode}, Body: {res2.record?.ResponseBody}\u0022);\n\n        Console.WriteLine($\u0022\\nTotal Eksekusi Nyata: {executionCount} (Harus tepat 1!)\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\npublic record IdempotencyRecord(int StatusCode, string ResponseBody);\n\npublic class IdempotencyManager\n{\n    private readonly Dictionary\u003Cstring, IdempotencyRecord\u003E _cache = new();\n\n    public async Task\u003C(bool isCached, IdempotencyRecord? record)\u003E CheckOrExecuteAsync(\n        string idempotencyKey, \n        Func\u003CTask\u003CIdempotencyRecord\u003E\u003E operation)\n    {\n        if (_cache.TryGetValue(idempotencyKey, out var existing))\n        {\n            return (true, existing);\n        }\n\n        var newRecord = await operation();\n        _cache[idempotencyKey] = newRecord;\n        return (false, newRecord);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var manager = new IdempotencyManager();\n        var key = \u0022tx-order-payment-uuid-12345\u0022;\n\n        int executionCount = 0;\n        Func\u003CTask\u003CIdempotencyRecord\u003E\u003E processPayment = async () =\u003E\n        {\n            executionCount\u002B\u002B;\n            Console.WriteLine($\u0022[PAYMENT GATEWAY] Memproses transaksi debit rekening... (Eksekusi ke-{executionCount})\u0022);\n            await Task.Delay(10);\n            return new IdempotencyRecord(200, \u0022{\\\u0022status\\\u0022:\\\u0022SUCCESS\\\u0022, \\\u0022txId\\\u0022:\\\u0022TX-9982\\\u0022}\u0022);\n        };\n\n        Console.WriteLine(\u0022--- Request 1 Datang ---\u0022);\n        var res1 = await manager.CheckOrExecuteAsync(key, processPayment);\n        Console.WriteLine($\u0022Cached: {res1.isCached}, Status: {res1.record?.StatusCode}, Body: {res1.record?.ResponseBody}\u0022);\n\n        Console.WriteLine(\u0022\\n--- Request 2 Datang (Retry dengan Key Sama) ---\u0022);\n        var res2 = await manager.CheckOrExecuteAsync(key, processPayment);\n        Console.WriteLine($\u0022Cached: {res2.isCached}, Status: {res2.record?.StatusCode}, Body: {res2.record?.ResponseBody}\u0022);\n\n        Console.WriteLine($\u0022\\nTotal Eksekusi Nyata: {executionCount} (Harus tepat 1!)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-11-04-1",
+      "type": "single_choice",
+      "question": "Apa fungsi utama dari standar RFC 7807 / RFC 9457 (Problem Details) dalam desain Web API enterprise?",
+      "options": [
+        "Mengompres ukuran payload JSON menjadi format biner gzip.",
+        "Menyediakan format respon error standar yang konsisten (type, title, status, detail, instance) sehingga mudah diproses mesin client tanpa membocorkan stack trace internal server.",
+        "Menggantikan protokol HTTP dengan protokol WebSocket untuk seluruh komunikasi API.",
+        "Mengharuskan client untuk membayar lisensi setiap kali server mengembalikan error 500."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "RFC 7807 (Problem Details for HTTP APIs) menetapkan format error machine-readable yang standar di industri. Format ini memberikan konteks kesalahan yang jelas kepada client tanpa membocorkan rincian implementasi sensitif (seperti baris kode C# atau koneksi string database).",
+      "optionExplanations": [
+        "Salah. RFC 7807 tidak mengatur kompresi transport biner.",
+        "Benar! ProblemDetails menstandarisasi error response secara semantik dan aman.",
+        "Salah. ProblemDetails adalah representasi payload dokumen HTTP biasa.",
+        "Salah. RFC 7807 adalah standar terbuka IETF."
+      ],
+      "sectionRef": "1. Standarisasi Error: RFC 7807 / RFC 9457 (ProblemDetails)",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-11-04-2",
+      "type": "single_choice",
+      "question": "Mengapa Keyset (Cursor) Pagination jauh lebih unggul dibandingkan Offset Pagination saat menavigasi tabel database berukuran jutaan baris?",
+      "options": [
+        "Karena Keyset Pagination menghapus seluruh index database sehingga operasi baca lebih ringan.",
+        "Karena Offset Pagination memaksa database engine membaca dan membuang ratusan ribu baris sebelum mencapai baris target, sedangkan Keyset menggunakan B-Tree seek langsung berdasarkan kolom terurut.",
+        "Karena Keyset Pagination hanya bisa diterapkan pada database NoSQL MongoDB.",
+        "Karena Offset Pagination dibatasi oleh Microsoft hanya maksimal 100 baris per query."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Pada query OFFSET 1000000 LIMIT 20, database engine harus melakukan scan dan membuang 1.000.000 baris pertama dari disk. Sebaliknya, Keyset pagination (WHERE Id \u003E @lastId ORDER BY Id LIMIT 20) melakukan index seek instan melalui struktur B-Tree dengan kompleksitas O(log N).",
+      "optionExplanations": [
+        "Salah. Keyset pagination sangat bergantung pada B-Tree index.",
+        "Benar! Keyset pagination mengeliminasi pembacaan dan pembuangan baris yang tidak perlu pada disk engine database.",
+        "Salah. Keyset pagination adalah konsep fundamental relational database (SQL Server, PostgreSQL, MySQL).",
+        "Salah. Batasan limit offset adalah keterbatasan performa I/O hardware, bukan aturan Microsoft."
+      ],
+      "sectionRef": "4. Scalable Pagination: Mengapa Offset Pagination Gagal di Skala Besar?",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-11-04",
+    "Title": "Implementasi Penyimpanan Idempotency-Key pada REST API",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Untuk mencegah transaksi duplikat akibat network retry, REST API enterprise menggunakan header \u0060Idempotency-Key\u0060.\nBaca daftar request dari stdin: masing-masing berformat \u0027\u003CKEY\u003E:\u003CPAYLOAD\u003E\u0027.\nJika Idempotency-Key baru pertama kali diterima: simpan payload dan cetak \u0027PROCESSED: \u003CPayload\u003E\u0027\nJika Idempotency-Key sudah pernah diproses sebelumnya: kembalikan payload lama dengan prefix \u0027CACHED: \u003CPayload\u003E\u0027.",
+    "InputFormat": "Daftar request dipisahkan titik koma (\u0027;\u0027).",
+    "OutputFormat": "Baris status proses atau cached per request.",
+    "Constraints": "Key berupa UUID/string unik.",
+    "Examples": [
+      {
+        "Input": "key-1:Order#100; key-1:Order#100",
+        "Output": "PROCESSED: Order#100\nCACHED: Order#100",
+        "Explanation": "Request kedua dengan key yang sama mengembalikan cache."
+      },
+      {
+        "Input": "k-1:PayA; k-2:PayB",
+        "Output": "PROCESSED: PayA\nPROCESSED: PayB",
+        "Explanation": "Dua idempotency key berbeda diproses sebagai dua transaksi baru."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Simpan request dalam Dictionary\u003Cstring, string\u003E untuk verifikasi idempotency.\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n\n        var requests = line.Split(\u0027;\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var store = new Dictionary\u003Cstring, string\u003E(StringComparer.Ordinal);\n\n        foreach (var req in requests)\n        {\n            var parts = req.Trim().Split(new[] { \u0027:\u0027 }, 2);\n            if (parts.Length == 2)\n            {\n                string key = parts[0].Trim();\n                string payload = parts[1].Trim();\n\n                if (store.TryGetValue(key, out var cachedPayload))\n                {\n                    Console.WriteLine($\u0022CACHED: {cachedPayload}\u0022);\n                }\n                else\n                {\n                    store[key] = payload;\n                    Console.WriteLine($\u0022PROCESSED: {payload}\u0022);\n                }\n            }\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Duplikat Idempotent)",
+        "Description": "Contoh 1 (Duplikat Idempotent): input \u0027key-1:Order#100; key-1:Order#100\u0027 -\u003E expected \u0027PROCESSED: Order#100\nCACHED: Order#100\u0027",
+        "Input": "key-1:Order#100; key-1:Order#100",
+        "ExpectedOutput": "PROCESSED: Order#100\nCACHED: Order#100",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Dua Key Berbeda",
+        "Description": "Dua Key Berbeda: input \u0027k1:Bayar 50rb; k2:Bayar 100rb\u0027 -\u003E expected \u0027PROCESSED: Bayar 50rb\nPROCESSED: Bayar 100rb\u0027",
+        "Input": "k1:Bayar 50rb; k2:Bayar 100rb",
+        "ExpectedOutput": "PROCESSED: Bayar 50rb\nPROCESSED: Bayar 100rb",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Retry Berulang",
+        "Description": "Retry Berulang: input \u0027x:A; x:B; x:C\u0027 -\u003E expected \u0027PROCESSED: A\nCACHED: A\nCACHED: A\u0027",
+        "Input": "x:A; x:B; x:C",
+        "ExpectedOutput": "PROCESSED: A\nCACHED: A\nCACHED: A",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Payload Identik Beda Key",
+        "Description": "Payload Identik Beda Key: input \u0027k1:Data; k2:Data\u0027 -\u003E expected \u0027PROCESSED: Data\nPROCESSED: Data\u0027",
+        "Input": "k1:Data; k2:Data",
+        "ExpectedOutput": "PROCESSED: Data\nPROCESSED: Data",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan Dictionary\u003Cstring, string\u003E untuk menyimpan payload pertama berdasarkan key.",
+      "Gunakan TryGetValue(key, out var cached) untuk memeriksa keberadaan key."
+    ],
+    "Explanation": "Header Idempotency-Key adalah standar industri pembayaran (seperti Stripe atau Payment Gateway perbankan) untuk menjamin pemrosesan mutasi dana tepat satu kali (exactly-once semantics)."
+  },
+  "relatedLessons": [
+    "lesson-07-03",
+    "lesson-11-01",
+    "lesson-18-01"
+  ],
+  "references": [
+    {
+      "title": "RFC 7807: Problem Details for HTTP APIs",
+      "url": "https://datatracker.ietf.org/doc/html/rfc7807",
+      "type": "documentation"
+    },
+    {
+      "title": "Stripe Engineering: Designing Robust and Idempotent APIs",
+      "url": "https://stripe.com/blog/idempotency",
+      "type": "article"
+    }
+  ]
+}

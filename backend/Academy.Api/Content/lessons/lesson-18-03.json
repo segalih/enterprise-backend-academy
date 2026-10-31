@@ -1,0 +1,164 @@
+{
+  "id": "lesson-18-03",
+  "levelId": "level-18",
+  "moduleId": "mod-18-02",
+  "order": 3,
+  "title": "Modernisasi Sistem Warisan (Legacy): Strangler Fig Pattern, CDC, dan Zero-Downtime Data Migration",
+  "slug": "legacy-modernization-strangler-cdc",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 65,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Memigrasikan sistem legacy monolitik raksasa ke .NET 8 modern tanpa risiko \u0027Big Bang\u0027: The Strangler Fig Pattern, Reverse Proxy Routing, Change Data Capture (CDC), dan migrasi data Zero-Downtime.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-14-03",
+      "reason": "Transactional Outbox \u0026 CDC Debezium"
+    },
+    {
+      "lessonId": "lesson-07-05",
+      "reason": "Reverse Proxy \u0026 API Gateways"
+    }
+  ],
+  "introduces": [
+    "The \u0027Big Bang\u0027 rewrite fallacy \u0026 why full rewrites fail",
+    "Strangler Fig Application Pattern (Martin Fowler)",
+    "API Gateway / Reverse Proxy routing facade (YARP)",
+    "Dual-Writing \u0026 Dual-Reading verification phase",
+    "Zero-Downtime Database Migration via CDC (Debezium / Kafka)"
+  ],
+  "learningObjectives": [
+    "Menganalisis mengapa proyek \u0027Big Bang Rewrite\u0027 (menulis ulang aplikasi dari nol sekaligus) memiliki tingkat kegagalan di atas 80% di industri",
+    "Menerapkan pola Strangler Fig untuk mencekik dan menggantikan modul monolitik warisan secara bertahap menggunakan API Gateway Facade (YARP)",
+    "Merancang alur migrasi database zero-downtime 4 fase: Expand, Replicate, Dual-Read Verify, Contract",
+    "Menggunakan Change Data Capture (CDC) untuk mereplikasi data dari database lama ke database baru secara real-time tanpa membebani performa OLTP"
+  ],
+  "markdownContent": "# Modernisasi Sistem Warisan (Legacy): Strangler Fig Pattern, CDC, dan Zero-Downtime Data Migration\n\nSetiap backend engineer senior cepat atau lambat akan menghadapi skenario ini: perusahaan Anda memiliki sistem monolitik warisan berusia 15 tahun (mungkin ditulis di .NET Framework 4.5 atau monolitik COBOL/Java) yang menangani transaksi inti bernilai triliunan rupiah. Kodenya sulit dipelihara, tidak ada unit test, dan deploy memakan waktu berjam-jam.\n\nReaksi pertama para insinyur muda biasanya adalah: *\u0022Mari kita buang sistem ini dan tulis ulang semuanya dari nol menggunakan arsitektur microservices baru!\u0022* (**The Big Bang Rewrite**).\n\nData industri software menunjukkan bahwa **lebih dari 80% proyek Big Bang Rewrite berakhir gagal total, melebihi batas waktu bertahun-tahun, atau bangkrut**. Mengapa? Karena sistem baru mencoba mengejar sistem lama yang terus bergerak, sementara logika bisnis terselubung selama 15 tahun mustahil diingat seluruhnya dalam satu waktu.\n\nSolusi enterprise yang terbukti sukses di industri adalah **The Strangler Fig Pattern**.\n\n---\n\n## 1. The Strangler Fig Pattern (Martin Fowler)\n\nNama pola ini diambil dari pohon ara pencekik (*Strangler Fig*) di hutan hujan tropis: bijinya berkecambah di cabang atas pohon inang, perlahan-lahan menjulurkan akarnya ke tanah mengelilingi pohon inang, tumbuh semakin besar, hingga akhirnya pohon inang mati dan digantikan sepenuhnya oleh pohon ara baru.\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    subgraph Fase1[\u0022Fase 1: Penempatan Facade\u0022]\n        C1[\u0022Client\u0022] --\u003E GW1[\u0022API Gateway (YARP / Nginx)\u0022]\n        GW1 --\u003E|100% Trafik| LM1[\u0022Legacy Monolith\u0022]\n    end\n    subgraph Fase2[\u0022Fase 2: Strangling Fitur Baru\u0022]\n        C2[\u0022Client\u0022] --\u003E GW2[\u0022API Gateway\u0022]\n        GW2 --\u003E|/api/v1/orders| MS2[\u0022.NET 8 Microservice\u0022]\n        GW2 --\u003E|Lainnya| LM2[\u0022Legacy Monolith\u0022]\n    end\n    subgraph Fase3[\u0022Fase 3: Dekomposisi Tuntas\u0022]\n        C3[\u0022Client\u0022] --\u003E GW3[\u0022API Gateway\u0022]\n        GW3 --\u003E Modern[\u0022.NET 8 Ecosystem Modern\u0022]\n    end\n\u0060\u0060\u0060\n\nDengan pola ini:\n- Nilai bisnis baru langsung dirilis ke produksi dalam hitungan minggu (bukan menunggu bertahun-tahun).\n- Jika ada modul baru yang bermasalah, API Gateway dapat membalikkan rute kembali ke monolit lama dalam **1 detik** (*instant rollback*).\n\n---\n\n## 2. Strategi Migrasi Data Zero-Downtime: Expand \u0026 Contract\n\nMemigrasikan kode sangat mudah, tetapi **memigrasikan database produksi yang aktif tanpa downtime** adalah tantangan rekayasa tingkat tinggi.\n\nPendekatan standar industri menggunakan **Pola Expand \u0026 Contract (4 Fase)**:\n\n\u0060\u0060\u0060text\nFase 1: Expand (Perluas)\n        Buat tabel skema baru di database modern.\n\nFase 2: Replicate (Sinkronisasi Real-Time CDC)\n        Gunakan Change Data Capture (Debezium / Kafka Connect) untuk membaca\n        transaction log database lama dan mereplikasi setiap INSERT/UPDATE ke database baru.\n\nFase 3: Dual-Write \u0026 Shadow Reading\n        Aplikasi baru mulai membaca data dari database baru, namun melakukan\n        verifikasi bayangan (Shadow Comparison) dengan database lama di background.\n\nFase 4: Contract (Pangkas)\n        Arahkan 100% traffic baca dan tulis ke database baru.\n        Putus koneksi ke database lama dan arsipkan!\n\u0060\u0060\u0060\n\n---\n\n## 3. Verifikasi Data Bayangan (Shadow Testing)\n\nSebelum Anda berani mematikan modul monolitik lama, bagaimana Anda bisa yakin bahwa perhitungan pajak atau diskon pada modul .NET 8 baru menghasilkan nilai yang 100% identik dengan algoritma monolitik lama?\n\nGunakan teknik **Shadow Reading**:\n\u0060\u0060\u0060csharp\npublic async Task\u003CPricingResult\u003E CalculatePriceAsync(Order order)\n{\n    // 1. Eksekusi kode modern baru\n    var newResult = _newEngine.Calculate(order);\n\n    // 2. Eksekusi kode legacy di background secara asinkronus (Fire-and-forget)\n    _ = Task.Run(async () =\u003E\n    {\n        try\n        {\n            var oldResult = await _legacyClient.CalculateAsync(order);\n            if (newResult.FinalPrice != oldResult.FinalPrice)\n            {\n                _logger.LogError(\u0022DISPARITAS SHADOW: Order {Id}. New: {New}, Old: {Old}\u0022,\n                    order.Id, newResult.FinalPrice, oldResult.FinalPrice);\n            }\n        }\n        catch { /* Jangan ganggu request user utama */ }\n    });\n\n    // Kembalikan hasil baru ke client\n    return newResult;\n}\n\u0060\u0060\u0060\n\nJika dalam 30 hari pengujian Shadow Testing pada jutaan transaksi nyata tingkat disparitas mencapai **0%**, barulah monolit lama aman untuk dicabut!\n\n---\n\n## 4. Ringkasan \u0026 Aturan Modernisasi Sistem\n\n1. **Tolak Big Bang Rewrite**: Migrasikan modul per-modul menggunakan Strangler Fig.\n2. **Pisahkan Facade Routing di Depan**: Gunakan YARP (Yet Another Reverse Proxy) di ASP.NET Core untuk memindahkan rute URL tanpa mengubah client mobile/web.\n3. **Gunakan Shadow Testing**: Biarkan data transaksi riil membuktikan kesetaraan fungsional antara sistem baru dan sistem lama sebelum tombol saklar dimatikan.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\n\n// Simulasi Mini Strangler Fig Reverse Proxy Router\npublic class StranglerRouter\n{\n    private readonly HashSet\u003Cstring\u003E _migratedRoutes = new();\n\n    public void RegisterMigratedRoute(string pathPrefix)\n    {\n        _migratedRoutes.Add(pathPrefix);\n    }\n\n    public string RouteRequest(string path)\n    {\n        // TODO:\n        // 1. Periksa apakah \u0027path\u0027 dimulai dengan salah satu prefix di _migratedRoutes.\n        //    Jika YA: kembalikan \u0022TARGET: Modern .NET 8 Microservice\u0022.\n        // 2. Jika TIDAK: kembalikan \u0022TARGET: Legacy Monolith (Old Server)\u0022.\n        \n        return \u0022TARGET: Legacy Monolith (Old Server)\u0022;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var router = new StranglerRouter();\n\n        // Rute awal sebelum migrasi\n        Console.WriteLine(\u0022--- Sebelum Migrasi Modul Order ---\u0022);\n        Console.WriteLine($\u0022/api/users   -\u003E {router.RouteRequest(\u0022/api/users\u0022)}\u0022);\n        Console.WriteLine($\u0022/api/orders  -\u003E {router.RouteRequest(\u0022/api/orders\u0022)}\u0022);\n\n        // Migrasikan modul orders ke .NET 8\n        Console.WriteLine(\u0022\\n--- Mendaftarkan Modul /api/orders ke Sistem Baru ---\u0022);\n        router.RegisterMigratedRoute(\u0022/api/orders\u0022);\n\n        Console.WriteLine($\u0022/api/users   -\u003E {router.RouteRequest(\u0022/api/users\u0022)} (Tetap di Legacy)\u0022);\n        Console.WriteLine($\u0022/api/orders  -\u003E {router.RouteRequest(\u0022/api/orders\u0022)} (Terkikis ke .NET 8!)\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class StranglerRouter\n{\n    private readonly HashSet\u003Cstring\u003E _migratedRoutes = new();\n\n    public void RegisterMigratedRoute(string pathPrefix)\n    {\n        _migratedRoutes.Add(pathPrefix);\n    }\n\n    public string RouteRequest(string path)\n    {\n        if (_migratedRoutes.Any(r =\u003E path.StartsWith(r, StringComparison.OrdinalIgnoreCase)))\n        {\n            return \u0022TARGET: Modern .NET 8 Microservice\u0022;\n        }\n\n        return \u0022TARGET: Legacy Monolith (Old Server)\u0022;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var router = new StranglerRouter();\n\n        Console.WriteLine(\u0022--- Sebelum Migrasi Modul Order ---\u0022);\n        Console.WriteLine($\u0022/api/users   -\u003E {router.RouteRequest(\u0022/api/users\u0022)}\u0022);\n        Console.WriteLine($\u0022/api/orders  -\u003E {router.RouteRequest(\u0022/api/orders\u0022)}\u0022);\n\n        Console.WriteLine(\u0022\\n--- Mendaftarkan Modul /api/orders ke Sistem Baru ---\u0022);\n        router.RegisterMigratedRoute(\u0022/api/orders\u0022);\n\n        Console.WriteLine($\u0022/api/users   -\u003E {router.RouteRequest(\u0022/api/users\u0022)} (Tetap di Legacy)\u0022);\n        Console.WriteLine($\u0022/api/orders  -\u003E {router.RouteRequest(\u0022/api/orders\u0022)} (Terkikis ke .NET 8!)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-17-04-5",
+      "type": "single_choice",
+      "question": "Mengapa pendekatan \u0027Big Bang Rewrite\u0027 (menulis ulang seluruh sistem monolitik dari nol sekaligus) memiliki tingkat kegagalan yang sangat tinggi di industri enterprise?",
+      "options": [
+        "Karena komputer baru tidak kompatibel dengan keyboard USB.",
+        "Karena sistem warisan menyimpan akumulasi aturan bisnis tak terdokumentasi selama belasan tahun, dan sistem lama terus berkembang sementara sistem baru mengejar target yang terus bergerak tanpa menghasilkan nilai bisnis riil selama proses pembangunan.",
+        "Karena bahasa pemrograman C# dilarang digunakan untuk sistem baru.",
+        "Karena harga lisensi software open-source terlalu mahal."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Big Bang Rewrite adalah jebakan klasik rekayasa: mencoba meniru sistem 15 tahun sekaligus membutuhkan waktu bertahun-tahun tanpa ada nilai bisnis yang bisa diuji di produksi, sementara sistem lama terus berubah memenuhi kebutuhan pasar.",
+      "optionExplanations": [
+        "Salah. Perangkat keras USB tidak berkaitan dengan arsitektur modernisasi.",
+        "Benar! Menulis ulang dari nol mengabaikan kompleksitas logika bisnis tersembunyi dan memperbesar risiko kegagalan rilis.",
+        "Salah. .NET 8 adalah pilihan utama modernisasi sistem enterprise global.",
+        "Salah. Sebagian besar komponen modern bersifat open-source gratis."
+      ],
+      "sectionRef": "The Big Bang Rewrite Fallacy",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-17-04-6",
+      "type": "single_choice",
+      "question": "Bagaimana cara kerja Strangler Fig Pattern dalam memodernisasi sistem monolitik?",
+      "options": [
+        "Mematikan server lama secara mendadak pada hari Jumat malam.",
+        "Menempatkan API Gateway / Facade di depan sistem lama, lalu memindahkan rute endpoint modul bisnis satu per satu ke service baru secara bertahap hingga seluruh monolit lama tergantikan.",
+        "Mengubah semua database relasional menjadi file CSV.",
+        "Mengharuskan pengguna menginstal ulang sistem operasi laptop mereka."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Strangler Fig menempatkan routing facade di depan sistem lama. Fitur dimigrasikan per modul; trafik dialihkan secara bertahap sehingga risiko kegagalan terlokalisir dan sistem lama dapat dimatikan dengan aman saat seluruh modul selesai dipindahkan.",
+      "optionExplanations": [
+        "Salah. Mematikan server secara mendadak adalah pola Big Bang yang berisiko tinggi.",
+        "Benar! Facade routing memungkinkan dekomposisi monolitik secara inkremental tanpa gangguan pada client.",
+        "Salah. Mengubah database ke CSV merusak performa dan ACID.",
+        "Salah. Client tidak perlu mengubah sistem operasinya."
+      ],
+      "sectionRef": "1. The Strangler Fig Pattern (Martin Fowler)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-17-06",
+    "Title": "Implementasi Router Strangler Fig Pattern",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Pada migrasi sistem monolitik ke microservice, Strangler Fig router mengarahkan endpoint yang sudah dimigrasikan ke microservice baru dan sisanya ke legacy monolit.\nBaca daftar rute microservice dari baris 1 (dipisahkan koma, misal \u0027/api/orders, /api/payments\u0027).\nBaca path request yang masuk di baris 2.\n- Jika path request diawali salah satu rute microservice yang telah dimigrasi, cetak \u0027ROUTE: MICROSERVICE\u0027\n- Jika tidak cocok, cetak \u0027ROUTE: LEGACY_MONOLITH\u0027.",
+    "InputFormat": "Dua baris stdin: baris 1 rute microservice, baris 2 request path.",
+    "OutputFormat": "Satu baris: \u0027ROUTE: MICROSERVICE\u0027 atau \u0027ROUTE: LEGACY_MONOLITH\u0027.",
+    "Constraints": "Path diawali \u0027/\u0027.",
+    "Examples": [
+      {
+        "Input": "/api/orders, /api/payments\n/api/orders/123",
+        "Output": "ROUTE: MICROSERVICE",
+        "Explanation": "Path /api/orders telah dimigrasi ke microservice baru."
+      },
+      {
+        "Input": "/api/orders, /api/payments\n/api/users/profile",
+        "Output": "ROUTE: LEGACY_MONOLITH",
+        "Explanation": "Path /api/users masih dilayani monolit."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Evaluasi rute Strangler Fig pattern.\n        Console.WriteLine(\u0022ROUTE: LEGACY_MONOLITH\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || string.IsNullOrWhiteSpace(l2)) return;\n\n        var routes = l1.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries)\n            .Select(r =\u003E r.Trim())\n            .ToList();\n\n        string path = l2.Trim();\n        bool isMigrated = routes.Any(r =\u003E path.StartsWith(r, StringComparison.OrdinalIgnoreCase));\n\n        Console.WriteLine(isMigrated ? \u0022ROUTE: MICROSERVICE\u0022 : \u0022ROUTE: LEGACY_MONOLITH\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Microservice)",
+        "Description": "Contoh 1 (Microservice): input \u0027/api/orders, /api/payments\n/api/orders/123\u0027 -\u003E expected \u0027ROUTE: MICROSERVICE\u0027",
+        "Input": "/api/orders, /api/payments\n/api/orders/123",
+        "ExpectedOutput": "ROUTE: MICROSERVICE",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Monolith)",
+        "Description": "Contoh 2 (Monolith): input \u0027/api/orders, /api/payments\n/api/users/profile\u0027 -\u003E expected \u0027ROUTE: LEGACY_MONOLITH\u0027",
+        "Input": "/api/orders, /api/payments\n/api/users/profile",
+        "ExpectedOutput": "ROUTE: LEGACY_MONOLITH",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Cocok Tepat Rute",
+        "Description": "Cocok Tepat Rute: input \u0027/api/v2/catalog\n/api/v2/catalog\u0027 -\u003E expected \u0027ROUTE: MICROSERVICE\u0027",
+        "Input": "/api/v2/catalog\n/api/v2/catalog",
+        "ExpectedOutput": "ROUTE: MICROSERVICE",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Rute Root",
+        "Description": "Rute Root: input \u0027/api/v2\n/api/v1/legacy\u0027 -\u003E expected \u0027ROUTE: LEGACY_MONOLITH\u0027",
+        "Input": "/api/v2\n/api/v1/legacy",
+        "ExpectedOutput": "ROUTE: LEGACY_MONOLITH",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola Strangler Fig secara bertahap mencekik monolit lama dengan memindahkan fitur per rute ke layanan baru.",
+      "Gunakan path.StartsWith(route, StringComparison.OrdinalIgnoreCase)."
+    ],
+    "Explanation": "Strangler Fig Pattern adalah pola arsitektur utama untuk modernisasi sistem legacy tanpa downtime berisiko tinggi (big bang release)."
+  },
+  "relatedLessons": [
+    "lesson-14-03",
+    "lesson-07-05",
+    "lesson-18-04"
+  ],
+  "references": [
+    {
+      "title": "Strangler Fig Application - Martin Fowler",
+      "url": "https://martinfowler.com/bliki/StranglerFigApplication.html",
+      "type": "article"
+    },
+    {
+      "title": "YARP: Yet Another Reverse Proxy - Microsoft Learn",
+      "url": "https://microsoft.github.io/reverse-proxy/",
+      "type": "documentation"
+    }
+  ]
+}

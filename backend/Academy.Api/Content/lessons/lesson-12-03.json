@@ -1,0 +1,168 @@
+{
+  "id": "lesson-12-03",
+  "levelId": "level-12",
+  "moduleId": "mod-12-02",
+  "order": 3,
+  "title": "Mekanisme Sinkronisasi: Lock, SemaphoreSlim, ReaderWriterLockSlim, dan Interlocked",
+  "slug": "thread-synchronization-locks-interlocked",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 60,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "deadlock",
+  "simulatorContext": {
+    "resourceA": "Account A Lock",
+    "resourceB": "Account B Lock",
+    "scenario": "Transfer A -\u003E B vs Transfer B -\u003E A reverse lock acquisition order"
+  },
+  "description": "Memilih primitive sinkronisasi yang tepat di C#: batas lock statement vs SemaphoreSlim pada kode async, atomisitas hardware dengan Interlocked, ReaderWriterLockSlim, dan pencegahan Deadlock.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-06-03",
+      "reason": "OS Concurrency Primitives, Mutex, dan Dining Philosophers"
+    },
+    {
+      "lessonId": "lesson-12-01",
+      "reason": "Async/Await Execution Flow"
+    }
+  ],
+  "introduces": [
+    "lock (Monitor) statement limitation with async/await",
+    "SemaphoreSlim for asynchronous locking \u0026 throttling",
+    "Hardware-level atomic operations with Interlocked",
+    "ReaderWriterLockSlim for high-read low-write caches",
+    "Deadlock prevention via lock ordering \u0026 timeouts"
+  ],
+  "learningObjectives": [
+    "Menjelaskan mengapa compiler C# melarang penggunaan kata kunci \u0027await\u0027 di dalam blok \u0027lock\u0027",
+    "Menerapkan \u0060SemaphoreSlim(1, 1)\u0060 untuk melindungi critical section yang mengeksekusi operasi asinkronus",
+    "Menggunakan operasi CPU atomik \u0060Interlocked.Increment\u0060 dan \u0060Interlocked.CompareExchange\u0060 untuk kinerja multi-thread bebas lock",
+    "Menganalisis kondisi pembentukan Deadlock (Coffman conditions) dan menerapkan pola Lock Ordering untuk mencegahnya"
+  ],
+  "markdownContent": "# Mekanisme Sinkronisasi: Lock, SemaphoreSlim, ReaderWriterLockSlim, dan Interlocked\n\nKetika beberapa thread mengeksekusi kode secara bersamaan dan mengakses state bersama yang dapat berubah (*shared mutable state*), bencana race condition tidak dapat dihindari tanpa sinkronisasi yang tepat.\n\nDi ekosistem .NET, terdapat berbagai alat sinkronisasi. Memilih alat yang salah dapat merusak performa (misalnya menggunakan lock berat untuk operasi increment sederhana) atau menyebabkan bug fatal (misalnya mencoba menggunakan \u0060lock\u0060 klasik pada kode asinkronus).\n\n---\n\n## 1. Mengapa C# Melarang \u0060await\u0060 di dalam Blok \u0060lock\u0060?\n\nJika Anda mencoba menulis kode ini di Visual Studio:\n\u0060\u0060\u0060csharp\nlock (_syncRoot)\n{\n    await Task.Delay(100); // CS1996: Cannot await in the body of a lock statement!\n}\n\u0060\u0060\u0060\nCompiler akan melempar error **CS1996**. Mengapa?\n\nPernyataan \u0060lock (obj)\u0060 di C# diterjemahkan menjadi \u0060Monitor.Enter(obj)\u0060 dan \u0060Monitor.Exit(obj)\u0060. \u0060Monitor\u0060 memiliki aturan ketat: **Thread yang melepaskan lock (\u0060Monitor.Exit\u0060) HARUS merupakan thread yang sama persis dengan yang mengambil lock (\u0060Monitor.Enter\u0060)**.\n\nSeperti yang kita pelajari di materi sebelumnya, operasi \u0060await\u0060 dapat memulai eksekusi di Thread 1, tetapi melanjutkannya di Thread 2! Jika Thread 2 mencoba memanggil \u0060Monitor.Exit\u0060, runtime akan melempar \u0060SynchronizationLockException\u0060.\n\n---\n\n## 2. Solusi untuk Kode Asinkronus: \u0060SemaphoreSlim\u0060\n\nUntuk melindungi *critical section* yang melibatkan pemanggilan asinkronus, gunakan **\u0060SemaphoreSlim\u0060**:\n\n\u0060\u0060\u0060csharp\npublic class SafeAsyncCache\n{\n    private readonly SemaphoreSlim _mutex = new SemaphoreSlim(1, 1);\n    private readonly Dictionary\u003Cstring, string\u003E _cache = new();\n\n    public async Task\u003Cstring\u003E GetOrAddAsync(string key, Func\u003CTask\u003Cstring\u003E\u003E factory)\n    {\n        // Tunggu giliran secara asinkronus tanpa memblokir thread OS!\n        await _mutex.WaitAsync();\n        try\n        {\n            if (_cache.TryGetValue(key, out var val)) return val;\n\n            val = await factory();\n            _cache[key] = val;\n            return val;\n        }\n        finally\n        {\n            // Selalu lepaskan semaphore di blok finally!\n            _mutex.Release();\n        }\n    }\n}\n\u0060\u0060\u0060\n\n\u0060SemaphoreSlim\u0060 juga sangat berguna untuk **Rate Limiting / Throttling** (misalnya membatasi maksimal 10 panggilan database bersamaan dengan \u0060new SemaphoreSlim(10, 10)\u0060).\n\n---\n\n## 3. Performa Ekstrem: Operasi Atomik Hardware dengan \u0060Interlocked\u0060\n\nMengambil lock memiliki overhead: context switch OS, alokasi sinkronisasi, dan penjadwalan kernel.\nJika Anda hanya perlu memperbarui nilai angka sederhana (seperti counter transaksi atau request tracker), gunakan class **\u0060Interlocked\u0060**.\n\n\u0060Interlocked\u0060 memanfaatkan instruksi atomik CPU (seperti \u0060LOCK XADD\u0060 atau \u0060CMPXCHG\u0060 pada arsitektur x86/x64):\n\u0060\u0060\u0060csharp\nprivate long _totalRequests = 0;\n\npublic void RecordRequest()\n{\n    // BUKAN _totalRequests\u002B\u002B (karena \u002B\u002B adalah 3 instruksi CPU: Read, Modify, Write)\n    // Interlocked.Increment dijamin atomik di level sirkuit CPU!\n    Interlocked.Increment(ref _totalRequests);\n}\n\u0060\u0060\u0060\n\n### Compare-And-Swap (CAS) dengan \u0060CompareExchange\u0060:\nPola CAS memungkinkan update optimis tanpa lock:\n\u0060\u0060\u0060csharp\npublic void UpdateMax(ref int location, int value)\n{\n    int current = location;\n    while (value \u003E current)\n    {\n        // Hanya ganti nilai jika location masih sama dengan current\n        int original = Interlocked.CompareExchange(ref location, value, current);\n        if (original == current) break; // Berhasil!\n        current = location; // Coba lagi jika didahului thread lain\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 4. Anatomi Deadlock dan Pencegahannya\n\nDeadlock terjadi ketika Thread 1 menahan Sumber Daya A dan menunggu Sumber Daya B, sementara Thread 2 menahan Sumber Daya B dan menunggu Sumber Daya A. Keduanya saling menunggu selamanya.\n\n\u0060\u0060\u0060mermaid\nflowchart LR\n    subgraph T1[\u0022Thread 1\u0022]\n        LockA1[\u0022Mengunci Resource A (Sukses)\u0022]\n        WaitB1[\u0022Menunggu Resource B (Terkunci)\u0022]\n        LockA1 --\u003E WaitB1\n    end\n    subgraph T2[\u0022Thread 2\u0022]\n        LockB2[\u0022Mengunci Resource B (Sukses)\u0022]\n        WaitA2[\u0022Menunggu Resource A (Terkunci)\u0022]\n        LockB2 --\u003E WaitA2\n    end\n    WaitB1 -.-\u003E|Circular Wait| LockB2\n    WaitA2 -.-\u003E|Circular Wait| LockA1\n\u0060\u0060\u0060\n\n### Solusi Enterprise: Lock Ordering (Pengurutan Kunci Konsisten)\nPastikan seluruh thread di aplikasi Anda **selalu mengambil lock dengan urutan yang sama** (misalnya diurutkan berdasarkan Account ID):\n\n\u0060\u0060\u0060csharp\npublic void Transfer(Account from, Account to, decimal amount)\n{\n    // Urutkan akun berdasarkan ID agar tidak pernah terjadi cross-lock\n    Account first = from.Id \u003C to.Id ? from : to;\n    Account second = from.Id \u003C to.Id ? to : from;\n\n    lock (first)\n    {\n        lock (second)\n        {\n            from.Balance -= amount;\n            to.Balance \u002B= amount;\n        }\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 5. Ringkasan Matriks Sinkronisasi C#\n\n| Mekanisme | Cocok untuk | Dukung \u0060await\u0060? | Biaya Performa |\n| :--- | :--- | :--- | :--- |\n| **Interlocked** | Counter, Flag angka atomik | Tidak Relevan | Sangat Murah (Nanodetik) |\n| **lock (Monitor)** | Blok kode sinkronus murni | **TIDAK** (Compiler Error) | Murah (Microdetik) |\n| **SemaphoreSlim** | Sinkronisasi Async \u0026 Throttling | **YA** (\u0060WaitAsync\u0060) | Sedang |\n| **ReaderWriterLockSlim**| Skenario 95% Read, 5% Write sinkronus | **TIDAK** | Sedang |",
+  "starterCode": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\n// Eksperimen Race Condition vs Interlocked\npublic class Program\n{\n    private static int _unsafeCounter = 0;\n    private static int _safeCounter = 0;\n\n    public static async Task Main()\n    {\n        int iterations = 100_000;\n        var tasks = new Task[4];\n\n        for (int t = 0; t \u003C 4; t\u002B\u002B)\n        {\n            tasks[t] = Task.Run(() =\u003E\n            {\n                for (int i = 0; i \u003C iterations; i\u002B\u002B)\n                {\n                    _unsafeCounter\u002B\u002B; // Rawan Race Condition!\n\n                    // TODO: Perbarui _safeCounter menggunakan operasi atomik CPU dari class Interlocked\n                    // Hint: Interlocked.Increment(...)\n                }\n            });\n        }\n\n        await Task.WhenAll(tasks);\n\n        Console.WriteLine($\u0022Ekspektasi Total: {4 * iterations}\u0022);\n        Console.WriteLine($\u0022Unsafe Counter  : {_unsafeCounter} (Seringkali hilang data akibat race condition)\u0022);\n        Console.WriteLine($\u0022Safe Counter    : {_safeCounter} (Harus tepat {4 * iterations})\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\npublic class Program\n{\n    private static int _unsafeCounter = 0;\n    private static int _safeCounter = 0;\n\n    public static async Task Main()\n    {\n        int iterations = 100_000;\n        var tasks = new Task[4];\n\n        for (int t = 0; t \u003C 4; t\u002B\u002B)\n        {\n            tasks[t] = Task.Run(() =\u003E\n            {\n                for (int i = 0; i \u003C iterations; i\u002B\u002B)\n                {\n                    _unsafeCounter\u002B\u002B;\n                    Interlocked.Increment(ref _safeCounter);\n                }\n            });\n        }\n\n        await Task.WhenAll(tasks);\n\n        Console.WriteLine($\u0022Ekspektasi Total: {4 * iterations}\u0022);\n        Console.WriteLine($\u0022Unsafe Counter  : {_unsafeCounter} (Seringkali hilang data akibat race condition)\u0022);\n        Console.WriteLine($\u0022Safe Counter    : {_safeCounter} (Harus tepat {4 * iterations})\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-12-03-1",
+      "type": "single_choice",
+      "question": "Mengapa compiler C# secara tegas melarang penulisan kata kunci \u0027await\u0027 di dalam blok \u0027lock\u0027?",
+      "options": [
+        "Karena lock hanya bisa dijalankan pada prosesor 32-bit.",
+        "Karena lock menggunakan Monitor yang mewajibkan thread pelepasan sama dengan thread pengambil kunci, sedangkan await dapat berpindah thread OS saat melanjutkan eksekusi.",
+        "Karena await secara otomatis menghapus objek kunci dari memori heap.",
+        "Karena Microsoft ingin memaksa developer menggunakan bahasa F# untuk konkurensi."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Keyword lock di-compile menjadi Monitor.Enter dan Monitor.Exit yang memiliki afinitas thread (thread affinity). Kode setelah await dapat dilanjutkan oleh threadpool thread yang berbeda, sehingga Monitor.Exit akan melempar SynchronizationLockException.",
+      "optionExplanations": [
+        "Salah. lock berjalan di semua arsitektur prosesor (32-bit, 64-bit, ARM).",
+        "Benar! Monitor mensyaratkan thread identity yang identik, sedangkan async/await membebaskan thread.",
+        "Salah. Objek lock tidak dihapus oleh await.",
+        "Salah. C# mendukung sinkronisasi asinkronus menggunakan SemaphoreSlim."
+      ],
+      "sectionRef": "1. Mengapa C# Melarang await di dalam Blok lock?",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-12-03-2",
+      "type": "single_choice",
+      "question": "Kapan Anda sebaiknya menggunakan Interlocked.Increment daripada blok lock (Monitor)?",
+      "options": [
+        "Ketika Anda perlu memperbarui struktur data JSON yang rumit.",
+        "Ketika operasi sinkronisasi hanya melibatkan perubahan nilai numerik sederhana (seperti counter) dan Anda membutuhkan performa atomik tingkat sirkuit CPU tanpa beban overhead lock.",
+        "Ketika Anda sedang melakukan query Entity Framework Core.",
+        "Ketika Anda ingin menghentikan aplikasi secara darurat."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Interlocked menyediakan instruksi CPU hardware murni (lock-free) dengan biaya beberapa nanodetik. Sangat ideal untuk kalkulasi statistik, counter, atau perbandingan flag angka tanpa membebani sistem dengan lock contention.",
+      "optionExplanations": [
+        "Salah. Interlocked hanya beroperasi pada tipe data primitif tertentu (int, long, pointer).",
+        "Benar! Interlocked menawarkan performa tingkat sirkuit CPU untuk update nilai atomik tanpa alokasi kernel lock.",
+        "Salah. EF Core DbContext membutuhkan boundary transaksi atau scope yang lebih luas.",
+        "Salah. Tidak ada hubungannya dengan penghentian aplikasi."
+      ],
+      "sectionRef": "3. Performa Ekstrem: Operasi Atomik Hardware dengan Interlocked",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-12-03",
+    "Title": "Implementasi Thread-Safe Rate Limiter dengan Interlocked",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat rate limiter fixed-window menggunakan \u0060Interlocked.Increment\u0060.\nBaca dua baris dari stdin:\nBaris 1: BatasMaksimumRequest (int, misal 5)\nBaris 2: Daftar request ID dipisahkan spasi (\u0027req1 req2 req3 ...\u0027).\nUntuk setiap request, lakukan penambahan counter:\n- Jika counter \u003C= Batas: cetak \u0027ACCEPTED: \u003CreqId\u003E\u0027\n- Jika counter \u003E Batas: cetak \u0027REJECTED: \u003CreqId\u003E\u0027.",
+    "InputFormat": "Dua baris stdin: baris 1 kuota batas, baris 2 daftar ID request.",
+    "OutputFormat": "Status ACCEPTED atau REJECTED per baris.",
+    "Constraints": "Batas \u003E= 1.",
+    "Examples": [
+      {
+        "Input": "2\nr1 r2 r3",
+        "Output": "ACCEPTED: r1\nACCEPTED: r2\nREJECTED: r3",
+        "Explanation": "Hanya 2 request pertama yang diizinkan."
+      },
+      {
+        "Input": "1\nreqA reqB",
+        "Output": "ACCEPTED: reqA\nREJECTED: reqB",
+        "Explanation": "Batas kuota 1 hanya meloloskan reqA."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    private static int _requestCount = 0;\n    public static void Main()\n    {\n        // TODO: Gunakan Interlocked.Increment untuk membatasi kuota request.\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    private static int _requestCount = 0;\n\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || string.IsNullOrWhiteSpace(l2)) return;\n\n        int limit = int.Parse(l1.Trim());\n        var requests = l2.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n\n        foreach (var req in requests)\n        {\n            int current = Interlocked.Increment(ref _requestCount);\n            if (current \u003C= limit)\n            {\n                Console.WriteLine($\u0022ACCEPTED: {req}\u0022);\n            }\n            else\n            {\n                Console.WriteLine($\u0022REJECTED: {req}\u0022);\n            }\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Limit 2)",
+        "Description": "Contoh 1 (Limit 2): input \u00272\nr1 r2 r3\u0027 -\u003E expected \u0027ACCEPTED: r1\nACCEPTED: r2\nREJECTED: r3\u0027",
+        "Input": "2\nr1 r2 r3",
+        "ExpectedOutput": "ACCEPTED: r1\nACCEPTED: r2\nREJECTED: r3",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Semua Diterima",
+        "Description": "Semua Diterima: input \u00275\na b c\u0027 -\u003E expected \u0027ACCEPTED: a\nACCEPTED: b\nACCEPTED: c\u0027",
+        "Input": "5\na b c",
+        "ExpectedOutput": "ACCEPTED: a\nACCEPTED: b\nACCEPTED: c",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Limit 1",
+        "Description": "Limit 1: input \u00271\nx y\u0027 -\u003E expected \u0027ACCEPTED: x\nREJECTED: y\u0027",
+        "Input": "1\nx y",
+        "ExpectedOutput": "ACCEPTED: x\nREJECTED: y",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Banyak Request",
+        "Description": "Banyak Request: input \u00273\n1 2 3 4 5\u0027 -\u003E expected \u0027ACCEPTED: 1\nACCEPTED: 2\nACCEPTED: 3\nREJECTED: 4\nREJECTED: 5\u0027",
+        "Input": "3\n1 2 3 4 5",
+        "ExpectedOutput": "ACCEPTED: 1\nACCEPTED: 2\nACCEPTED: 3\nREJECTED: 4\nREJECTED: 5",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Interlocked.Increment mengembalikan nilai integer setelah ditambahkan secara atomik.",
+      "Bandingkan nilai kembalian langsung dengan batas limit."
+    ],
+    "Explanation": "Rate limiting berbasis Interlocked memberikan performa ultra-tinggi dalam skala jutaan RPS tanpa lock contention pada API Gateway."
+  },
+  "relatedLessons": [
+    "lesson-06-03",
+    "lesson-12-01",
+    "lesson-12-04"
+  ],
+  "references": [
+    {
+      "title": "Threading in C# - Synchronization Primitives - Joseph Albahari",
+      "url": "https://www.albahari.com/threading/part2.aspx",
+      "type": "article"
+    },
+    {
+      "title": "Interlocked Class Documentation - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/api/system.threading.interlocked",
+      "type": "documentation"
+    }
+  ]
+}

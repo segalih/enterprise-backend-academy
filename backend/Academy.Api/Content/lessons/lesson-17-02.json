@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-17-02",
+    "levelId":  "level-17",
+    "moduleId":  "mod-17-02",
+    "order":  2,
+    "title":  "SRE Fundamentals: Mendesain SLI/SLO, Mengelola Error Budget, dan Blameless Postmortems",
+    "slug":  "sre-sli-slo-error-budget-postmortem",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  55,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menerapkan prinsip Site Reliability Engineering (Google SRE): Service Level Indicators (SLI), Service Level Objectives (SLO), Service Level Agreements (SLA), Error Budgets, dan budaya Blameless Postmortem.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-17-01",
+                              "reason":  "Observability, Metrics \u0026 Telemetry"
+                          },
+                          {
+                              "lessonId":  "lesson-14-04",
+                              "reason":  "Resilience Engineering \u0026 Reliability"
+                          }
+                      ],
+    "introduces":  [
+                       "Google Site Reliability Engineering (SRE) philosophy",
+                       "SLI (Indicator) vs SLO (Objective) vs SLA (Agreement)",
+                       "The 99.9% vs 99.99% availability trade-off",
+                       "Error Budget calculation \u0026 release velocity throttling",
+                       "Blameless Postmortem \u0026 Root Cause Analysis (5 Whys)"
+                   ],
+    "learningObjectives":  [
+                               "Merumuskan Service Level Indicators (SLI) yang bermakna bagi kepuasan pengguna akhir (User-Centric SLI)",
+                               "Menghitung batas toleransi kegagalan (Error Budget) dari target SLO (misal SLO 99.9% = 43 menit downtime per bulan)",
+                               "Menggunakan Error Budget sebagai rem penyeimbang antara kecepatan rilis fitur produk vs stabilitas sistem",
+                               "Menulis dokumen Blameless Postmortem pasca insiden produksi tanpa menyalahkan individu"
+                           ],
+    "markdownContent":  "# SRE Fundamentals: Mendesain SLI/SLO, Mengelola Error Budget, dan Blameless Postmortems\n\nBagaimana perusahaan teknologi raksasa seperti Google, Netflix, dan Stripe mampu mengelola ribuan server tanpa tim engineering yang stres atau saling menyalahkan saat terjadi gangguan (*outage*)?\n\nJawabannya adalah **Site Reliability Engineering (SRE)**: pendekatan rekayasa perangkat lunak untuk memecahkan masalah operasional dan keandalan sistem.\n\nFondasi terpenting dari SRE terletak pada tiga konsep: **SLI/SLO/SLA**, **Error Budget**, dan **Budaya Blameless Postmortem**.\n\n---\n\n## 1. Membedakan SLI, SLO, dan SLA\n\nTiga istilah ini sering dicampuradukkan, padahal memiliki fungsi yang sangat berbeda:\n\n```text\n1. SLI (Service Level Indicator) - \"Apa yang kita ukur saat ini?\"\n   Metrik kuantitatif kepatuhan layanan secara real-time.\n   Contoh: \"Persentase request sukses HTTP 2xx dibagi total request selama 30 hari.\"\n\n2. SLO (Service Level Objective) - \"Berapa target internal tim engineering?\"\n   Target keandalan yang disepakati bersama antara tim Product dan Engineering.\n   Contoh: \"SLI harus mencapai minimal 99.9% per bulan kalender.\"\n\n3. SLA (Service Level Agreement) - \"Apa janji legal ke pelanggan beserta dendanya?\"\n   Kontrak hukum bisnis antara perusahaan dengan nasabah. Jika dilanggar, perusahaan membayar penalti finansial!\n   Contoh: \"Jika uptime di bawah 99.5%, nasabah mendapat refund potongan tagihan 20%.\"\n```\n\n\u003e [!IMPORTANT]\n\u003e **Aturan Emas SRE:**\n\u003e **SLO internal HARUS SELALU LEBIH KETAT daripada SLA eksternal!**\n\u003e Jika SLA Anda ke nasabah adalah 99.5%, tetapkan target SLO internal tim Anda di 99.9%. Dengan demikian, jika sistem Anda mulai bermasalah dan SLO jebol, Anda masih memiliki margin waktu untuk memperbaiki sistem sebelum melanggar SLA legal dan terkena penalti finansial!\n\n---\n\n## 2. Realitas Angka Sembilan (The Nines of Availability)\n\nBanyak manajemen menuntut: *\"Sistem kami harus 100% uptime!\"*\nSRE mengajarkan bahwa **100% uptime adalah target yang salah**:\n- Biaya untuk menaikkan reliabilitas dari 99.9% ke 99.99% meningkat **secara eksponensial** (membutuhkan multi-region failover, cluster hardware ganda, dan prosedur rumit).\n- Pengguna ponsel tidak akan menyadari perbedaan sistem 99.99% karena koneksi 4G/5G operator mereka sendiri rata-rata hanya memiliki keandalan 99%!\n\n### Tabel Durasi Downtime Maksimal per Bulan (30 Hari):\n| Target SLO | Downtime Maksimal per Bulan | Toleransi Error Budget |\n| :--- | :--- | :--- |\n| **99% (Two Nines)** | 7 jam 12 menit | 1 request gagal dari 100 |\n| **99.9% (Three Nines)** | **43 menit 12 detik** | 1 request gagal dari 1.000 |\n| **99.99% (Four Nines)** | **4 menit 19 detik** | 1 request gagal dari 10.000 |\n| **99.999% (Five Nines)**| 26 detik | 1 request gagal dari 100.000 |\n\n---\n\n## 3. Error Budget: Menyeimbangkan Fitur vs Stabilitas\n\nApa itu **Error Budget**?\n\u003e **Error Budget = 100% - Target SLO**\n\u003e Jika SLO Anda 99.9%, maka Error Budget Anda adalah **0.1%** request gagal atau 43 menit downtime per bulan.\n\nError Budget bukan sekadar angka statistik, melainkan **alat kebijakan rilis**:\n1. **Selama Error Budget Masih Ada (\u003e 0%)**: Tim pengembang bebas merilis fitur baru dengan cepat, melakukan eksperimen, dan mengambil risiko terkontrol.\n2. **Jika Error Budget Habis (Burned Out)**: **SEMUA RILIS FITUR BARU DIBEKUKAN (Feature Freeze)!** Seluruh kapasitas tim engineering dialihkan 100% untuk membenahi bug keandalan, arsitektur database, dan testing otomatis hingga Error Budget pulih di siklus berikutnya.\n\n---\n\n## 4. Blameless Postmortem \u0026 Root Cause Analysis\n\nKetika terjadi insiden besar di produksi, reaksi primitif manajemen yang buruk adalah mencari *\"Siapa yang salah ketik perintah?\"* dan menghukum developer tersebut.\n\nSRE menolak pendekatan ini dan menerapkan **Blameless Postmortem**:\n\u003e **Asumsi Dasar: Manusia pasti berbuat salah. Jika seorang developer bisa merusak produksi hanya dengan satu kesalahan klik, itu adalah KEGAGALAN DESAIN SISTEM, bukan kesalahan individu!**\n\n### Format Dokumen Postmortem Standar:\n1. **Ringkasan Insiden**: Waktu mulai, waktu terdeteksi, waktu pemulihan, total durasi dampak.\n2. **Dampak Bisnis**: Jumlah pengguna terdampak, estimasi kerugian transaksi finansial.\n3. **Timeline Detil**: Kronologi kejadian detik demi detik (dari trigger awal, alert menyala, hingga mitigasi).\n4. **Root Cause Analysis (5 Whys)**: Menggali akar masalah sistemik, bukan menyalahkan manusia.\n5. **Action Items (Pencegahan)**: Langkah teknis konkret (seperti memasang guardrail di CI, menambah automated integration test, memperbaiki alert) lengkap dengan nama PIC dan tenggat waktu.\n\n---\n\n## 5. Ringkasan \u0026 Aturan SRE\n\n1. **Ukur Apa yang Dirasakan Pengguna**: Jangan hanya mengukur CPU server; ukur kepuasan pengguna akhir (contoh: *Persentase checkout pembayaran yang sukses di bawah 1 detik*).\n2. **Gunakan Error Budget sebagai Wasit**: Error budget menghilangkan perdebatan kusir antara Product Manager (yang ingin fitur cepat rilis) dan Tim Infra (yang ingin sistem stabil).\n3. **Budayakan Blameless**: Sistem yang aman dibangun atas keterbukaan mengakui kegagalan dan belajar dari insiden, bukan atas rasa takut dihukum.",
+    "starterCode":  "using System;\n\n// Kalkulator Error Budget SRE\npublic class ErrorBudgetCalculator\n{\n    public static (double allowedDowntimeMinutes, double budgetBurnPercentage) CalculateBudget(\n        double targetSloPercentage, \n        double totalPeriodMinutes, \n        double actualDowntimeMinutes)\n    {\n        // TODO:\n        // 1. Hitung total menit downtime yang diizinkan: \n        //    allowed = totalPeriodMinutes * ((100.0 - targetSloPercentage) / 100.0)\n        // 2. Hitung persentase budget yang terbakar (burn percentage):\n        //    burn = (actualDowntimeMinutes / allowed) * 100.0\n        // 3. Kembalikan (allowed, burn).\n        \n        return (0, 0);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        double slo = 99.9; // Target Tiga Sembilan\n        double periodMinutes = 30 * 24 * 60; // 1 Bulan (43.200 menit)\n        double actualDowntime = 21.6; // Terjadi gangguan selama 21.6 menit\n\n        var (allowed, burn) = ErrorBudgetCalculator.CalculateBudget(slo, periodMinutes, actualDowntime);\n\n        Console.WriteLine($\"Target SLO            : {slo}%\");\n        Console.WriteLine($\"Batas Downtime Bulanan: {allowed:F1} menit\");\n        Console.WriteLine($\"Downtime Aktual       : {actualDowntime:F1} menit\");\n        Console.WriteLine($\"Error Budget Terbakar : {burn:F1}%\");\n\n        if (burn \u003e 100.0)\n        {\n            Console.WriteLine(\"[KEBIJAKAN SRE] Error Budget HABIS! Rilis fitur baru DIBEKUKAN (Feature Freeze).\");\n        }\n        else\n        {\n            Console.WriteLine(\"[KEBIJAKAN SRE] Error Budget masih aman. Rilis fitur diizinkan.\");\n        }\n    }\n}",
+    "solutionCode":  "using System;\n\npublic class ErrorBudgetCalculator\n{\n    public static (double allowedDowntimeMinutes, double budgetBurnPercentage) CalculateBudget(\n        double targetSloPercentage, \n        double totalPeriodMinutes, \n        double actualDowntimeMinutes)\n    {\n        double allowed = totalPeriodMinutes * ((100.0 - targetSloPercentage) / 100.0);\n        double burn = (actualDowntimeMinutes / allowed) * 100.0;\n        return (allowed, burn);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        double slo = 99.9;\n        double periodMinutes = 30 * 24 * 60; // 43.200 menit\n        double actualDowntime = 21.6;\n\n        var (allowed, burn) = ErrorBudgetCalculator.CalculateBudget(slo, periodMinutes, actualDowntime);\n\n        Console.WriteLine($\"Target SLO            : {slo}%\");\n        Console.WriteLine($\"Batas Downtime Bulanan: {allowed:F1} menit\");\n        Console.WriteLine($\"Downtime Aktual       : {actualDowntime:F1} menit\");\n        Console.WriteLine($\"Error Budget Terbakar : {burn:F1}%\");\n\n        if (burn \u003e 100.0)\n        {\n            Console.WriteLine(\"[KEBIJAKAN SRE] Error Budget HABIS! Rilis fitur baru DIBEKUKAN (Feature Freeze).\");\n        }\n        else\n        {\n            Console.WriteLine(\"[KEBIJAKAN SRE] Error Budget masih aman. Rilis fitur diizinkan.\");\n        }\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-17-02-1",
+                              "type":  "single_choice",
+                              "question":  "Mengapa target \u0027100% Uptime / Zero Downtime Selamanya\u0027 dianggap sebagai anti-pattern yang keliru dalam filosofi Site Reliability Engineering (SRE)?",
+                              "options":  [
+                                              "Karena angka 100% adalah angka sial dalam budaya komputasi.",
+                                              "Karena menaikkan reliabilitas dari 99.9% menuju 100% membutuhkan biaya infrastruktur yang meningkat secara eksponensial tanpa memberikan manfaat nyata bagi pengguna akhir yang koneksi internetnya sendiri memiliki toleransi keandalan lebih rendah.",
+                                              "Karena server cloud menolak berjalan jika tidak ada error.",
+                                              "Karena Google melarang developer menargetkan angka bulat."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Keandalan sempurna (100%) membutuhkan biaya finansial dan engineering tak terbatas yang melumpuhkan inovasi fitur. Pengguna akhir terhubung melalui jaringan seluler/ISP publik yang memiliki reliabilitas jauh di bawah 99.99%, sehingga mengejar 100% adalah pemborosan modal.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak ada takhayul dalam rekayasa perangkat lunak.",
+                                                         "Benar! Biaya marginal reliabilitas eksponensial tidak sebanding dengan manfaat marjinal bagi end user.",
+                                                         "Salah. Cloud tidak menolak operasi normal.",
+                                                         "Salah. SRE adalah metodologi rekayasa ilmiah terbuka, bukan larangan dogmatis."
+                                                     ],
+                              "sectionRef":  "2. Realitas Angka Sembilan (The Nines of Availability)",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-17-02-2",
+                              "type":  "single_choice",
+                              "question":  "Apa tindakan yang disepakati bersama antara tim Engineering dan Product ketika \u0027Error Budget\u0027 sebuah layanan habis (Burn Rate 100%) dalam satu periode berjalan?",
+                              "options":  [
+                                              "Memecat engineer termuda di tim.",
+                                              "Membekukan rilis fitur baru (Feature Freeze) dan mengalihkan seluruh kapasitas kerja engineering untuk memperbaiki keandalan sistem, infrastruktur, dan automated testing sampai error budget pulih.",
+                                              "Menghapus seluruh file monitoring agar angka dashboard kembali hijau.",
+                                              "Menurunkan target SLO secara sepihak agar terlihat lulus."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Error budget adalah mekanisme tata kelola (governance) objektif. Ketika budget habis terpakai oleh insiden, tim menghentikan sementara pengiriman fitur baru untuk berfokus memperbaiki keandalan sistem agar stabilitas produksi pulih.",
+                              "optionExplanations":  [
+                                                         "Salah. SRE menganut budaya Blameless yang melarang mencari kambing hitam.",
+                                                         "Benar! Feature freeze menjaga keseimbangan antara inovasi produk dengan stabilitas layanan produksi.",
+                                                         "Salah. Menghapus monitoring adalah tindakan merusak sistem.",
+                                                         "Salah. Menurunkan target secara manipulatif melanggar integritas rekayasa."
+                                                     ],
+                              "sectionRef":  "3. Error Budget: Menyeimbangkan Fitur vs Stabilitas",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-17-01",
+                           "lesson-14-04",
+                           "lesson-17-03"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Site Reliability Engineering: How Google Runs Production Systems - Betsy Beyer et al.",
+                           "url":  "https://sre.google/sre-book/table-of-contents/",
+                           "type":  "book"
+                       },
+                       {
+                           "title":  "The Site Reliability Workbook - Google SRE",
+                           "url":  "https://sre.google/workbook/table-of-contents/",
+                           "type":  "book"
+                       }
+                   ]
+}

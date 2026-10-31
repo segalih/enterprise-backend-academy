@@ -1,0 +1,169 @@
+{
+  "id": "lesson-03-07",
+  "levelId": "level-03",
+  "moduleId": "mod-03-03",
+  "order": 7,
+  "title": "Delegates, Func, Action, Predicate dan Event Memory Leaks",
+  "slug": "delegates-func-action-events-memory-leaks",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Memahami pointer fungsi type-safe (Delegates), delegate generik bawaan (Func, Action, Predicate), arsitektur publish-subscribe melalui C# Events, dan bahaya tersembunyi Memory Leaks akibat dangling event handlers.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-03-06",
+      "title": "Mastering C# Generics",
+      "levelName": "LEVEL 03",
+      "context": "Memahami tipe generik Func\u003CT, TResult\u003E."
+    }
+  ],
+  "introduces": [
+    "Delegate as Type-Safe Function Pointer",
+    "Action\u003CT\u003E (Void Return)",
+    "Func\u003CT, TResult\u003E (Value Return)",
+    "Predicate\u003CT\u003E (Boolean Return)",
+    "C# Events (Publish-Subscribe)",
+    "Lapsed Listener Memory Leak"
+  ],
+  "learningObjectives": [
+    "Membedakan kapan menggunakan Action, Func, atau Predicate pada pipeline backend.",
+    "Menganalisis anatomi multicast invocation list pada delegate internal.",
+    "Mencegah kebocoran memori (Memory Leaks) akibat event handler yang lupa di-unsubscribe."
+  ],
+  "markdownContent": "# Delegates, Func, Action, Predicate dan Event Memory Leaks\n\n## Apa Sebenarnya Sebuah Delegate di .NET?\nDalam bahasa C/C\u002B\u002B, pengembang menggunakan *Function Pointer* mentah yang berbahaya (dapat menunjuk ke sembarang alamat memori ilegal).\nDi C#, **Delegate adalah class pembungkus type-safe yang memegang referensi ke sebuah method** beserta target objek pemilik method tersebut.\n\nDi balik layar, setiap delegate adalah turunan dari \u0060System.MulticastDelegate\u0060 yang memiliki:\n1. **Target**: Pointer ke instance objek pemilik method (atau null jika method static).\n2. **MethodPtr**: Alamat instruksi method native.\n3. **InvocationList**: Daftar berantai (*linked list*) jika beberapa method digabungkan menggunakan operator \u0060\u002B=\u0060.\n\n---\n\n## 3 Tipe Delegate Generik Bawaan C#\nAnda hampir tidak pernah perlu mendefinisikan delegate kustom sendiri lagi berkat delegasi bawaan Base Class Library:\n\n| Tipe Delegate | Signature Return | Contoh Kasus Penggunaan |\n| :--- | :--- | :--- |\n| **\u0060Action\u003CT1, T2, ...\u003E\u0060** | **\u0060void\u0060** (Tidak mengembalikan nilai) | Logging, audit event, mengirim notifikasi |\n| **\u0060Func\u003CT1, T2, ..., TResult\u003E\u0060**| **\u0060TResult\u0060** (Parameter terakhir adalah Return Value)| Kalkulasi pajak, mapping data, LINQ Select |\n| **\u0060Predicate\u003CT\u003E\u0060** | **\u0060bool\u0060** (Identik dengan \u0060Func\u003CT, bool\u003E\u0060) | Filter validasi data, LINQ Where |\n\n\u0060\u0060\u0060csharp\n// Action: melakukan pekerjaan tanpa output\nAction\u003Cstring\u003E logger = pesan =\u003E Console.WriteLine($\u0022[LOG] {pesan}\u0022);\n\n// Func: menerima 2 integer, mengembalikan 1 integer\nFunc\u003Cint, int, int\u003E pengali = (a, b) =\u003E a * b;\n\n// Predicate: memeriksa kelayakan\nPredicate\u003Cint\u003E isDewasa = usia =\u003E usia \u003E= 17;\n\u0060\u0060\u0060\n\n---\n\n## Bahaya Mematikan: Event Memory Leak (The Lapsed Listener)\nDalam arsitektur backend, event digunakan untuk komunikasi publish-subscribe:\n\n\u0060\u0060\u0060csharp\npublic class OrderService\n{\n    public event EventHandler\u003COrderCreatedEvent\u003E? OrderCreated;\n}\n\u0060\u0060\u0060\n\nJika sebuah objek listener berlangganan event tersebut:\n\u0060\u0060\u0060csharp\npublic class AuditReportGenerator\n{\n    public AuditReportGenerator(OrderService orderService)\n    {\n        // BERLANGGANAN EVENT:\n        orderService.OrderCreated \u002B= OnOrderCreated;\n    }\n\n    private void OnOrderCreated(object? sender, OrderCreatedEvent e) { ... }\n}\n\u0060\u0060\u0060\n\n### Mengapa Terjadi Kebocoran Memori (Memory Leak)?\n- Operator \u0060\u002B=\u0060 menambahkan referensi objek \u0060AuditReportGenerator\u0060 ke dalam \u0060InvocationList\u0060 milik \u0060OrderService\u0060.\n- Jika \u0060OrderService\u0060 berumur panjang (misal didaftarkan sebagai **Singleton** di ASP.NET Core), sedangkan \u0060AuditReportGenerator\u0060 dibuat per-request (Scoped/Transient):\n- **Garbage Collector TIDAK BISA membersihkan \u0060AuditReportGenerator\u0060 dari memori Heap karena ia masih dipegang kuat oleh referensi event \u0060OrderService\u0060!**\n- Setiap detik request baru masuk, jutaan objek menumpuk di Heap hingga server kehabisan memori dan melempar **\u0060OutOfMemoryException\u0060**.\n\n### Solusi Wajib:\n1. Selalu lakukan **Unsubscribe (\u0060-=\u0060)** ketika objek selesai digunakan (misal di method \u0060Dispose()\u0060).\n2. Atau gunakan alternatif arsitektur pesan decoupling modern seperti **MediatR (In-Memory Mediator)** atau **System.Threading.Channels**.",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Func, Action, dan Multicast Delegate\nConsole.WriteLine(\u0022=== DELEGATES DI C# ===\u0022);\n\n// 1. Action (Void)\nAction\u003Cstring\u003E kirimAlert = msg =\u003E Console.WriteLine($\u0022[ALERT] {msg}\u0022);\nkirimAlert(\u0022Koneksi gateway terputus!\u0022);\n\n// 2. Func (Mengembalikan Nilai)\nFunc\u003Cdecimal, decimal, decimal\u003E kalkulasiDiskon = (total, persen) =\u003E total * (persen / 100m);\ndecimal diskon = kalkulasiDiskon(1_000_000m, 15m);\nConsole.WriteLine($\u0022Diskon 15%: Rp {diskon:N0}\u0022);\n\n// 3. Multicast Delegate (\u002B): Menjalankan beberapa fungsi berurutan\nAction tugasGanda = () =\u003E Console.Write(\u0022Langkah 1 Selesai -\u003E \u0022);\ntugasGanda \u002B= () =\u003E Console.WriteLine(\u0022Langkah 2 Selesai!\u0022);\n\nConsole.Write(\u0022Menjalankan Multicast Action: \u0022);\ntugasGanda();",
+  "quizQuestions": [
+    {
+      "id": "q-03-07-1",
+      "type": "MultipleChoice",
+      "question": "Apa perbedaan tanda tangan return value antara delegate \u0060Action\u003Cint, string\u003E\u0060 dan \u0060Func\u003Cint, string\u003E\u0060 di C#?",
+      "options": [
+        "Action mengembalikan string, sedangkan Func mengembalikan int",
+        "Action mengembalikan void (tidak ada nilai kembali), sedangkan Func menerima parameter int dan mengembalikan nilai string",
+        "Keduanya identik dan hanya berbeda nama alias",
+        "Action hanya bisa dijalankan secara asinkronus"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dalam konvensi .NET, \u0060Action\u003C...\u003E\u0060 selalu bertipe return \u0060void\u0060, sedangkan \u0060Func\u003C..., TResult\u003E\u0060 selalu mengembalikan tipe parameter generic terakhirnya (dalam kasus ini: string).",
+      "optionExplanations": [
+        "Salah. Parameter generic pada Action adalah parameter input method, bukan return type.",
+        "Benar! Action mengembalikan void, sedangkan pada Func tipe generic terakhir adalah tipe kembalian (return type).",
+        "Salah. Action dan Func memiliki kontrak return type yang sama sekali berbeda.",
+        "Salah. Keduanya dapat dipanggil secara sinkronus maupun asinkronus."
+      ],
+      "sectionRef": "3 Tipe Delegate Generik Bawaan C#",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-07-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana sebuah event subscription (\u0060publisher.OnEvent \u002B= subscriber.Handler\u0060) dapat menyebabkan Memory Leak pada aplikasi backend?",
+      "options": [
+        "Karena event menghabiskan seluruh thread pool OS",
+        "Karena publisher menyimpan referensi kuat (strong reference) ke subscriber di dalam InvocationList miliknya, mencegah Garbage Collector membebaskan memori subscriber",
+        "Karena event otomatis menulis seluruh payload ke hard drive",
+        "Karena keyword event mengubah tipe struct menjadi class"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Publisher menyimpan referensi objek target di invocation list delegate. Selama publisher hidup (misal Singleton), GC menganggap subscriber masih memiliki active root pointer dan tidak akan pernah mengumpulkannya (Lapsed Listener leak).",
+      "optionExplanations": [
+        "Salah. Event biasa dieksekusi pada thread pemanggil sinkronus.",
+        "Benar! Strong reference di InvocationList mencegah GC membersihkan objek subscriber.",
+        "Salah. Event adalah konstruksi memori CLR murni.",
+        "Salah. Event tidak mengubah tipe struct."
+      ],
+      "sectionRef": "Bahaya Mematikan: Event Memory Leak (The Lapsed Listener)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-07",
+    "Title": "Pipeline Filter Data Finansial Menggunakan Predicate\u003CT\u003E",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat pipeline penyaringan daftar transaksi bertipe decimal menggunakan \u0060Predicate\u003Cdecimal\u003E\u0060.\nSaring daftar angka dari stdin (dipisahkan spasi) dengan dua predikat berurutan:\n1. Transaksi positif (\u003E 0)\n2. Transaksi bernilai besar (\u003E= 100000)\nCetak total transaksi yang lolos kedua kriteria dalam format: \u0027LOLOS: \u003CCount\u003E TRANSAKSI, TOTAL: \u003CSum\u003E\u0027.",
+    "InputFormat": "Satu baris berisi nominal transaksi dipisahkan spasi.",
+    "OutputFormat": "Satu baris: \u0027LOLOS: \u003CCount\u003E TRANSAKSI, TOTAL: \u003CSum\u003E\u0027.",
+    "Constraints": "Nominal decimal positif/negatif.",
+    "Examples": [
+      {
+        "Input": "50000 150000 -20000 200000 75000",
+        "Output": "LOLOS: 2 TRANSAKSI, TOTAL: 350000",
+        "Explanation": "Hanya 150rb dan 200rb yang \u003E 0 dan \u003E= 100rb."
+      },
+      {
+        "Input": "10000 20000",
+        "Output": "LOLOS: 0 TRANSAKSI, TOTAL: 0",
+        "Explanation": "Tidak ada yang mencapai 100rb."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Gunakan Predicate\u003Cdecimal\u003E untuk memfilter transaksi.\n        Console.WriteLine(\u0022LOLOS: 0 TRANSAKSI, TOTAL: 0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022LOLOS: 0 TRANSAKSI, TOTAL: 0\u0022); return; }\n\n        var parts = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        var amounts = new List\u003Cdecimal\u003E();\n        foreach (var p in parts)\n        {\n            if (decimal.TryParse(p, CultureInfo.InvariantCulture, out decimal val))\n            {\n                amounts.Add(val);\n            }\n        }\n\n        Predicate\u003Cdecimal\u003E isPositive = x =\u003E x \u003E 0;\n        Predicate\u003Cdecimal\u003E isLarge = x =\u003E x \u003E= 100000m;\n\n        int count = 0;\n        decimal sum = 0;\n        foreach (var a in amounts)\n        {\n            if (isPositive(a) \u0026\u0026 isLarge(a))\n            {\n                count\u002B\u002B;\n                sum \u002B= a;\n            }\n        }\n\n        Console.WriteLine($\u0022LOLOS: {count} TRANSAKSI, TOTAL: {sum}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Campuran)",
+        "Description": "Contoh 1 (Campuran): input \u002750000 150000 -20000 200000 75000\u0027 -\u003E expected \u0027LOLOS: 2 TRANSAKSI, TOTAL: 350000\u0027",
+        "Input": "50000 150000 -20000 200000 75000",
+        "ExpectedOutput": "LOLOS: 2 TRANSAKSI, TOTAL: 350000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Nol Lolos)",
+        "Description": "Contoh 2 (Nol Lolos): input \u002710000 20000\u0027 -\u003E expected \u0027LOLOS: 0 TRANSAKSI, TOTAL: 0\u0027",
+        "Input": "10000 20000",
+        "ExpectedOutput": "LOLOS: 0 TRANSAKSI, TOTAL: 0",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Tepat 100rb",
+        "Description": "Tepat 100rb: input \u0027100000\u0027 -\u003E expected \u0027LOLOS: 1 TRANSAKSI, TOTAL: 100000\u0027",
+        "Input": "100000",
+        "ExpectedOutput": "LOLOS: 1 TRANSAKSI, TOTAL: 100000",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Semua Negatif",
+        "Description": "Semua Negatif: input \u0027-100000 -500000\u0027 -\u003E expected \u0027LOLOS: 0 TRANSAKSI, TOTAL: 0\u0027",
+        "Input": "-100000 -500000",
+        "ExpectedOutput": "LOLOS: 0 TRANSAKSI, TOTAL: 0",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Delegates Predicate\u003CT\u003E setara dengan Func\u003CT, bool\u003E yang menerima satu argumen dan mengembalikan boolean.",
+      "Kombinasikan predikat dalam loop atau LINQ Where."
+    ],
+    "Explanation": "Delegates dan Predicate\u003CT\u003E memungkinkan logika filter dikomposisi secara fleksibel dan dipassing sebagai first-class citizen di C#."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-04-01",
+      "title": "LINQ Deep Dive: Yield Return",
+      "levelName": "LEVEL 04",
+      "context": "Bagaimana delegate Func dan Predicate menjadi fondasi eksekusi LINQ Where dan Select."
+    },
+    {
+      "lessonId": "lesson-08-02",
+      "title": "Garbage Collector Internals",
+      "levelName": "LEVEL 08",
+      "context": "Memahami GC Root dan mengapa referensi delegate mencegah siklus deallocation."
+    }
+  ],
+  "references": [
+    {
+      "title": "Delegates - C# Programming Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/delegates/"
+    },
+    {
+      "title": "Understanding and Avoiding Memory Leaks with Events in .NET",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/events/"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class DataFilter\n{\n    public static List\u003CT\u003E FilterData\u003CT\u003E(List\u003CT\u003E? source, Predicate\u003CT\u003E? condition)\n    {\n        if (source == null) return new List\u003CT\u003E();\n        if (condition == null) return new List\u003CT\u003E(source);\n\n        var result = new List\u003CT\u003E();\n        foreach (var item in source)\n        {\n            if (condition(item))\n            {\n                result.Add(item);\n            }\n        }\n\n        return result;\n    }\n\n    public static void Main()\n    {\n        var data = new List\u003Cint\u003E { 10, 25, 50, 75, 100 };\n        var hasil = FilterData(data, n =\u003E n \u003E 40);\n        Console.WriteLine(string.Join(\u0022, \u0022, hasil));\n    }\n}"
+}

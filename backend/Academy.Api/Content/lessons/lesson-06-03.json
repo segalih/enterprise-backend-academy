@@ -1,0 +1,170 @@
+{
+  "id": "lesson-06-03",
+  "levelId": "level-06",
+  "moduleId": "mod-06-02",
+  "order": 3,
+  "title": "Sinkronisasi Rendah: Race Conditions, Deadlocks, Starvation, dan Atomic Ops",
+  "slug": "concurrency-race-conditions-deadlocks-atomic",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "deadlock",
+  "simulatorContext": "Amati simulasi deadlock di bawah ini: Thread 1 memegang Lock Rekening A dan menunggu Lock Rekening B, sedangkan Thread 2 memegang Lock Rekening B dan menunggu Lock Rekening A, menciptakan Circular Wait yang membekukan sistem.",
+  "description": "Mempelajari bahaya laten pemrograman konkurensi: fenomena Race Condition pada saldo akun, 4 kondisi Coffman penyebab Deadlock, operasi Lock-Free atomik dengan Interlocked, dan teknik Lock Ordering.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-06-02",
+      "title": "Proses vs Thread",
+      "levelName": "LEVEL 06",
+      "context": "Memahami bagaimana multiple thread berbagi memori heap yang sama."
+    }
+  ],
+  "introduces": [
+    "Race Condition (Data Race)",
+    "Critical Section \u0026 Mutex",
+    "Deadlock \u0026 Coffman Conditions",
+    "Circular Wait",
+    "Lock Ordering Strategy",
+    "Atomic Operations (Interlocked)",
+    "Thread Starvation"
+  ],
+  "learningObjectives": [
+    "Menganalisis bagaimana operasi sederhana x\u002B\u002B bukan operasi atomik dan rentan data race.",
+    "Mengidentifikasi 4 kondisi Coffman yang memicu Deadlock pada transaksi konkuren.",
+    "Menerapkan instruksi hardware atomik menggunakan class Interlocked untuk operasi lock-free berkecepatan tinggi."
+  ],
+  "markdownContent": "# Sinkronisasi Rendah: Race Conditions, Deadlocks, Starvation, dan Atomic Ops\n\n## Ilusi Atomik: Mengapa \u0060balance\u002B\u002B\u0060 Merusak Saldo Rekening?\nPerhatikan baris kode sederhana ini:\n\u0060\u0060\u0060csharp\nbalance\u002B\u002B;\n\u0060\u0060\u0060\nBagi manusia, ini tampak seperti 1 instruksi tunggal. Namun di level instruksi mesin CPU, baris tersebut dipecah menjadi **3 instruksi terpisah**:\n1. \u0060MOV EAX, [balance]\u0060  (Baca nilai dari RAM ke register CPU)\n2. \u0060ADD EAX, 1\u0060          (Jumlahkan nilai di register ALU)\n3. \u0060MOV [balance], EAX\u0060  (Tulis kembali nilai dari register ke RAM)\n\nJika dua thread mengeksekusi baris ini secara bersamaan pada nilai saldo 100:\n- Thread 1 membaca 100\n- Thread 2 membaca 100\n- Thread 1 menambahkan jadi 101 dan menulis 101 ke RAM\n- Thread 2 menambahkan jadi 101 dan menulis 101 ke RAM\n- **Hasil Akhir: Saldo bernilai 101, padahal ada dua transaksi (seharusnya 102)! Saldo nasabah hilang!** Inilah yang disebut **Race Condition**.\n\n---\n\n## Solusi Kecepatan Maksimal: Operasi Atomik (\u0060Interlocked\u0060)\nDaripada menggunakan mekanisme \u0060lock\u0060 yang berat (memblokir thread dan memicu context switch OS), CPU memiliki instruksi hardware khusus berawalan \u0060LOCK\u0060 (seperti \u0060lock xadd\u0060 atau \u0060lock cmpxchg\u0060):\n\nDi C#, kita mengaksesnya melalui class **\u0060System.Threading.Interlocked\u0060**:\n\n\u0060\u0060\u0060csharp\n// EKSEKUSI DALAM 1 INSTRUKSI HARDWARE CPU SECARA MUTLAK (ZERO LOCK OVERHEAD):\nInterlocked.Increment(ref balance); // Aman 100% dari Race Condition!\nInterlocked.Add(ref totalUang, nominal);\n\u0060\u0060\u0060\n\n---\n\n## Anatomi Terjadinya Deadlock (Kondisi Coffman)\n**Deadlock** adalah kondisi di mana dua atau lebih thread saling menunggu pelepasan kunci (*lock*) milik thread lain dalam lingkaran tak berujung, membekukan sistem selamanya.\n\n\u0060\u0060\u0060mermaid\nflowchart LR\n    subgraph T1[\u0022Thread 1: Transfer A ke B\u0022]\n        A1[\u00221. Kunci Akun A (Sukses)\u0022]\n        B1[\u00222. Coba Kunci Akun B (Menunggu...)\u0022]\n        A1 --\u003E B1\n    end\n    subgraph T2[\u0022Thread 2: Transfer B ke A\u0022]\n        B2[\u00221. Kunci Akun B (Sukses)\u0022]\n        A2[\u00222. Coba Kunci Akun A (Menunggu...)\u0022]\n        B2 --\u003E A2\n    end\n    B1 -.-\u003E|Circular Wait| B2\n    A2 -.-\u003E|Circular Wait| A1\n\u0060\u0060\u0060\n\nDeadlock HANYA bisa terjadi jika **4 Kondisi Coffman** terpenuhi sekaligus:\n1. **Mutual Exclusion**: Sumber daya hanya bisa dipegang 1 thread pada satu waktu.\n2. **Hold and Wait**: Thread memegang sumber daya A sambil menunggu sumber daya B.\n3. **No Preemption**: Kunci tidak bisa direbut paksa dari thread lain.\n4. **Circular Wait**: Terdapat rantai melingkar ketergantungan kunci (T\u2081 \u2192 T\u2082 \u2192 T\u2081).\n\n---\n\n## Solusi Permanen: Lock Ordering (Pengurutan Kunci Konsisten)\nCara paling ampuh mencegah deadlock pada transaksi perbankan adalah mematahkan kondisi *Circular Wait* melalui **Lock Ordering**:\n- Selalu peroleh kunci dalam urutan identitas yang konsisten (misal urutkan berdasarkan \u0060AccountId\u0060 terkecil duluan)!\n\n\u0060\u0060\u0060csharp\npublic void Transfer(Account asal, Account tujuan, decimal nominal)\n{\n    // Tentukan urutan penguncian berdasarkan abjad ID akun!\n    Account kunciPertama = string.CompareOrdinal(asal.Id, tujuan.Id) \u003C 0 ? asal : tujuan;\n    Account kunciKedua   = kunciPertama == asal ? tujuan : asal;\n\n    lock (kunciPertama)\n    {\n        lock (kunciKedua)\n        {\n            asal.Saldo -= nominal;\n            tujuan.Saldo \u002B= nominal;\n            // DEADLOCK TIDAK AKAN PERNAH BISA TERJADI LAGI!\n        }\n    }\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\n// PROGRAM: Pembuktian Race Condition vs Operasi Atomik Interlocked\nint unsafeCounter = 0;\nint atomicCounter = 0;\n\nconst int Target = 100_000;\n\nvar tasks = new Task[10];\nfor (int t = 0; t \u003C tasks.Length; t\u002B\u002B)\n{\n    tasks[t] = Task.Run(() =\u003E {\n        for (int i = 0; i \u003C Target; i\u002B\u002B)\n        {\n            unsafeCounter\u002B\u002B; // Tidak aman! (Data Race)\n            Interlocked.Increment(ref atomicCounter); // Aman 100% (Hardware Atomic)\n        }\n    });\n}\n\nTask.WaitAll(tasks);\n\nint expected = Target * tasks.Length;\nConsole.WriteLine($\u0022Target Seharusnya : {expected:N0}\u0022);\nConsole.WriteLine($\u0022Unsafe Counter    : {unsafeCounter:N0} (Selisih Korup: {expected - unsafeCounter:N0})\u0022);\nConsole.WriteLine($\u0022Atomic Counter    : {atomicCounter:N0} (Akurat 100%!)\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-06-03-1",
+      "type": "MultipleChoice",
+      "question": "Mengapa operasi penambahan sederhana \u0060x\u002B\u002B\u0060 pada variabel integer bersama di C# tidak aman jika dieksekusi oleh beberapa thread secara konkuren?",
+      "options": [
+        "Karena compiler C# menonaktifkan operator \u002B\u002B saat multi-threading",
+        "Karena x\u002B\u002B dipecah oleh CPU menjadi 3 instruksi terpisah (Read dari RAM, Add di register ALU, Write kembali ke RAM), yang dapat disela oleh thread lain di tengah jalan",
+        "Karena integer tidak bisa bertambah lebih dari 100",
+        "Karena x\u002B\u002B otomatis membuat file lock di disk"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060x\u002B\u002B\u0060 adalah operasi non-atomik 3-langkah (read-modify-write). Jika dua thread membaca nilai lama secara bersamaan sebelum penulisan dilakukan, salah satu penambahan akan hilang (Lost Update).",
+      "optionExplanations": [
+        "Salah. Operator \u002B\u002B tetap berfungsi normal pada sintaks kompilasi.",
+        "Benar! Pembagian menjadi 3 instruksi mikro mesin CPU menciptakan jendela terjadinya race condition.",
+        "Salah. Integer 32-bit dapat bertambah hingga 2,14 miliar.",
+        "Salah. Operasi aritmatika tidak menyentuh filesystem."
+      ],
+      "sectionRef": "Ilusi Atomik: Mengapa balance\u002B\u002B Merusak Saldo Rekening?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-06-03-2",
+      "type": "MultipleChoice",
+      "question": "Strategi arsitektural manakah yang paling efektif untuk mematahkan kondisi \u0027Circular Wait\u0027 dan mencegah terjadinya Deadlock saat mengunci beberapa akun bersamaan?",
+      "options": [
+        "Menaikkan batas timeout thread menjadi 1 jam",
+        "Lock Ordering: Menetapkan aturan penguncian kunci dalam urutan deterministik yang konsisten (misal selalu mengunci ID akun terkecil terlebih dahulu)",
+        "Menonaktifkan garbage collector",
+        "Menjalankan seluruh backend pada 1 core prosesor saja"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dengan mengunci sumber daya berdasarkan urutan terstandar (misalnya alfabetis ID akun), siklus ketergantungan melingkar (Circular Wait) mustahil terbentuk, mengeliminasi risiko deadlock secara permanen.",
+      "optionExplanations": [
+        "Salah. Menaikkan timeout hanya memperpanjang masa pembekuan sistem.",
+        "Benar! Pengurutan kunci (Lock Ordering) mematahkan kondisi ke-4 Coffman (Circular Wait).",
+        "Salah. GC tidak mengelola monitor lock.",
+        "Salah. Menurunkan core prosesor mematikan skalabilitas hardware enterprise."
+      ],
+      "sectionRef": "Solusi Permanen: Lock Ordering (Pengurutan Kunci Konsisten)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-06-03",
+    "Title": "Penghitung Metrik Transaksi Bebas Lock (Lock-Free Interlocked)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Simulasikan penghitung transaksi atomik bebas lock menggunakan \u0060System.Threading.Interlocked\u0060.\nBaca daftar operasi dari stdin yang dipisahkan spasi:\n- \u0027INC\u0027 (menambah 1 dengan Interlocked.Increment)\n- \u0027DEC\u0027 (mengurangi 1 dengan Interlocked.Decrement)\n- \u0027ADD:\u003Cvalue\u003E\u0027 (menambah nilai dengan Interlocked.Add)\nNilai awal adalah 0.\nCetak nilai akhir counter: \u0027COUNTER_AKHIR: \u003CValue\u003E\u0027.",
+    "InputFormat": "Satu baris perintah dipisahkan spasi.",
+    "OutputFormat": "Satu baris: \u0027COUNTER_AKHIR: \u003CValue\u003E\u0027.",
+    "Constraints": "Operasi \u003C= 1000 item.",
+    "Examples": [
+      {
+        "Input": "INC INC ADD:10 DEC",
+        "Output": "COUNTER_AKHIR: 11",
+        "Explanation": "0 \u002B 1 \u002B 1 \u002B 10 - 1 = 11."
+      },
+      {
+        "Input": "DEC DEC",
+        "Output": "COUNTER_AKHIR: -2",
+        "Explanation": "0 - 1 - 1 = -2."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    private static int _counter = 0;\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Gunakan Interlocked.Increment, Decrement, dan Add.\n        Console.WriteLine(\u0022COUNTER_AKHIR: 0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Threading;\n\npublic class Solution\n{\n    private static int _counter = 0;\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022COUNTER_AKHIR: 0\u0022); return; }\n\n        var ops = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var op in ops)\n        {\n            if (op.Equals(\u0022INC\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                Interlocked.Increment(ref _counter);\n            }\n            else if (op.Equals(\u0022DEC\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                Interlocked.Decrement(ref _counter);\n            }\n            else if (op.StartsWith(\u0022ADD:\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                if (int.TryParse(op.Substring(4), out int val))\n                {\n                    Interlocked.Add(ref _counter, val);\n                }\n            }\n        }\n        Console.WriteLine($\u0022COUNTER_AKHIR: {_counter}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Campuran)",
+        "Description": "Contoh 1 (Campuran): input \u0027INC INC ADD:10 DEC\u0027 -\u003E expected \u0027COUNTER_AKHIR: 11\u0027",
+        "Input": "INC INC ADD:10 DEC",
+        "ExpectedOutput": "COUNTER_AKHIR: 11",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Pengurangan)",
+        "Description": "Contoh 2 (Pengurangan): input \u0027DEC DEC\u0027 -\u003E expected \u0027COUNTER_AKHIR: -2\u0027",
+        "Input": "DEC DEC",
+        "ExpectedOutput": "COUNTER_AKHIR: -2",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Operasi Nol",
+        "Description": "Operasi Nol: input \u0027INC DEC\u0027 -\u003E expected \u0027COUNTER_AKHIR: 0\u0027",
+        "Input": "INC DEC",
+        "ExpectedOutput": "COUNTER_AKHIR: 0",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Add Angka Besar",
+        "Description": "Add Angka Besar: input \u0027ADD:1000 ADD:2500 DEC\u0027 -\u003E expected \u0027COUNTER_AKHIR: 3499\u0027",
+        "Input": "ADD:1000 ADD:2500 DEC",
+        "ExpectedOutput": "COUNTER_AKHIR: 3499",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "System.Threading.Interlocked menyediakan instruksi CPU level hardware atomik tanpa lock kernel.",
+      "Gunakan ref _counter pada pemanggilan method Interlocked."
+    ],
+    "Explanation": "Interlocked menggunakan instruksi atomik CPU (seperti LOCK CMPXCHG pada x86/x64) yang tidak memblokir thread dan bebas dari deadlock."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-12-03",
+      "title": "Mekanisme Sinkronisasi: SemaphoreSlim \u0026 ReaderWriterLockSlim",
+      "levelName": "LEVEL 12",
+      "context": "Penerapan primitif sinkronisasi modern yang mendukung async/await."
+    },
+    {
+      "lessonId": "lesson-18-01",
+      "title": "Arsitektur Double-Entry Ledger",
+      "levelName": "LEVEL 18",
+      "context": "Integritas saldo debit dan kredit di bawah beban transaksi tinggi."
+    }
+  ],
+  "references": [
+    {
+      "title": "Interlocked Class - .NET Reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/api/system.threading.interlocked"
+    },
+    {
+      "title": "Deadlock Detection and Prevention - Operating System Concepts (Silberschatz)",
+      "url": "https://www.os-book.com/"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Threading;\n\npublic class LockFreeMetricAccumulator\n{\n    private long _totalValue;\n\n    public void Add(long amount)\n    {\n        Interlocked.Add(ref _totalValue, amount);\n    }\n\n    public long GetValue()\n    {\n        return Interlocked.Read(ref _totalValue);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var acc = new LockFreeMetricAccumulator();\n        acc.Add(100);\n        acc.Add(250);\n        Console.WriteLine($\u0022Total: {acc.GetValue()}\u0022);\n    }\n}"
+}

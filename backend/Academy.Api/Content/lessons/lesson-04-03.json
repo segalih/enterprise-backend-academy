@@ -1,0 +1,169 @@
+{
+  "id": "lesson-04-03",
+  "levelId": "level-04",
+  "moduleId": "mod-04-02",
+  "order": 3,
+  "title": "High-Performance C#: Span\u003CT\u003E, Memory\u003CT\u003E, dan Zero-Allocation Programming",
+  "slug": "high-performance-span-memory-zero-allocation",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menguasai teknik zero-allocation programming di .NET 8: pemanfaatan ref struct Span\u003CT\u003E dan ReadOnlySpan\u003CT\u003E, alokasi memori heap vs stack dengan Memory\u003CT\u003E, slicing string tanpa substring allocation, dan ArrayPool\u003CT\u003E.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami batas alokasi Stack frame dan Heap."
+    }
+  ],
+  "introduces": [
+    "Span\u003CT\u003E \u0026 ReadOnlySpan\u003CT\u003E",
+    "Memory\u003CT\u003E \u0026 ReadOnlyMemory\u003CT\u003E",
+    "ref struct (Stack-Only Guarantee)",
+    "Zero-Copy String Slicing",
+    "ArrayPool\u003CT\u003E.Shared (Object Pooling)",
+    "stackalloc Operator"
+  ],
+  "learningObjectives": [
+    "Memahami arsitektur internal Span\u003CT\u003E sebagai ref struct pointer \u002B length yang hidup murni di Stack.",
+    "Menggantikan pemanggilan string.Substring() yang boros alokasi dengan ReadOnlySpan\u003Cchar\u003E slicing.",
+    "Menerapkan ArrayPool\u003CT\u003E untuk buffer berkecepatan tinggi tanpa membebani Garbage Collector."
+  ],
+  "markdownContent": "# High-Performance C#: Span\u003CT\u003E, Memory\u003CT\u003E, dan Zero-Allocation Programming\n\n## Mengapa Kestrel ASP.NET Core Mampu Melayani Jutaan Request?\nDi masa lalu (.NET Framework 4.x), parsing request HTTP sangat lambat karena setiap kali Anda memisahkan header string:\n\u0060\u0060\u0060csharp\nstring path = url.Substring(7, 10); // MEMBUAT STRING BARU DI MANAGED HEAP!\n\u0060\u0060\u0060\nJika server menerima 100.000 request per detik dengan 20 header per request, itu berarti **2.000.000 objek string baru dialokasikan di Heap Gen 0 setiap detik!** GC langsung kewalahan dan server mengalami micro-stuttering.\n\nSolusi revolusioner .NET modern adalah: **\u0060Span\u003CT\u003E\u0060 dan \u0060ReadOnlySpan\u003CT\u003E\u0060**.\n\n---\n\n## 1. Anatomi \u0060Span\u003CT\u003E\u0060: Jendela Menuju Memori Kontigu\n\u0060Span\u003CT\u003E\u0060 adalah sebuah **\u0060ref struct\u0060** (struktur yang dijamin secara mutlak oleh runtime hanya boleh hidup di Stack, tidak pernah bisa masuk ke Heap):\n\n\u0060\u0060\u0060mermaid\nflowchart LR\n    subgraph StackFrame[\u0022Span\u0026lt;T\u0026gt; di Stack (ref struct 16 Byte)\u0022]\n        Ptr[\u0022ref byte _pointer (8 Byte)\u0022]\n        Len[\u0022int _length (4 Byte)\u0022]\n    end\n    Ptr --\u003E|Menunjuk Langsung Tanpa Alokasi Heap Tambahan| Target\n    subgraph Target[\u0022Memori Sasaran\u0022]\n        Arr[\u0022Array di Managed Heap\u0022]\n        Str[\u0022String di Managed Heap\u0022]\n        Unm[\u0022Native Unmanaged Memory\u0022]\n        Stk[\u0022Stackalloc Buffer\u0022]\n    end\n\u0060\u0060\u0060\n\nKetika Anda memotong data (\u0060slice\u0060):\n\u0060\u0060\u0060csharp\nReadOnlySpan\u003Cchar\u003E span = \u0022GET /api/v1/payments HTTP/1.1\u0022;\nReadOnlySpan\u003Cchar\u003E path = span.Slice(4, 16); // \u0022/api/v1/payments\u0022\n\u0060\u0060\u0060\n**NOL ALOKASI MEMORI HEAP!** \u0060path\u0060 hanyalah pointer yang digeser 4 byte dengan panjang 16 karakter. Tidak ada string baru yang dibuat!\n\n---\n\n## 2. Keterbatasan \u0060Span\u003CT\u003E\u0060 dan Hadirnya \u0060Memory\u003CT\u003E\u0060\nKarena \u0060Span\u003CT\u003E\u0060 adalah \u0060ref struct\u0060, ia memiliki batasan ketat dari compiler:\n- **Dilarang** digunakan di dalam method \u0060async/await\u0060 melintasi titik suspensi \u0060await\u0060.\n- **Dilarang** disimpan sebagai field di dalam sebuah \u0060class\u0060.\n- **Dilarang** dibungkus dalam generic collection seperti \u0060List\u003CSpan\u003CT\u003E\u003E\u0060.\n\nUntuk skenario asynchronous I/O (seperti membaca TCP socket di Kestrel), gunakan **\u0060Memory\u003CT\u003E\u0060**:\n- \u0060Memory\u003CT\u003E\u0060 adalah struct biasa yang dapat disimpan di Heap dan aman melintasi boundary \u0060await\u0060.\n- Ketika data siap diolah secara sinkronus, panggil \u0060.Span\u0060 untuk mendapatkan \u0060Span\u003CT\u003E\u0060 berkecepatan tinggi!\n\n---\n\n## 3. Buffer Pooling: \u0060ArrayPool\u003CT\u003E.Shared\u0060\nUntuk payload I/O besar, jangan mengalokasikan \u0060new byte[65536]\u0060 berulang-ulang:\n\u0060\u0060\u0060csharp\n// SEWA BUFFER DARI POOL (TIDAK ADA ALOKASI BARU)\nbyte[] buffer = ArrayPool\u003Cbyte\u003E.Shared.Rent(65536);\ntry\n{\n    int bytesRead = await stream.ReadAsync(buffer);\n    Process(buffer.AsSpan(0, bytesRead));\n}\nfinally\n{\n    // KEMBALIKAN BUFFER KE POOL UNTUK DIGUNAKAN REQUEST LAIN\n    ArrayPool\u003Cbyte\u003E.Shared.Return(buffer);\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\npublic class Program\n{\n    public static void Main()\n    {\n        // PROGRAM: Membandingkan Alokasi Memori: Substring vs ReadOnlySpan\n        string rawHeader = \u0022Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummyPayload\u0022;\n        const int Iterations = 500_000;\n\n        // 1. Cara Lama: string.Substring (Memicu Ratusan Ribu Objek Heap)\n        GC.Collect();\n        long memBefore1 = GC.GetTotalMemory(true);\n        var sw1 = Stopwatch.StartNew();\n\n        for (int i = 0; i \u003C Iterations; i\u002B\u002B)\n        {\n            string token = rawHeader.Substring(21); // Alokasi string baru setiap iterasi!\n        }\n        sw1.Stop();\n        long memAfter1 = GC.GetTotalMemory(false);\n        Console.WriteLine($\u0022[Substring] Waktu: {sw1.ElapsedMilliseconds} ms | Alokasi Heap: {(memAfter1 - memBefore1) / (1024 * 1024)} MB\u0022);\n\n        // 2. Cara Modern: ReadOnlySpan.Slice (Zero Allocation)\n        GC.Collect();\n        long memBefore2 = GC.GetTotalMemory(true);\n        var sw2 = Stopwatch.StartNew();\n\n        ReadOnlySpan\u003Cchar\u003E headerSpan = rawHeader.AsSpan();\n        for (int i = 0; i \u003C Iterations; i\u002B\u002B)\n        {\n            ReadOnlySpan\u003Cchar\u003E tokenSpan = headerSpan.Slice(21); // ZERO ALOKASI HEAP!\n        }\n        sw2.Stop();\n        long memAfter2 = GC.GetTotalMemory(false);\n        Console.WriteLine($\u0022[Span Slicing] Waktu: {sw2.ElapsedMilliseconds} ms | Alokasi Heap: {(memAfter2 - memBefore2) / (1024 * 1024)} MB (0 MB!)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-04-03-1",
+      "type": "MultipleChoice",
+      "question": "Mengapa tipe \u0060Span\u003CT\u003E\u0060 tidak dapat disimpan sebagai field di dalam sebuah class reguler atau digunakan melintasi boundary method \u0060async/await\u0060?",
+      "options": [
+        "Karena Span\u003CT\u003E dideklarasikan sebagai \u0060ref struct\u0060 yang dijamin oleh runtime hanya boleh berada di Stack dan tidak boleh masuk ke Managed Heap",
+        "Karena Span\u003CT\u003E hanya mendukung arsitektur Linux 32-bit",
+        "Karena compiler C# belum mendukung generics pada struct",
+        "Karena Span\u003CT\u003E otomatis menghapus isi memori setelah 1 detik"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "\u0060Span\u003CT\u003E\u0060 adalah \u0060ref struct\u0060. Runtime CLR menjamin ref struct tidak pernah dapat masuk ke Managed Heap untuk mencegah invalid stack pointer saat stack frame selesai di-unwind.",
+      "optionExplanations": [
+        "Benar! Pembatasan ref struct mencegah pointer stack lolos ke heap.",
+        "Salah. Span didukung di semua platform 64-bit dan cross-platform.",
+        "Salah. C# telah mendukung generic struct sejak C# 2.0.",
+        "Salah. Siklus hidup Span terikat pada call stack pemanggil."
+      ],
+      "sectionRef": "2. Keterbatasan Span\u003CT\u003E dan Hadirnya Memory\u003CT\u003E",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-04-03-2",
+      "type": "MultipleChoice",
+      "question": "Tipe apakah yang harus dipilih sebagai pengganti \u0060Span\u003CT\u003E\u0060 ketika Anda memerlukan buffer memori kontigu yang aman disimpan di dalam class atau melintasi pemanggilan method asynchronous (\u0060await\u0060)?",
+      "options": [
+        "ArrayList",
+        "Memory\u003CT\u003E (atau ReadOnlyMemory\u003CT\u003E)",
+        "System.String",
+        "LinkedList\u003CT\u003E"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060Memory\u003CT\u003E\u0060 adalah struct biasa (bukan ref struct) yang dapat hidup di heap dan disimpan dalam class/async state machine, yang kemudian dapat diubah menjadi Span saat eksekusi sinkronus.",
+      "optionExplanations": [
+        "Salah. ArrayList adalah koleksi non-generic warisan lawas.",
+        "Benar! Memory\u003CT\u003E dirancang khusus untuk skenario async dan penyimpanan heap.",
+        "Salah. System.String bersifat immutable dan memicu alokasi heap baru saat diubah.",
+        "Salah. LinkedList adalah koleksi non-kontigu dengan node overhead."
+      ],
+      "sectionRef": "2. Keterbatasan Span\u003CT\u003E dan Hadirnya Memory\u003CT\u003E",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-04-03",
+    "Title": "Parser Header Authorization Bearer Zero-Allocation Span\u003Cchar\u003E",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Diberikan string header \u0027Authorization\u0027 dari stdin (misal \u0027Bearer eyJhbGciOi...\u0027).\nEkstrak token autentikasi (bagian setelah \u0027Bearer \u0027) menggunakan \u0060ReadOnlySpan\u003Cchar\u003E\u0060 tanpa alokasi substring di managed heap.\nJika string tidak diawali \u0027Bearer \u0027 atau token setelahnya kosong, cetak \u0027INVALID_HEADER\u0027.\nJika valid, cetak \u0027TOKEN: \u003Ctoken\u003E\u0027.",
+    "InputFormat": "Satu baris string header HTTP Authorization.",
+    "OutputFormat": "Satu baris: \u0027TOKEN: \u003Ctoken\u003E\u0027 atau \u0027INVALID_HEADER\u0027.",
+    "Constraints": "Header tidak null.",
+    "Examples": [
+      {
+        "Input": "Bearer eyJhbGciOiJIUzI1NiJ9",
+        "Output": "TOKEN: eyJhbGciOiJIUzI1NiJ9",
+        "Explanation": "Token berhasil diekstrak."
+      },
+      {
+        "Input": "Basic YWxhZGRpbjpvcGVuc2VzYW1l",
+        "Output": "INVALID_HEADER",
+        "Explanation": "Bukan skema Bearer."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? header = Console.ReadLine();\n        // TODO: Gunakan ReadOnlySpan\u003Cchar\u003E dan MemoryExtensions.StartsWith.\n        Console.WriteLine(\u0022INVALID_HEADER\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? header = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(header)) { Console.WriteLine(\u0022INVALID_HEADER\u0022); return; }\n\n        ReadOnlySpan\u003Cchar\u003E span = header.AsSpan().Trim();\n        ReadOnlySpan\u003Cchar\u003E prefix = \u0022Bearer \u0022.AsSpan();\n\n        if (span.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))\n        {\n            ReadOnlySpan\u003Cchar\u003E tokenSpan = span.Slice(prefix.Length).Trim();\n            if (!tokenSpan.IsEmpty)\n            {\n                Console.WriteLine($\u0022TOKEN: {tokenSpan.ToString()}\u0022);\n                return;\n            }\n        }\n\n        Console.WriteLine(\u0022INVALID_HEADER\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Valid JWT Token)",
+        "Description": "Contoh 1 (Valid JWT Token): input \u0027Bearer eyJhbGciOiJIUzI1NiJ9\u0027 -\u003E expected \u0027TOKEN: eyJhbGciOiJIUzI1NiJ9\u0027",
+        "Input": "Bearer eyJhbGciOiJIUzI1NiJ9",
+        "ExpectedOutput": "TOKEN: eyJhbGciOiJIUzI1NiJ9",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Bukan Bearer)",
+        "Description": "Contoh 2 (Bukan Bearer): input \u0027Basic YWxhZGRpbjpvcGVuc2VzYW1l\u0027 -\u003E expected \u0027INVALID_HEADER\u0027",
+        "Input": "Basic YWxhZGRpbjpvcGVuc2VzYW1l",
+        "ExpectedOutput": "INVALID_HEADER",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Bearer Huruf Kecil",
+        "Description": "Bearer Huruf Kecil: input \u0027bearer token12345\u0027 -\u003E expected \u0027TOKEN: token12345\u0027",
+        "Input": "bearer token12345",
+        "ExpectedOutput": "TOKEN: token12345",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Bearer Tanpa Token",
+        "Description": "Bearer Tanpa Token: input \u0027Bearer   \u0027 -\u003E expected \u0027INVALID_HEADER\u0027",
+        "Input": "Bearer   ",
+        "ExpectedOutput": "INVALID_HEADER",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan header.AsSpan() untuk mendapatkan ReadOnlySpan\u003Cchar\u003E tanpa alokasi objek string baru.",
+      "Gunakan span.Slice() untuk mengambil potongan token."
+    ],
+    "Explanation": "ReadOnlySpan\u003Cchar\u003E memungkinkan slicing dan parsing string pada stack memory tanpa alokasi heap yang memicu tekanan pada Garbage Collector (zero-allocation)."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-00-03",
+      "title": "Hierarki Memori \u0026 Cache Lines",
+      "levelName": "LEVEL 00",
+      "context": "Bagaimana contiguous memory Span memaksimalkan L1 cache hit CPU."
+    },
+    {
+      "lessonId": "lesson-11-01",
+      "title": "Arsitektur Kestrel Server",
+      "levelName": "LEVEL 11",
+      "context": "Penggunaan System.IO.Pipelines dan ReadOnlySequence berbasis Memory\u003CT\u003E."
+    }
+  ],
+  "references": [
+    {
+      "title": "Memory\u003CT\u003E and Span\u003CT\u003E usage guidelines - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/memory-and-spans/"
+    },
+    {
+      "title": "An Introduction to Span\u003CT\u003E - Stephen Toub",
+      "url": "https://learn.microsoft.com/en-us/archive/msdn-magazine/2018/january/csharp-all-about-span-exploring-a-new-net-type"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class FastHeaderParser\n{\n    public static bool TryExtractBearerToken(string? authHeader, out string token)\n    {\n        token = \u0022\u0022;\n        if (string.IsNullOrWhiteSpace(authHeader)) return false;\n\n        ReadOnlySpan\u003Cchar\u003E span = authHeader.AsSpan().Trim();\n        const string prefix = \u0022Bearer \u0022;\n\n        if (!span.StartsWith(prefix.AsSpan(), StringComparison.OrdinalIgnoreCase))\n        {\n            return false;\n        }\n\n        ReadOnlySpan\u003Cchar\u003E tokenSlice = span.Slice(prefix.Length).Trim();\n        if (tokenSlice.IsEmpty)\n        {\n            return false;\n        }\n\n        token = tokenSlice.ToString();\n        return true;\n    }\n\n    public static void Main()\n    {\n        if (TryExtractBearerToken(\u0022Bearer abc123xyz\u0022, out string tok))\n        {\n            Console.WriteLine($\u0022Token: {tok}\u0022);\n        }\n    }\n}"
+}

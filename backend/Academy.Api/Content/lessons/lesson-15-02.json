@@ -1,0 +1,156 @@
+{
+  "id": "lesson-15-02",
+  "levelId": "level-15",
+  "moduleId": "mod-15-01",
+  "order": 2,
+  "title": "OAuth 2.0 \u0026 OpenID Connect: Authorization Code Flow dengan PKCE untuk Backend Enterprise",
+  "slug": "oauth2-oidc-pkce-architecture",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 65,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menguasai protokol identitas standar industri: OAuth 2.0 vs OpenID Connect (OIDC), arsitektur Authorization Code Flow dengan PKCE (Proof Key for Code Exchange), dan validasi JWKS.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-15-01",
+      "reason": "JWT Structure \u0026 Token Validation Parameters"
+    },
+    {
+      "lessonId": "lesson-07-04",
+      "reason": "TLS \u0026 Public Key Infrastructure"
+    }
+  ],
+  "introduces": [
+    "OAuth 2.0 (Authorization) vs OpenID Connect (Authentication)",
+    "Authorization Code Flow with PKCE (RFC 7636)",
+    "Code Verifier \u0026 Code Challenge (SHA-256)",
+    "Identity Provider (IdP) \u0026 JWKS (JSON Web Key Sets)",
+    "Scopes, Claims, and ID Token vs Access Token"
+  ],
+  "learningObjectives": [
+    "Membedakan fungsi utama OAuth 2.0 (memberi hak akses resource) dengan OpenID Connect (memverifikasi identitas pengguna)",
+    "Menjelaskan bagaimana PKCE (Proof Key for Code Exchange) menggagalkan serangan Authorization Code Interception",
+    "Membangun alur verifikasi Code Challenge (S256) menggunakan \u0060SHA256\u0060 dan base64url encoding",
+    "Mengonfigurasi backend ASP.NET Core untuk memvalidasi token JWT secara dinamis menggunakan endpoint JWKS IdP"
+  ],
+  "markdownContent": "# OAuth 2.0 \u0026 OpenID Connect: Authorization Code Flow dengan PKCE untuk Backend Enterprise\n\nDi masa lalu, jika aplikasi pihak ketiga ingin mengakses data Anda di Google atau Facebook, Anda terpaksa memberikan password akun Anda secara langsung. Ini adalah bencana keamanan.\n\n**OAuth 2.0** memecahkan masalah ini dengan menyediakan protokol otorisasi terdelegasi (*delegated authorization*). Sementara **OpenID Connect (OIDC)** menambahkan lapisan identitas di atas OAuth 2.0 untuk memberikan informasi identitas pengguna (*single sign-on / authentication*).\n\nUntuk seluruh aplikasi modern\u2014baik Single Page Applications (SPA), Mobile Apps, maupun Backend API\u2014standar wajib yang diakui dunia saat ini adalah **Authorization Code Flow dengan PKCE (Proof Key for Code Exchange)**.\n\n---\n\n## 1. OAuth 2.0 vs OpenID Connect: Jangan Tertukar!\n\n| Aspek | OAuth 2.0 | OpenID Connect (OIDC) |\n| :--- | :--- | :--- |\n| **Fokus Utama** | **Otorisasi (Authorization)**: \u0022Apa yang boleh diakses oleh aplikasi ini?\u0022 | **Otentikasi (Authentication)**: \u0022Siapa pengguna ini?\u0022 |\n| **Artifact Kunci** | **Access Token**: Digunakan untuk mengakses Protected Resource API | **ID Token (JWT)**: Berisi informasi profil pengguna (sub, name, email) |\n| **Analogi Nyata** | Kartu kunci kamar hotel (membuka pintu tanpa tahu nama Anda) | Paspor atau KTP (membuktikan identitas resmi diri Anda) |\n\n---\n\n## 2. Alur Authorization Code Flow dengan PKCE (RFC 7636)\n\nPada masa lalu, aplikasi publik (seperti frontend React atau mobile app) rentan terhadap pembajakan kode otorisasi (*Authorization Code Interception Attack*). **PKCE** diciptakan untuk mengeliminasi kebutuhan menyimpan \u0060client_secret\u0060 di client.\n\n\u0060\u0060\u0060mermaid\nsequenceDiagram\n    autonumber\n    participant App as Client (SPA / Mobile)\n    participant Auth as Identity Provider / IdP\n    participant API as Resource Server (Enterprise API)\n\n    Note over App: 1. Generate Code Verifier \u0026 Hash SHA256 (Code Challenge)\n    App-\u003E\u003EAuth: 2. Redirect: GET /authorize (client_id, challenge, S256)\n    Note over Auth: User Autentikasi \u0026 Beri Consent\n    Auth--\u003E\u003EApp: 3. Redirect Balik dengan Authorization Code mentah\n\n    Note over App: 4. Tukar Auth Code dengan Token\n    App-\u003E\u003EAuth: POST /token (code, code_verifier, client_id)\n    Note over Auth: Verifikasi SHA256(verifier) == challenge awal\n    Auth--\u003E\u003EApp: 5. Return Access Token (JWT) \u002B Refresh Token\n\n    App-\u003E\u003EAPI: 6. Request API dengan Bearer Access Token\n    API--\u003E\u003EApp: 7. Response Data Terproteksi (200 OK)\n\u0060\u0060\u0060\n\n### Langkah Matematis PKCE:\n1. Client membuat string acak dengan entropi tinggi: **\u0060Code Verifier\u0060** (43-128 karakter).\n2. Client menghitung hash SHA-256 dari string tersebut dan mengonversinya ke Base64URL: **\u0060Code Challenge = Base64Url(SHA256(Code Verifier))\u0060**.\n3. Saat meminta login ke IdP, client mengirimkan \u0060Code Challenge\u0060 dan metode (\u0060code_challenge_method=S256\u0060).\n4. IdP menyimpan challenge tersebut dan mengembalikan \u0060Authorization Code\u0060 sementara ke client via redirect.\n5. Client menukarkan \u0060Authorization Code\u0060 dengan mengirimkan string asli **\u0060Code Verifier\u0060** ke IdP.\n6. IdP menghitung hash SHA256 dari Verifier yang dikirim. Jika hasilnya cocok dengan Challenge awal, IdP menerbitkan token! Jika hacker mencuri Authorization Code di langkah C, hacker tidak bisa menukarnya karena tidak memiliki \u0060Code Verifier\u0060 asli!\n\n---\n\n## 3. Validasi JWKS (JSON Web Key Sets) di Backend API\n\nKetika Backend API Anda menerima Access Token dari client, bagaimana backend Anda memverifikasi bahwa token tersebut benar-benar ditandatangani oleh IdP resmi (seperti Auth0, Keycloak, atau Azure AD), dan bukan token palsu buatan hacker?\n\nBackend API **tidak perlu menyimpan certificate secara manual**. Backend API membaca endpoint **JWKS** IdP (\u0060/.well-known/openid-configuration\u0060 -\u003E \u0060/.well-known/jwks.json\u0060):\n\n\u0060\u0060\u0060json\n{\n  \u0022keys\u0022: [\n    {\n      \u0022kty\u0022: \u0022RSA\u0022,\n      \u0022kid\u0022: \u0022auth-key-2026-v1\u0022,\n      \u0022n\u0022: \u0022u1...rsa_modulus...\u0022,\n      \u0022e\u0022: \u0022AQAB\u0022,\n      \u0022alg\u0022: \u0022RS256\u0022\n    }\n  ]\n}\n\u0060\u0060\u0060\n\nASP.NET Core JWT middleware secara otomatis:\n1. Membaca header \u0060kid\u0060 (Key ID) pada incoming JWT.\n2. Mencari public key yang cocok di JWKS cache IdP.\n3. Memvalidasi tanda tangan kriptografis RSA token.\n\n---\n\n## 4. Ringkasan \u0026 Aturan Penerapan\n\n1. **Gunakan Selalu PKCE**: Jangan pernah lagi menggunakan *Implicit Flow* (RFC sudah menyatakan Implicit Flow usang dan dilarang).\n2. **Jangan Simpan Client Secret di Client Publik**: Browser atau file APK Android dapat didekompilasi dengan mudah; PKCE mengamankan transmisi tanpa memerlukan secret.\n3. **Validasi Aud \u0026 Iss**: Selalu pastikan Access Token memiliki \u0060aud\u0060 (audience) yang merujuk spesifik ke API Anda, untuk mencegah token dari service lain disalahgunakan pada API Anda (*Token Substitution Attack*).",
+  "starterCode": "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\n// Simulasi Mini Alur PKCE (Proof Key for Code Exchange)\npublic class PkceHelper\n{\n    public static string GenerateCodeVerifier()\n    {\n        // 32 bytes acak menghasilkan string Base64Url 43 karakter\n        byte[] bytes = new byte[32];\n        RandomNumberGenerator.Fill(bytes);\n        return Base64UrlEncode(bytes);\n    }\n\n    public static string GenerateCodeChallenge(string codeVerifier)\n    {\n        // TODO:\n        // 1. Ambil byte UTF8 dari codeVerifier.\n        // 2. Hitung hash SHA256 dari byte tersebut menggunakan SHA256.HashData(...).\n        // 3. Konversikan hash byte tersebut ke string menggunakan Base64UrlEncode.\n        \n        return \u0022\u0022;\n    }\n\n    public static bool Verify(string codeVerifier, string expectedChallenge)\n    {\n        var computedChallenge = GenerateCodeChallenge(codeVerifier);\n        return computedChallenge == expectedChallenge;\n    }\n\n    public static string Base64UrlEncode(byte[] input)\n    {\n        return Convert.ToBase64String(input)\n            .TrimEnd(\u0027=\u0027)\n            .Replace(\u0027\u002B\u0027, \u0027-\u0027)\n            .Replace(\u0027/\u0027, \u0027_\u0027);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Client membuat Verifier dan Challenge\n        string verifier = PkceHelper.GenerateCodeVerifier();\n        string challenge = PkceHelper.GenerateCodeChallenge(verifier);\n\n        Console.WriteLine($\u0022Code Verifier  : {verifier}\u0022);\n        Console.WriteLine($\u0022Code Challenge : {challenge}\u0022);\n\n        // Server IdP memverifikasi verifier saat token exchange\n        bool isValid = PkceHelper.Verify(verifier, challenge);\n        Console.WriteLine($\u0022\\nVerifikasi IdP Sukses: {isValid} (Harus True)\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\npublic class PkceHelper\n{\n    public static string GenerateCodeVerifier()\n    {\n        byte[] bytes = new byte[32];\n        RandomNumberGenerator.Fill(bytes);\n        return Base64UrlEncode(bytes);\n    }\n\n    public static string GenerateCodeChallenge(string codeVerifier)\n    {\n        byte[] verifierBytes = Encoding.UTF8.GetBytes(codeVerifier);\n        byte[] hash = SHA256.HashData(verifierBytes);\n        return Base64UrlEncode(hash);\n    }\n\n    public static bool Verify(string codeVerifier, string expectedChallenge)\n    {\n        var computedChallenge = GenerateCodeChallenge(codeVerifier);\n        return computedChallenge == expectedChallenge;\n    }\n\n    public static string Base64UrlEncode(byte[] input)\n    {\n        return Convert.ToBase64String(input)\n            .TrimEnd(\u0027=\u0027)\n            .Replace(\u0027\u002B\u0027, \u0027-\u0027)\n            .Replace(\u0027/\u0027, \u0027_\u0027);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        string verifier = PkceHelper.GenerateCodeVerifier();\n        string challenge = PkceHelper.GenerateCodeChallenge(verifier);\n\n        Console.WriteLine($\u0022Code Verifier  : {verifier}\u0022);\n        Console.WriteLine($\u0022Code Challenge : {challenge}\u0022);\n\n        bool isValid = PkceHelper.Verify(verifier, challenge);\n        Console.WriteLine($\u0022\\nVerifikasi IdP Sukses: {isValid} (Harus True)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-15-02-1",
+      "type": "single_choice",
+      "question": "Mengapa PKCE (RFC 7636) diwajibkan untuk aplikasi publik (SPA/Mobile) menggantikan Authorization Code Flow klasik?",
+      "options": [
+        "Karena browser web tidak bisa menjalankan algoritma SHA.",
+        "Karena aplikasi publik tidak dapat menyimpan \u0027client_secret\u0027 secara rahasia, dan PKCE mencegah hacker menukarkan kode otorisasi curian tanpa memiliki \u0027Code Verifier\u0027 yang dibuat di client.",
+        "Karena PKCE otomatis mempercepat loading halaman web sebesar 50%.",
+        "Karena PKCE adalah singkatan dari nama database."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Aplikasi frontend browser atau mobile dapat diekstraksi kodenya oleh pengguna, sehingga rahasia client_secret pasti bocor. PKCE menggantikan rahasia statis tersebut dengan rahasia dinamis per-transaksi (Code Verifier) yang diverifikasi melalui hash kriptografis SHA-256.",
+      "optionExplanations": [
+        "Salah. Seluruh browser modern mendukung SHA lewat Web Crypto API.",
+        "Benar! PKCE memitigasi serangan intersepsi authorization code pada client publik tanpa rahasia statis.",
+        "Salah. PKCE adalah protokol keamanan, bukan optimasi kecepatan rendering.",
+        "Salah. PKCE adalah standar IETF untuk ekstensi OAuth."
+      ],
+      "sectionRef": "2. Alur Authorization Code Flow dengan PKCE (RFC 7636)",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-15-02-2",
+      "type": "single_choice",
+      "question": "Bagaimana cara Backend API enterprise memvalidasi keaslian tanda tangan token JWT yang diterbitkan oleh Identity Provider (seperti Auth0 / Keycloak)?",
+      "options": [
+        "Dengan membaca public key dari endpoint JWKS (JSON Web Key Sets) milik IdP secara berkala.",
+        "Dengan menebak private key milik IdP menggunakan algoritma random.",
+        "Dengan mengirimkan email ke administrator IdP setiap ada request HTTP.",
+        "Backend API tidak perlu memvalidasi tanda tangan jika format token berupa JSON."
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "IdP mempublikasikan public key RSA/EC miliknya melalui endpoint standar JWKS (/.well-known/jwks.json). Backend API mengunduh dan mencache public key ini untuk memvalidasi cryptographic signature dari token masuk secara asimetris tanpa berbagi private key.",
+      "optionExplanations": [
+        "Benar! JWKS menyediakan mekanisme distribusi public key asimetris yang aman dan otomatis.",
+        "Salah. Kriptografi RSA/ECDSA mustahil ditebak secara acak.",
+        "Salah. Validasi dilakukan oleh CPU dalam hitungan mikrodetik, bukan manual via email.",
+        "Salah. Memvalidasi cryptographic signature adalah kewajiban mutlak untuk mencegah pemalsuan token."
+      ],
+      "sectionRef": "3. Validasi JWKS (JSON Web Key Sets) di Backend API",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-15-02",
+    "Title": "Implementasi Perhitungan Code Challenge PKCE SHA-256",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Pada OAuth 2.0 PKCE, klien menghasilkan \u0060code_verifier\u0060 acak lalu menghitung \u0060code_challenge\u0060 dengan rumus:\n\u0060code_challenge = BASE64URL(SHA256(ASCII(code_verifier)))\u0060.\nBase64Url: ubah Base64 standar dengan mengganti \u0027\u002B\u0027 menjadi \u0027-\u0027, \u0027/\u0027 menjadi \u0027_\u0027, dan buang padding \u0027=\u0027 di ujung.\nBaca satu string \u0060code_verifier\u0060 dari stdin dan cetak \u0060code_challenge\u0060 hasil komputasi.",
+    "InputFormat": "Satu baris string code_verifier.",
+    "OutputFormat": "Satu baris string code_challenge Base64Url.",
+    "Constraints": "Panjang verifier 43 s/d 128 karakter.",
+    "Examples": [
+      {
+        "Input": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "Output": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        "Explanation": "Contoh resmi RFC 7636 Appendix B."
+      },
+      {
+        "Input": "secret_code_verifier_123456789012345678901234567890",
+        "Output": "3eXAg7maz5PXVTxXXDeivvtOJe49_pQ8o0Qx6Kl6YYs",
+        "Explanation": "Code verifier dengan padding angka."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? verifier = Console.ReadLine();\n        // TODO: Hitung SHA256 lalu ubah ke Base64Url encoding.\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? verifier = Console.ReadLine()?.Trim();\n        if (string.IsNullOrEmpty(verifier)) return;\n\n        byte[] bytes = Encoding.ASCII.GetBytes(verifier);\n        byte[] hash = SHA256.HashData(bytes);\n\n        string base64 = Convert.ToBase64String(hash);\n        string base64Url = base64.TrimEnd(\u0027=\u0027).Replace(\u0027\u002B\u0027, \u0027-\u0027).Replace(\u0027/\u0027, \u0027_\u0027);\n\n        Console.WriteLine(base64Url);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (RFC 7636)",
+        "Description": "Contoh 1 (RFC 7636): input \u0027dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk\u0027 -\u003E expected \u0027E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\u0027",
+        "Input": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "ExpectedOutput": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Verifier Sederhana",
+        "Description": "Verifier Sederhana: input \u0027secret_code_verifier_123456789012345678901234567890\u0027 -\u003E expected \u00273eXAg7maz5PXVTxXXDeivvtOJe49_pQ8o0Qx6Kl6YYs\u0027",
+        "Input": "secret_code_verifier_123456789012345678901234567890",
+        "ExpectedOutput": "3eXAg7maz5PXVTxXXDeivvtOJe49_pQ8o0Qx6Kl6YYs",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Verifier Alfabet",
+        "Description": "Verifier Alfabet: input \u0027abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJK\u0027 -\u003E expected \u0027cM46ZXqu670yDlJk6RaT8xj8sUvsVmyx2vplpDHbtiY\u0027",
+        "Input": "abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJK",
+        "ExpectedOutput": "cM46ZXqu670yDlJk6RaT8xj8sUvsVmyx2vplpDHbtiY",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan SHA256.HashData(bytes) di .NET 8.",
+      "Ubah Base64 standar: TrimEnd(\u0027=\u0027), Replace(\u0027\u002B\u0027, \u0027-\u0027), Replace(\u0027/\u0027, \u0027_\u0027)."
+    ],
+    "Explanation": "PKCE (Proof Key for Code Exchange) RFC 7636 memitigasi serangan interception authorization code pada Single Page Application (SPA) dan mobile client."
+  },
+  "relatedLessons": [
+    "lesson-15-01",
+    "lesson-07-04",
+    "lesson-11-01"
+  ],
+  "references": [
+    {
+      "title": "RFC 7636: Proof Key for Code Exchange by OAuth Public Clients",
+      "url": "https://datatracker.ietf.org/doc/html/rfc7636",
+      "type": "documentation"
+    },
+    {
+      "title": "OAuth 2.0 Simplified - Aaron Parecki",
+      "url": "https://aaronparecki.com/oauth-2-simplified/",
+      "type": "book"
+    }
+  ]
+}

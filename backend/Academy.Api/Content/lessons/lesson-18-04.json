@@ -1,0 +1,164 @@
+{
+  "id": "lesson-18-04",
+  "levelId": "level-18",
+  "moduleId": "mod-18-03",
+  "order": 4,
+  "title": "Peran Principal Engineer: Technical Vision, ADR, Architecture Review Board, dan Manajemen Risiko Skala Organisasi",
+  "slug": "principal-engineering-leadership-vision",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 65,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendaki puncak kepemimpinan teknik: Peran Principal / Staff Software Engineer, merumuskan Technical Vision, mendokumentasikan keputusan arsitektur (ADR), memimpin Architecture Review Board (ARB), dan mengelola Tech Debt.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-13-01",
+      "reason": "SOLID \u0026 Software Architecture Boundaries"
+    },
+    {
+      "lessonId": "lesson-18-03",
+      "reason": "Legacy Modernization \u0026 Architecture Evolution"
+    }
+  ],
+  "introduces": [
+    "The Archetypes of Staff / Principal Engineers (Tanya Reilly)",
+    "Architectural Decision Records (ADR) format \u0026 governance",
+    "Architecture Review Board (ARB) facilitation",
+    "Technical Debt management (The Tech Debt Quadrant)",
+    "Influencing without authority \u0026 technical communication"
+  ],
+  "learningObjectives": [
+    "Membedakan peran eksekutif Principal Engineer (pengaruh teknis strategis lintas-organisasi) dengan Senior Engineer (eksekusi delivery fitur)",
+    "Menulis Architecture Decision Record (ADR) profesional yang mendokumentasikan konteks, trade-offs, dan konsekuensi pilihan teknologi",
+    "Memimpin Architecture Review Board (ARB) secara kolaboratif tanpa menjadi birokrasi *ivory tower*",
+    "Mengklasifikasikan dan mengadvokasi pelunasan Technical Debt kepada jajaran manajemen eksekutif bisnis"
+  ],
+  "markdownContent": "# Peran Principal Engineer: Technical Vision, ADR, Architecture Review Board, dan Manajemen Risiko Skala Organisasi\n\nSelamat. Jika Anda telah menuntaskan kurikulum ini dari Level 00 hingga Level 18, Anda telah menguasai spektrum teknis penuh seorang engineer backend modern: dari sirkuit CPU, algoritma, runtime CLR, database internals, keamanan kriptografi, hingga arsitektur terdistribusi skala global.\n\nNamun, untuk melompat dari seorang **Senior Engineer** menjadi **Principal Software Engineer** atau **Staff Plus Engineer**, keunggulan teknis saja tidak lagi cukup.\n\nTugas seorang Principal Engineer bukan lagi sekadar menulis kode fitur tercepat, melainkan **menjadi pengganda kekuatan teknis (Technical Force Multiplier)** bagi seluruh organisasi rekayasa perusahaan.\n\n---\n\n## 1. Empat Arketipe Principal / Staff Engineer (Tanya Reilly)\n\nDalam bukunya *The Staff Engineer\u0027s Path*, Tanya Reilly membagi peran ini menjadi 4 arketipe utama:\n1. **The Tech Lead**: Memimpin arah teknis dari tim rekayasa besar, mengoordinasikan eksekusi arsitektur harian.\n2. **The Architect**: Bertanggung jawab atas desain sistem holistik lintas puluhan domain, memastikan konsistensi platform dan standar keamanan.\n3. **The Solver**: Spesialis pemecah masalah mendalam; diterjunkan untuk mengatasi krisis teknis terberat (seperti performance degradation akut atau deadlock kompleks).\n4. **The Right Hand**: Mitra teknis terpercaya bagi VP of Engineering / CTO dalam merumuskan strategi investasi teknologi masa depan.\n\n---\n\n## 2. Architectural Decision Records (ADR): Jejak Sejarah Keputusan\n\nSalah satu tanda kedewasaan arsitektur perusahaan adalah keberadaan **ADR (Architectural Decision Records)**.\nBerapa kali Anda melihat tim berdebat: *\u0022Mengapa 3 tahun lalu sistem ini memilih PostgreSQL bukan MongoDB?\u0022* atau *\u0022Siapa yang memutuskan menggunakan Kafka?\u0022*\n\nADR adalah dokumen teks pendek (disimpan di folder \u0060docs/adr/\u0060 pada repository git) yang merekam keputusan penting secara permanen:\n\n\u0060\u0060\u0060markdown\n# ADR-0042: Pengadopsian Apache Kafka untuk Event Bus Buku Besar\n\n## Status: ACCEPTED (Disetujui)\nTanggal: 2026-10-31\nPemilik: Principal Backend Architect\n\n## Konteks Bisnis \u0026 Teknis\nSistem buku besar finansial membutuhkan throughput pemrosesan transaksi hingga 50.000 TPS dengan jaminan audit trail yang dapat diputar ulang (replayable log) selama 7 tahun retensi. RabbitMQ saat ini mengalami disk pressure dan tidak mendukung rewind offset.\n\n## Keputusan yang Diambil\nMengadopsi Apache Kafka cluster 5-node sebagai distributed commit log utama.\n\n## Konsekuensi \u0026 Trade-Offs\nPositif:\n\u002B Throughput meningkat 10x lipat.\n\u002B Dukungan replay historis untuk rekonsiliasi harian.\nNegatif / Risiko:\n- Membutuhkan keahlian operasional ZooKeeper/KRaft di tim SRE.\n- Partisi harus dirancang cermat menggunakan EntityId agar urutan pesan tidak rusak.\n\u0060\u0060\u0060\n\n---\n\n## 3. Architecture Review Board (ARB) Tanpa Birokrasi \u0022Ivory Tower\u0022\n\nBanyak perusahaan gagal ketika membuat Architecture Review Board (ARB): sekelompok arsitek duduk di menara gading (*Ivory Tower*), mengeluarkan aturan tebal yang tidak realistis, dan menjadi penghambat lambatnya rilis software.\n\n### Prinsip ARB Modern yang Sehat:\n1. **Fasilitator, Bukan Polisi**: ARB bertindak sebagai konsultan yang membantu tim proyek menemukan *blind spot* (celah keamanan atau kegagalan skalabilitas) sebelum kode ditulis.\n2. **Pemberdayaan Terdesentralisasi**: Tim bebas memilih teknologi internal selama mematuhi batas-batas platform (*Paved Roads / Golden Paths*): wajib OpenTelemetry, wajib TLS 1.3, wajib RFC 7807 ProblemDetails.\n3. **Penyelesaian Cepat**: Tinjauan arsitektur harus selesai dalam hitungan hari, bukan berbulan-bulan.\n\n---\n\n## 4. Kuadran Technical Debt (Martin Fowler)\n\nPrincipal Engineer harus mampu mengomunikasikan **Technical Debt (Hutang Teknis)** kepada Chief Technology Officer (CTO) dan Chief Product Officer (CPO) menggunakan bahasa risiko bisnis:\n\n\u0060\u0060\u0060text\n                       RECKLESS (Ugal-ugalan)\n                                |\n          \u0022Kita tidak punya     |  \u0022Kita harus rilis besok,\n          waktu untuk desain!\u0022  |  kita tahu ada konsekuensinya,\n                                |  kita akan rapikan minggu depan.\u0022\n     ---------------------------\u002B---------------------------\n          \u0022Sekarang kita tahu   |  (Pola Arsitektur yang\n          arsitektur yang benar |   sengaja diambil demi\n          setelah 3 tahun!\u0022     |   validasi pasar produk)\n                                |\n                       PRUDENT (Bijaksana)\n\u0060\u0060\u0060\n\nHutang teknis yang disengaja (*Prudent Debt*) adalah alat bisnis yang sah untuk menguji pasar. Namun hutang teknis yang dibiarkan menumpuk tanpa pelunasan bunga akan memicu kebangkrutan operasional (*Engineering Bankruptcy*).\n\n---\n\n## 5. Ringkasan \u0026 Warisan Insinyur Utama\n\n1. **Pengaruh Tanpa Otoritas (Influence Without Authority)**: Sebagai Principal Engineer, Anda jarang memiliki bawahan langsung secara struktural. Pengaruh Anda dibangun atas kejelasan argumen teknis, rasa hormat, empati, dan integritas data.\n2. **Dokumentasikan dengan ADR**: Keputusan arsitektur terbaik adalah keputusan yang tercatat alasan konteks dan trade-off-nya sehingga generasi engineer masa depan memahami latar belakangnya.\n3. **Bangun Manusia, Bukan Sekadar Sistem**: Warisan sejati seorang Principal Engineer bukanlah baris kode yang ditulisnya, melainkan berapa banyak engineer muda yang berhasil dimentor dan dikembangkannya menjadi arsitek-arsitek hebat berikutnya.",
+  "starterCode": "using System;\n\n// Skenario Pembuatan Architectural Decision Record (ADR)\npublic class ArchitectureDecisionRecord\n{\n    public int Number { get; set; }\n    public string Title { get; set; } = \u0022\u0022;\n    public string Status { get; set; } = \u0022PROPOSED\u0022;\n    public string Context { get; set; } = \u0022\u0022;\n    public string Decision { get; set; } = \u0022\u0022;\n    public string Consequences { get; set; } = \u0022\u0022;\n\n    public string GenerateMarkdown()\n    {\n        // TODO:\n        // Format ADR menjadi dokumen Markdown standar:\n        // # ADR-{Number:D4}: {Title}\n        // ## Status: {Status}\n        // ## Context\n        // {Context}\n        // ## Decision\n        // {Decision}\n        // ## Consequences\n        // {Consequences}\n        \n        return \u0022\u0022;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var adr = new ArchitectureDecisionRecord\n        {\n            Number = 1,\n            Title = \u0022Migrasi Core Banking ke .NET 8 dan PostgreSQL\u0022,\n            Status = \u0022ACCEPTED\u0022,\n            Context = \u0022Sistem monolitik lama mengalami masalah skalabilitas pada volume transaksi akhir bulan.\u0022,\n            Decision = \u0022Mengadopsi .NET 8 dengan Clean Architecture, Dapper, dan PostgreSQL cluster.\u0022,\n            Consequences = \u0022Performa query meningkat 4x lipat; membutuhkan pelatihan SQL modern bagi tim backend.\u0022\n        };\n\n        string doc = adr.GenerateMarkdown();\n        Console.WriteLine(doc);\n    }\n}",
+  "solutionCode": "using System;\n\npublic class ArchitectureDecisionRecord\n{\n    public int Number { get; set; }\n    public string Title { get; set; } = \u0022\u0022;\n    public string Status { get; set; } = \u0022PROPOSED\u0022;\n    public string Context { get; set; } = \u0022\u0022;\n    public string Decision { get; set; } = \u0022\u0022;\n    public string Consequences { get; set; } = \u0022\u0022;\n\n    public string GenerateMarkdown()\n    {\n        return $\u0022# ADR-{Number:D4}: {Title}\\n\\n\u0022 \u002B\n               $\u0022## Status: {Status}\\n\\n\u0022 \u002B\n               $\u0022## Context\\n{Context}\\n\\n\u0022 \u002B\n               $\u0022## Decision\\n{Decision}\\n\\n\u0022 \u002B\n               $\u0022## Consequences\\n{Consequences}\u0022;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var adr = new ArchitectureDecisionRecord\n        {\n            Number = 1,\n            Title = \u0022Migrasi Core Banking ke .NET 8 dan PostgreSQL\u0022,\n            Status = \u0022ACCEPTED\u0022,\n            Context = \u0022Sistem monolitik lama mengalami masalah skalabilitas pada volume transaksi akhir bulan.\u0022,\n            Decision = \u0022Mengadopsi .NET 8 dengan Clean Architecture, Dapper, dan PostgreSQL cluster.\u0022,\n            Consequences = \u0022Performa query meningkat 4x lipat; membutuhkan pelatihan SQL modern bagi tim backend.\u0022\n        };\n\n        string doc = adr.GenerateMarkdown();\n        Console.WriteLine(doc);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-17-04-7",
+      "type": "single_choice",
+      "question": "Apa tujuan utama dari pembuatan dokumen Architectural Decision Record (ADR) dalam repository kode enterprise?",
+      "options": [
+        "Membuat laporan absensi harian developer.",
+        "Merekam konteks bisnis, pertimbangan trade-off, dan konsekuensi dari sebuah keputusan arsitektur penting secara permanen di git, sehingga generasi engineer masa depan memahami latar belakang pemilihan teknologi tersebut.",
+        "Menggantikan seluruh kode program aplikasi dengan file teks.",
+        "Menghitung jumlah gaji bulanan pegawai."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "ADR adalah dokumen sejarah rekayasa: ia mencatat mengapa sebuah keputusan diambil pada saat itu, alternatif apa yang ditolak, dan apa konsekuensinya, mencegah perdebatan berulang dan menjaga kontinuitas visi teknis.",
+      "optionExplanations": [
+        "Salah. ADR bukan sistem absensi personalia.",
+        "Benar! ADR mempertahankan memori institusional keputusan arsitektur di dalam git repository.",
+        "Salah. ADR mendampingi kode program, bukan menggantikannya.",
+        "Salah. Dokumen arsitektur tidak menangani payroll gaji."
+      ],
+      "sectionRef": "2. Architectural Decision Records (ADR): Jejak Sejarah Keputusan",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-17-04-8",
+      "type": "single_choice",
+      "question": "Apa perbedaan paling mendasar antara peran Principal Software Engineer dengan Senior Software Engineer?",
+      "options": [
+        "Senior Engineer mengetik dengan 2 jari, sedangkan Principal dengan 10 jari.",
+        "Senior Engineer berfokus pada pengiriman solusi teknis terbaik untuk fitur/timnya, sedangkan Principal Engineer bertindak sebagai technical force multiplier yang membentuk visi strategis, tata kelola arsitektur, dan manajemen risiko lintas seluruh organisasi rekayasa.",
+        "Principal Engineer tidak boleh lagi menyentuh komputer.",
+        "Principal Engineer hanya bekerja di hari libur."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Senior Engineer adalah eksekutor fitur yang sangat handal di level tim. Principal Engineer mengarahkan strategi jangka panjang, membimbing arsitektur lintas-sistem, menyelaraskan keputusan teknologi dengan visi bisnis, dan membina talenta insinyur di seluruh organisasi.",
+      "optionExplanations": [
+        "Salah. Keterampilan mengetik fisik tidak relevan.",
+        "Benar! Principal Engineer adalah pengungkit strategis (force multiplier) bagi seluruh ekosistem rekayasa perusahaan.",
+        "Salah. Principal tetap menginspeksi kode dan arsitektur teknis secara langsung.",
+        "Salah. Jadwal kerja bersifat profesional standar."
+      ],
+      "sectionRef": "1. Empat Arketipe Principal / Staff Engineer (Tanya Reilly)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-17-07",
+    "Title": "Validator dan Generator Format Architecture Decision Record (ADR)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Sebuah Architecture Decision Record (ADR) enterprise memuat metadata keputusan arsitektur.\nBaca empat baris dari stdin:\nBaris 1: Nomor ADR (int)\nBaris 2: Judul Keputusan\nBaris 3: Status (\u0027Proposed\u0027, \u0027Accepted\u0027, \u0027Superseded\u0027)\nBaris 4: Konteks \u0026 Keputusan ringkas.\nValidasi status: jika bukan salah satu dari ketiga status tersebut, jadikan \u0027Proposed\u0027.\nCetak dokumen ADR format markdown:\n# ADR-{Nomor:D4}: {Judul}\nStatus: {Status}\n{Konteks}",
+    "InputFormat": "Empat baris stdin berturut-turut.",
+    "OutputFormat": "Tiga baris string format ADR Markdown.",
+    "Constraints": "Nomor ADR \u003E= 1.",
+    "Examples": [
+      {
+        "Input": "1\nAdopsi PostgreSQL sebagai RDBMS Utama\nAccepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.",
+        "Output": "# ADR-0001: Adopsi PostgreSQL sebagai RDBMS Utama\nStatus: Accepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.",
+        "Explanation": "Format ADR resmi dengan penomoran 4 digit."
+      },
+      {
+        "Input": "2\nImplementasi Event Sourcing\nDraft\nMemerlukan audit trail keuangan.",
+        "Output": "# ADR-0002: Implementasi Event Sourcing\nStatus: Proposed\nMemerlukan audit trail keuangan.",
+        "Explanation": "Status di luar Proposed/Accepted/Superseded dinormalisasi menjadi Proposed."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Format string ADR Markdown dengan nomor 4 digit (D4).\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? title = Console.ReadLine()?.Trim();\n        string? status = Console.ReadLine()?.Trim();\n        string? ctx = Console.ReadLine()?.Trim();\n\n        if (!int.TryParse(l1, out int num)) return;\n\n        string normStatus = status?.ToLowerInvariant() switch\n        {\n            \u0022accepted\u0022 =\u003E \u0022Accepted\u0022,\n            \u0022superseded\u0022 =\u003E \u0022Superseded\u0022,\n            _ =\u003E \u0022Proposed\u0022\n        };\n\n        Console.WriteLine($\u0022# ADR-{num:D4}: {title}\u0022);\n        Console.WriteLine($\u0022Status: {normStatus}\u0022);\n        Console.WriteLine(ctx);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Postgres Accepted)",
+        "Description": "Contoh 1 (Postgres Accepted): input \u00271\nAdopsi PostgreSQL sebagai RDBMS Utama\nAccepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.\u0027 -\u003E expected \u0027# ADR-0001: Adopsi PostgreSQL sebagai RDBMS Utama\nStatus: Accepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.\u0027",
+        "Input": "1\nAdopsi PostgreSQL sebagai RDBMS Utama\nAccepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.",
+        "ExpectedOutput": "# ADR-0001: Adopsi PostgreSQL sebagai RDBMS Utama\nStatus: Accepted\nMigrasi dari SQL Server untuk menghemat biaya lisensi.",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Status Invalid Menjadi Proposed",
+        "Description": "Status Invalid Menjadi Proposed: input \u002742\nPenggunaan Kafka\nDraft\nPembahasan awal message broker.\u0027 -\u003E expected \u0027# ADR-0042: Penggunaan Kafka\nStatus: Proposed\nPembahasan awal message broker.\u0027",
+        "Input": "42\nPenggunaan Kafka\nDraft\nPembahasan awal message broker.",
+        "ExpectedOutput": "# ADR-0042: Penggunaan Kafka\nStatus: Proposed\nPembahasan awal message broker.",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Nomor 3 Digit Format D4",
+        "Description": "Nomor 3 Digit Format D4: input \u0027120\nClean Architecture Migration\nsuperseded\nDigantikan oleh Vertical Slice.\u0027 -\u003E expected \u0027# ADR-0120: Clean Architecture Migration\nStatus: Superseded\nDigantikan oleh Vertical Slice.\u0027",
+        "Input": "120\nClean Architecture Migration\nsuperseded\nDigantikan oleh Vertical Slice.",
+        "ExpectedOutput": "# ADR-0120: Clean Architecture Migration\nStatus: Superseded\nDigantikan oleh Vertical Slice.",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Nomor 4 Digit",
+        "Description": "Nomor 4 Digit: input \u00271000\nZero Trust Network\nAccepted\nImplementasi mTLS antar service.\u0027 -\u003E expected \u0027# ADR-1000: Zero Trust Network\nStatus: Accepted\nImplementasi mTLS antar service.\u0027",
+        "Input": "1000\nZero Trust Network\nAccepted\nImplementasi mTLS antar service.",
+        "ExpectedOutput": "# ADR-1000: Zero Trust Network\nStatus: Accepted\nImplementasi mTLS antar service.",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan format string \u0060{num:D4}\u0060 untuk menghasilkan angka dengan padding 4 digit (misal 1 -\u003E 0001).",
+      "Gunakan switch expression untuk normalisasi status."
+    ],
+    "Explanation": "Architecture Decision Record (ADR) adalah dokumen penting yang merekam konteks, konsekuensi, dan alasan teknis di balik keputusan penting arsitektur sistem organisasi."
+  },
+  "relatedLessons": [
+    "lesson-13-01",
+    "lesson-18-03",
+    "lesson-17-02"
+  ],
+  "references": [
+    {
+      "title": "The Staff Engineer\u0027s Path - Tanya Reilly",
+      "url": "https://www.oreilly.com/library/view/the-staff-engineers/9781098118723/",
+      "type": "book"
+    },
+    {
+      "title": "Documenting Architecture Decisions - Michael Nygard",
+      "url": "https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions",
+      "type": "article"
+    }
+  ]
+}

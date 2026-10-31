@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-14-02",
+    "levelId":  "level-14",
+    "moduleId":  "mod-14-02",
+    "order":  2,
+    "title":  "Event-Driven Architecture: Kafka Partitions, RabbitMQ Exchanges, dan Idempotent Consumers",
+    "slug":  "event-driven-kafka-rabbitmq-idempotency",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendesain arsitektur asinkronus berbasis pesan: Apache Kafka (Distributed Commit Log \u0026 Partitioning) vs RabbitMQ (AMQP Exchanges \u0026 Queues), dan implementasi Consumer yang Idempotent.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-14-01",
+                              "reason":  "Sistem Terdistribusi \u0026 Partial Failures"
+                          },
+                          {
+                              "lessonId":  "lesson-12-04",
+                              "reason":  "Pola Producer-Consumer \u0026 Channels"
+                          }
+                      ],
+    "introduces":  [
+                       "Event-Driven Architecture (EDA) \u0026 Decoupling",
+                       "Smart Broker / Dumb Consumer (RabbitMQ AMQP model)",
+                       "Dumb Broker / Smart Consumer (Apache Kafka Append-Only Log)",
+                       "Kafka Partitioning \u0026 Message Ordering Guarantees",
+                       "At-least-once Delivery vs Idempotent Consumer Pattern"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan filosofi arsitektur antara RabbitMQ (antrean pesan transient) dan Apache Kafka (distributed replayable commit log)",
+                               "Menjelaskan bagaimana penentuan Partition Key di Kafka menjamin urutan pesan (ordering) per-entitas",
+                               "Mengidentifikasi mengapa \u0027Exactly-Once Processing\u0027 di level jaringan adalah mitos, dan bagaimana mencapainya di level aplikasi dengan Idempotent Consumer",
+                               "Menerapkan pola Deduplication Store untuk menyaring event duplikat akibat retry transmisi broker"
+                           ],
+    "markdownContent":  "# Event-Driven Architecture: Kafka Partitions, RabbitMQ Exchanges, dan Idempotent Consumers\n\nDalam arsitektur microservices berbasis REST/gRPC sinkronus, setiap penambahan service baru memperpanjang rantai dependensi (*chain of failure*). Jika Service A memanggil B, B memanggil C, dan C memanggil D, keterlambatan 500ms di D melumpuhkan seluruh rantai request.\n\n**Event-Driven Architecture (EDA)** memecahkan masalah ini dengan membalikkan model komunikasi: alih-alih memerintah service lain (*Commands*), sebuah service cukup mempublikasikan fakta bahwa sesuatu telah terjadi (*Domain Events*). Service lain yang tertarik dapat mendengarkan (*subscribe*) event tersebut secara asinkronus.\n\nDua teknologi broker pesan terpopuler di dunia enterprise adalah **RabbitMQ** dan **Apache Kafka**.\n\n---\n\n## 1. RabbitMQ vs Apache Kafka: Dua Filosofi Berbeda\n\n```mermaid\nflowchart LR\n    P[\"Producer\"] --\u003e Ex[\"Exchange\"]\n    Ex --\u003e Q[\"Queue\"]\n    Q --\u003e C[\"Consumer\"]\n    C -.-\u003e|\"ACK (Pesan Dihapus)\"| Q\n```\n\n```mermaid\nflowchart LR\n    P[\"Producer\"] --\u003e L[\"Commit Log Partition 0\u003cbr/\u003e[msg0][msg1][msg2][msg3][msg4]\"]\n    L -.-\u003e|Offset: 2| GA[\"Consumer Group A\"]\n    L -.-\u003e|Offset: 4| GB[\"Consumer Group B\"]\n```\n\n### Tabel Perbandingan:\n| Kriteria | RabbitMQ | Apache Kafka |\n| :--- | :--- | :--- |\n| **Model Data** | Message Queue (transient) | Append-Only Distributed Commit Log |\n| **Penyimpanan Pesan**| Dihapus setelah di-ack | Bertahan di disk (misal 7 hari), replayable |\n| **Throughput** | Tinggi (puluhan ribu msg/detik) | Ekstrem (jutaan msg/detik) |\n| **Routing** | Sangat Fleksibel (Direct, Topic, Fanout, Headers) | Sederhana (berdasarkan Topic dan Partition Key) |\n| **Kasus Penggunaan** | Background job processing, notifikasi, task routing | Event streaming, audit trail finansial, data pipelines |\n\n---\n\n## 2. Partisi Kafka dan Jaminan Urutan Pesan (Message Ordering)\n\nSalah satu pertanyaan wawancara backend paling umum: *\"Bagaimana Kafka menjamin urutan pesan (message ordering)?\"*\n\n\u003e **Jaminan Kafka:** Pesan dijamin terurut **HANYA di dalam satu partisi yang sama**, BUKAN di seluruh topik!\n\nJika Anda mempublikasikan event transfer uang tanpa partisi yang tepat:\n- `Event 1: Setor Rp 500.000` masuk ke Partition 0.\n- `Event 2: Tarik Rp 400.000` masuk ke Partition 1.\nJika Consumer B memproses Partition 1 lebih cepat daripada Consumer A memproses Partition 0, saldo nasabah bisa menjadi negatif!\n\n### Solusinya: Partition Key yang Konsisten\n```csharp\n// Selalu gunakan Entity ID (misal AccountId / UserId) sebagai Partition Key!\n// Kafka akan menghitung: hash(AccountId) % jumlah_partition\n// Ini menjamin seluruh event milik nasabah yang sama SELALU masuk ke partisi yang sama!\nvar message = new Message\u003cstring, string\u003e\n{\n    Key = accountId.ToString(), // Partition Key!\n    Value = JsonSerializer.Serialize(balanceEvent)\n};\n```\n\n---\n\n## 3. Mitos \"Exactly-Once\" dan Kewajiban Idempotent Consumer\n\nDi jaringan terdistribusi, kegagalan transmisi ACK dapat membuat broker mengirimkan kembali pesan yang sama (*At-Least-Once Delivery*).\n\nJika broker mengirimkan pesan `PaymentProcessed (Amount: 500.000)` sebanyak 2 kali:\n- Consumer yang naif akan memotong saldo nasabah dua kali!\n- **Solusi Wajib**: Setiap event harus memiliki **EventId / MessageId** unik global.\n\n```csharp\npublic class IdempotentPaymentConsumer\n{\n    private readonly IProcessedMessageStore _store;\n    private readonly IAccountRepository _accountRepo;\n\n    public async Task ConsumeAsync(PaymentEvent ev)\n    {\n        // 1. Cek apakah EventId sudah pernah berhasil diproses\n        if (await _store.HasBeenProcessedAsync(ev.EventId))\n        {\n            Console.WriteLine($\"Event {ev.EventId} duplikat terdeteksi. Skip eksekusi!\");\n            return;\n        }\n\n        // 2. Eksekusi pemrosesan bisnis\n        await _accountRepo.DeductBalanceAsync(ev.AccountId, ev.Amount);\n\n        // 3. Simpan EventId ke database (sebaiknya dalam transaksi database yang sama!)\n        await _store.MarkAsProcessedAsync(ev.EventId);\n    }\n}\n```\n\n---\n\n## 4. Ringkasan \u0026 Aturan Emas\n\n1. **Gunakan RabbitMQ** jika butuh routing dinamis kompleks, prioritasi pesan, dan konsumsi instan tanpa perlu replay data lama.\n2. **Gunakan Kafka** jika butuh throughput jutaan event per detik, audit log historis yang dapat dibaca ulang (*event replay*), atau analisis big data streaming.\n3. **Selalu Buat Consumer Idempotent**: Asumsikan pesan duplikat pasti akan tiba di consumer Anda cepat atau lambat.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Simulasi Idempotent Consumer Pattern\npublic record DomainEvent(Guid EventId, string AccountNumber, decimal Amount);\n\npublic class IdempotentEventConsumer\n{\n    private readonly HashSet\u003cGuid\u003e _processedEventStore = new();\n    private decimal _totalBalance = 0;\n\n    public Task ProcessEventAsync(DomainEvent ev)\n    {\n        // TODO:\n        // 1. Periksa apakah ev.EventId sudah ada di _processedEventStore.\n        //    Jika ADA: cetak \"[DUPLICATE] Event {ev.EventId} diabaikan.\" dan return.\n        // 2. Jika BELUM: tambahkan ev.Amount ke _totalBalance, \n        //    simpan ev.EventId ke _processedEventStore, dan cetak \"[PROCESSED] Saldo baru: Rp {_totalBalance}\".\n        return Task.CompletedTask;\n    }\n\n    public decimal GetBalance() =\u003e _totalBalance;\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var consumer = new IdempotentEventConsumer();\n        var sharedEventId = Guid.NewGuid();\n\n        var ev1 = new DomainEvent(sharedEventId, \"ACC-001\", 500_000);\n        var evDuplicate = new DomainEvent(sharedEventId, \"ACC-001\", 500_000); // Simulasi retry broker\n        var ev3 = new DomainEvent(Guid.NewGuid(), \"ACC-001\", 200_000);\n\n        // Eksekusi event 1\n        await consumer.ProcessEventAsync(ev1);\n\n        // Eksekusi event duplikat (harus diabaikan)\n        await consumer.ProcessEventAsync(evDuplicate);\n\n        // Eksekusi event 3\n        await consumer.ProcessEventAsync(ev3);\n\n        Console.WriteLine($\"\\nSaldo Akhir yang Benar: Rp {consumer.GetBalance():N0} (Ekspektasi: Rp 700.000)\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\npublic record DomainEvent(Guid EventId, string AccountNumber, decimal Amount);\n\npublic class IdempotentEventConsumer\n{\n    private readonly HashSet\u003cGuid\u003e _processedEventStore = new();\n    private decimal _totalBalance = 0;\n\n    public Task ProcessEventAsync(DomainEvent ev)\n    {\n        if (_processedEventStore.Contains(ev.EventId))\n        {\n            Console.WriteLine($\"[DUPLICATE] Event {ev.EventId} diabaikan.\");\n            return Task.CompletedTask;\n        }\n\n        _totalBalance += ev.Amount;\n        _processedEventStore.Add(ev.EventId);\n        Console.WriteLine($\"[PROCESSED] Saldo baru: Rp {_totalBalance:N0}\");\n\n        return Task.CompletedTask;\n    }\n\n    public decimal GetBalance() =\u003e _totalBalance;\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var consumer = new IdempotentEventConsumer();\n        var sharedEventId = Guid.NewGuid();\n\n        var ev1 = new DomainEvent(sharedEventId, \"ACC-001\", 500_000);\n        var evDuplicate = new DomainEvent(sharedEventId, \"ACC-001\", 500_000);\n        var ev3 = new DomainEvent(Guid.NewGuid(), \"ACC-001\", 200_000);\n\n        await consumer.ProcessEventAsync(ev1);\n        await consumer.ProcessEventAsync(evDuplicate);\n        await consumer.ProcessEventAsync(ev3);\n\n        Console.WriteLine($\"\\nSaldo Akhir yang Benar: Rp {consumer.GetBalance():N0} (Ekspektasi: Rp 700.000)\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-14-02-1",
+                              "type":  "single_choice",
+                              "question":  "Bagaimana cara menjamin urutan pesan (message ordering) di Apache Kafka untuk transaksi milik satu entitas pengguna yang sama?",
+                              "options":  [
+                                              "Mematikan seluruh server Kafka kecuali satu.",
+                                              "Menggunakan Partition Key yang konsisten (misalnya UserId atau AccountId) sehingga seluruh pesan entitas tersebut selalu masuk ke partisi log yang sama.",
+                                              "Menulis pesan ke file teks di desktop.",
+                                              "Kafka otomatis mengurutkan semua pesan di seluruh cluster secara global tanpa konfigurasi apapun."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Kafka hanya menjamin urutan pesan di tingkat partisi (partition level). Dengan menyertakan kunci partisi yang stabil (seperti UserId), algoritma hashing Kafka memastikan seluruh transaksi pengguna tersebut selalu diarahkan ke partisi yang sama dan diproses berurutan.",
+                              "optionExplanations":  [
+                                                         "Salah. Mematikan server cluster merusak ketersediaan sistem.",
+                                                         "Benar! Partition Key yang sama menjamin penempatan partisi yang sama sehingga urutan pesan terjaga.",
+                                                         "Salah. File desktop bukan bagian dari arsitektur Kafka.",
+                                                         "Salah. Kafka sengaja tidak mengurutkan pesan lintas-partisi demi throughput paralel yang masif."
+                                                     ],
+                              "sectionRef":  "2. Partisi Kafka dan Jaminan Urutan Pesan (Message Ordering)",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-14-02-2",
+                              "type":  "single_choice",
+                              "question":  "Mengapa consumer dalam Event-Driven Architecture harus dirancang secara Idempotent?",
+                              "options":  [
+                                              "Agar consumer dapat berjalan tanpa listrik.",
+                                              "Karena mekanisme transmisi broker berbasis At-Least-Once Delivery dapat mengirimkan pesan yang sama lebih dari satu kali jika terjadi network timeout pada saat pengiriman ACK.",
+                                              "Karena Idempotent adalah singkatan dari database NoSQL.",
+                                              "Agar pesan JSON dikonversi menjadi file PDF otomatis."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Jaringan terdistribusi menjamin At-Least-Once delivery. Jika ack dari consumer hilang di jaringan, broker akan mengirim ulang pesan yang sama. Idempotent Consumer memastikan pemrosesan ulang pesan duplikat tidak memicu efek samping ganda (seperti penarikan saldo berulang).",
+                              "optionExplanations":  [
+                                                         "Salah. Komputer tetap memerlukan daya listrik.",
+                                                         "Benar! Idempotency mencegah dampak ganda dari pengiriman ulang pesan oleh broker.",
+                                                         "Salah. Idempotent adalah konsep aljabar dan rekayasa software, bukan nama database.",
+                                                         "Salah. Tidak ada kaitan dengan pembuatan file PDF."
+                                                     ],
+                              "sectionRef":  "3. Mitos \u0027Exactly-Once\u0027 dan Kewajiban Idempotent Consumer",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-14-01",
+                           "lesson-14-03",
+                           "lesson-12-04"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Kafka: The Definitive Guide - Neha Narkhede et al.",
+                           "url":  "https://www.oreilly.com/library/view/kafka-the-definitive/9781491936153/",
+                           "type":  "book"
+                       },
+                       {
+                           "title":  "Enterprise Integration Patterns: Idempotent Receiver",
+                           "url":  "https://www.enterpriseintegrationpatterns.com/patterns/messaging/IdempotentReceiver.html",
+                           "type":  "article"
+                       }
+                   ]
+}

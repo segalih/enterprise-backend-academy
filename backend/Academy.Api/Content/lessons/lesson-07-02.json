@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-07-02",
+    "levelId":  "level-07",
+    "moduleId":  "mod-07-01",
+    "order":  2,
+    "title":  "TCP Deep Dive: 3-Way Handshake, Flow Control, dan Congestion Window",
+    "slug":  "tcp-deep-dive-handshake-flow-congestion",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  50,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendalami protokol transmisi paling andal di internet: alur 3-Way Handshake (SYN, SYN-ACK, ACK), Sliding Window Flow Control, deteksi paket hilang, dan algoritma Congestion Control (Slow Start, Congestion Avoidance).",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-07-01",
+                              "title":  "Model OSI \u0026 TCP/IP",
+                              "levelName":  "LEVEL 07",
+                              "context":  "Memahami Layer 4 Transport dan format segmen TCP."
+                          }
+                      ],
+    "introduces":  [
+                       "TCP 3-Way Handshake (SYN, SYN-ACK, ACK)",
+                       "TCP 4-Way Teardown (FIN, ACK, TIME_WAIT)",
+                       "Sequence \u0026 Acknowledgment Numbers",
+                       "Sliding Window Flow Control",
+                       "Congestion Window (cwnd) \u0026 ssthresh",
+                       "Slow Start \u0026 TCP Fast Retransmit"
+                   ],
+    "learningObjectives":  [
+                               "Menelusuri diagram waktu pertukaran paket TCP 3-Way Handshake.",
+                               "Menganalisis perbedaan peran Flow Control (kapasitas penerima) vs Congestion Control (kapasitas jaringan).",
+                               "Menjelaskan mengapa koneksi HTTP baru mengalami latensi tinggi di awal akibat mekanisme Slow Start."
+                           ],
+    "markdownContent":  "# TCP Deep Dive: 3-Way Handshake, Flow Control, dan Congestion Window\n\n## Mengapa Internet Bergantung pada TCP?\nProtokol Internet (IP) bersifat *Unreliable Best-Effort*: paket bisa hilang di jalan, tiba tidak berurutan, atau terduplikasi.\n**Transmission Control Protocol (TCP)** adalah lapisan keajaiban di atas IP yang memberikan garansi mutlak:\n1. **Reliable**: Seluruh byte dijamin sampai tanpa ada yang hilang.\n2. **In-Order**: Seluruh data dirakit kembali dalam urutan yang tepat.\n3. **Flow \u0026 Congestion Controlled**: Pengirim tidak akan menenggelamkan penerima atau menyumbat router perantara.\n\n---\n\n## 1. Pembentukan Koneksi: TCP 3-Way Handshake\nSebelum satu byte pun data HTTP dapat dikirim, client dan server wajib melakukan pertukaran 3 sinyal sinkronisasi:\n\n```mermaid\nsequenceDiagram\n    autonumber\n    participant Client as Web Client / Mobile App\n    participant Server as Kestrel Server (:443)\n\n    Note over Client,Server: TCP 3-Way Handshake (1 RTT)\n    Client-\u003e\u003eServer: TCP SYN (Seq = X)\n    Server-\u003e\u003eClient: TCP SYN-ACK (Seq = Y, Ack = X + 1)\n    Client-\u003e\u003eServer: TCP ACK (Ack = Y + 1)\n\n    Note over Client,Server: TLS 1.3 Handshake (1 RTT)\n    Client-\u003e\u003eServer: TLS ClientHello (KeyShare ECDHE + Ciphers)\n    Server-\u003e\u003eClient: TLS ServerHello (Certificate + Encrypted Extensions + Finished)\n\n    Note over Client,Server: Jalur Terenkripsi Aktif (Total 2 RTT)\n    Client-\u003e\u003eServer: HTTP Request Enkripsi (GET /api/v1/accounts)\n    Server-\u003e\u003eClient: HTTP Response Enkripsi (200 OK JSON)\n```\n\n---\n\n## 2. Flow Control: Sliding Window\nBagaimana jika server backend berkecepatan tinggi mengirim data 1 GB/detik ke smartphone client lawas dengan prosesor lambat? Buffer memori smartphone akan meledak dan membuang seluruh paket!\n- **Solusi**: Setiap segmen TCP memuat field **Receive Window (`rwnd`)**.\n- Smartphone secara kontinu memberitahu server: *\"Sisa buffer kosongku sekarang hanya 64 KB\"*.\n- Server tidak akan pernah mengirim data melebihi ukuran jendela `rwnd` tersebut!\n\n---\n\n## 3. Congestion Control: Slow Start \u0026 Congestion Window (`cwnd`)\nFlow Control melindungi penerima, sedangkan **Congestion Control melindungi kabel dan router internet dari kemacetan global**.\n\n### Algoritma Slow Start:\nKetika koneksi TCP baru dibuka, server tidak langsung menembakkan data pada kecepatan maksimal:\n1. Mulai dengan jendela kecil: `cwnd = 10 segmen` (Initial Congestion Window).\n2. Setiap kali menerima ACK sukses, gandakan ukuran: 10 â†’ 20 â†’ 40 â†’ 80 (Pertumbuhan eksponensial).\n3. Ketika terjadi paket hilang (*packet loss*):\n   - Jaringan terdeteksi macet!\n   - Server langsung memangkas jendela kecepatan menjadi setengahnya (*Multiplicative Decrease*), lalu merangkak naik secara perlahan linear (*Congestion Avoidance*).\n\n*Konsekuensi Enterprise: Inilah alasan mengapa request HTTP pertama selalu terasa lebih lambat dibandingkan request berikutnya pada koneksi yang sudah terbuka (Keep-Alive)!*",
+    "starterCode":  "using System;\nusing System.Diagnostics;\nusing System.Threading.Tasks;\n\n// PROGRAM: Mengamati Penalti Latensi TCP Handshake Awal vs Connection Reuse (Keep-Alive)\npublic class NetworkSimulator\n{\n    public static async Task\u003clong\u003e RequestWithColdConnectionAsync()\n    {\n        var sw = Stopwatch.StartNew();\n        // 1. DNS Resolution (~15ms)\n        await Task.Delay(15);\n        // 2. TCP 3-Way Handshake SYN, SYN-ACK, ACK (~30ms)\n        await Task.Delay(30);\n        // 3. TLS 1.3 Key Exchange Handshake (~25ms)\n        await Task.Delay(25);\n        // 4. HTTP Roundtrip Data Transfer (~10ms)\n        await Task.Delay(10);\n        sw.Stop();\n        return sw.ElapsedMilliseconds;\n    }\n\n    public static async Task\u003clong\u003e RequestWithWarmKeepAliveSocketAsync()\n    {\n        var sw = Stopwatch.StartNew();\n        // Socket sudah terbuka (Keep-Alive): Langsung HTTP Data Transfer (~10ms)\n        await Task.Delay(10);\n        sw.Stop();\n        return sw.ElapsedMilliseconds;\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        Console.WriteLine(\"=== SIMULASI LATENSI NETWORK CONNECTION REUSE ===\");\n\n        long coldLatency = await NetworkSimulator.RequestWithColdConnectionAsync();\n        Console.WriteLine($\"Request 1 (Dingin - Handshake Lengkap): {coldLatency} ms (Status: 200 OK)\");\n\n        long warmLatency = await NetworkSimulator.RequestWithWarmKeepAliveSocketAsync();\n        Console.WriteLine($\"Request 2 (Hangat - TCP Socket Reuse): {warmLatency} ms (Status: 200 OK)\");\n\n        Console.WriteLine($\"\\nEfisiensi Socket Reuse: {coldLatency - warmLatency} ms terpangkas!\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-07-02-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Urutan paket kontrol bendera (flag) apakah yang dipertukarkan selama proses TCP 3-Way Handshake?",
+                              "options":  [
+                                              "PING -\u003e PONG -\u003e ACK",
+                                              "SYN -\u003e SYN-ACK -\u003e ACK",
+                                              "FIN -\u003e ACK -\u003e RST",
+                                              "HELLO -\u003e VERIFY -\u003e CONNECT"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "TCP 3-Way Handshake diawali oleh client mengirim SYN, dibalas oleh server dengan SYN-ACK, dan ditutup oleh client dengan ACK.",
+                              "optionExplanations":  [
+                                                         "Salah. Ping-pong adalah protokol ICMP, bukan TCP handshake.",
+                                                         "Benar! SYN -\u003e SYN-ACK -\u003e ACK adalah urutan baku 3-Way Handshake.",
+                                                         "Salah. FIN digunakan untuk proses pemutusan koneksi (teardown).",
+                                                         "Salah. Hello digunakan pada handshake TLS, bukan TCP."
+                                                     ],
+                              "sectionRef":  "1. Pembentukan Koneksi: TCP 3-Way Handshake",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-07-02-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa tujuan utama dari mekanisme \u0027Sliding Window Flow Control\u0027 pada protokol TCP?",
+                              "options":  [
+                                              "Mencegah pengirim (sender) mengirimkan data lebih cepat dari kemampuan buffer penerima (receiver) untuk memprosesnya",
+                                              "Mengenkripsi isi pesan menggunakan algoritma AES",
+                                              "Mengacak urutan paket agar tidak bisa disadap peretas",
+                                              "Mempercepat kecepatan cahaya di kabel serat optik"
+                                          ],
+                              "correctOptionIndex":  0,
+                              "explanation":  "Flow Control mengatur laju aliran transmisi berdasarkan ukuran buffer penerima (rwnd) agar host penerima tidak mengalami buffer overflow.",
+                              "optionExplanations":  [
+                                                         "Benar! Melindungi host penerima dari kebanjiran paket data melampaui kapasitas buffernya.",
+                                                         "Salah. Enkripsi dilakukan oleh protokol TLS, bukan TCP Flow Control.",
+                                                         "Salah. TCP justru bertugas merapikan paket agar berurutan kembali.",
+                                                         "Salah. Kecepatan transmisi fisika tidak dapat diubah oleh software."
+                                                     ],
+                              "sectionRef":  "2. Flow Control: Sliding Window",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-07-03",
+                               "title":  "Evolusi HTTP: Dari HTTP/1.1 ke HTTP/3 QUIC",
+                               "levelName":  "LEVEL 07",
+                               "context":  "Bagaimana HTTP/3 menggantikan TCP dengan UDP untuk menghilangkan TCP HOL blocking."
+                           },
+                           {
+                               "lessonId":  "lesson-07-04",
+                               "title":  "TLS 1.3 Handshake \u0026 Enkripsi",
+                               "levelName":  "LEVEL 07",
+                               "context":  "Handshake keamanan kriptografi yang dieksekusi di atas koneksi TCP ESTABLISHED."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "RFC 793 - Transmission Control Protocol",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc793"
+                       },
+                       {
+                           "title":  "TCP Congestion Control - RFC 5681",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc5681"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class TcpAckCalculator\n{\n    public static long CalculateNextExpectedAck(long initialSeq, int[] packetPayloadLengths)\n    {\n        if (packetPayloadLengths == null || packetPayloadLengths.Length == 0)\n            return initialSeq;\n\n        long currentSeq = initialSeq;\n        foreach (int length in packetPayloadLengths)\n        {\n            if (length \u003e 0)\n            {\n                currentSeq += length;\n            }\n        }\n\n        return currentSeq;\n    }\n\n    public static void Main()\n    {\n        int[] packets = { 100, 200, 300 };\n        Console.WriteLine($\"Next Ack: {CalculateNextExpectedAck(1000, packets)}\");\n    }\n}"
+}

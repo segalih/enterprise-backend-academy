@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-01-01",
+    "levelId":  "level-01",
+    "moduleId":  "mod-01-01",
+    "order":  1,
+    "title":  "Bagaimana Komputer Mengeksekusi Kode: Source Code hingga Machine Code",
+    "slug":  "code-execution-pipeline",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  40,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menelusuri transformasi kode program dari teks mentah C# melalui fase kompilasi Roslyn (Lexing, Parsing AST, Type Checking), Intermediate Language (IL), hingga JIT compilation ke instruksi mesin native CPU.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-02",
+                              "title":  "CPU Deep Dive",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami eksekusi siklus Fetch-Decode-Execute pada instruksi biner CPU."
+                          }
+                      ],
+    "introduces":  [
+                       "Lexical Analysis (Tokenization)",
+                       "Abstract Syntax Tree (AST)",
+                       "Intermediate Language (CIL / MSIL)",
+                       "Just-In-Time (JIT) Compiler",
+                       "Ahead-Of-Time (AOT) Compilation",
+                       "Native Machine Code"
+                   ],
+    "learningObjectives":  [
+                               "Memahami tahapan kompilasi: Lexing, Parsing AST, Semantic Analysis, dan Code Emission.",
+                               "Menganalisis peran Intermediate Language (IL) dalam portabilitas lintas platform .NET.",
+                               "Menjelaskan perbedaan JIT Compilation runtime vs Native AOT compilation."
+                           ],
+    "markdownContent":  "# Bagaimana Komputer Mengeksekusi Kode: Source Code hingga Machine Code\n\n## Ilusi Teks: Komputer Tidak Mengerti Teks C#\nKetika Anda menulis kode C#:\n```csharp\nint total = price * quantity;\n```\nBagi prosesor CPU, teks tersebut hanyalah deretan karakter ASCII/UTF-8 yang tidak memiliki arti komputasi. CPU hanya mengerti **Machine Code (Opcode Biner)** spesifik untuk mikro-arsitekturnya (seperti instruksi `imul eax, edx` di arsitektur x86-64).\n\nBagaimana transformasi dari teks manusia ke sinyal listrik instruksi CPU terjadi? Di .NET, proses ini melalui **dua fase besar**:\n\n```mermaid\nflowchart TD\n    subgraph BuildTime[\"Fase 1: Build-Time / Development\"]\n        Src[\"Kode Sumber C# (*.cs)\"] --\u003e Roslyn[\"Roslyn C# Compiler\u003cbr/\u003e(Lexer -\u003e Parser AST -\u003e Type Checker)\"]\n        Roslyn --\u003e Assembly[\".NET Assembly (*.dll / *.exe)\u003cbr/\u003eâ€¢ Common Intermediate Language (CIL)\u003cbr/\u003eâ€¢ Metadata Tipe \u0026 Manifest\"]\n    end\n    subgraph RunTime[\"Fase 2: Runtime / Production\"]\n        CLR[\"CoreCLR Runtime\"] --\u003e JIT[\"RyuJIT Compiler (Tiered JIT)\"]\n        Assembly --\u003e JIT\n        JIT --\u003e Native[\"Native Machine Code (x86_64 / ARM64)\"]\n        Native --\u003e CPU[\"CPU Menjalankan Instruksi di Register\"]\n    end\n```\n\n---\n\n## 4 Tahap Roslyn Compiler\n1. **Lexical Analysis (Lexing)**: Memecah aliran teks string mentah menjadi token-token terkecil (`Keyword: int`, `Identifier: total`, `Operator: =`, `Identifier: price`, `Operator: *`, `Identifier: quantity`, `Semicolon: ;`).\n2. **Syntax Analysis (Parsing)**: Menyusun token-token menjadi struktur pohon hierarki yang disebut **Abstract Syntax Tree (AST)**. Jika kurung tutup atau titik-koma hilang, compiler melempar *Syntax Error* di tahap ini.\n3. **Semantic Analysis \u0026 Type Checking**: Memeriksa keabsahan logika tipe (apakah variabel `price` bertipe numerik? Apakah variabel sudah dideklarasikan sebelum dipakai?).\n4. **IL Emission**: Jika valid, Roslyn menerbitkan bytecode **CIL (Common Intermediate Language)** ke dalam file `.dll`.\n\n---\n\n## Mengapa Menggunakan Bytecode IL Perantara?\nMengapa Microsoft tidak mengompilasi C# langsung ke Machine Code file `.exe` native sejak awal?\n- **Write Once, Run Anywhere**: Satu file assembly `MyBackend.dll` yang sama persis dapat dijalankan di laptop developer Windows (Intel x86-64), server Linux cloud (AMD EPYC), atau server AWS Graviton (ARM64).\n- **RyuJIT Runtime Optimization**: Just-In-Time (JIT) compiler di server produksi dapat memanfaatkan instruksi hardware spesifik (seperti AVX-512 atau ARM NEON) yang mungkin tidak ada di komputer developer saat kode dikompilasi!",
+    "starterCode":  "using System;\nusing System.Reflection;\n\n// PROGRAM: Menginspeksi Kode Intermediate Language (IL) secara Dinamis\nConsole.WriteLine(\"=== INSPEKSI RUNTIME IL BYTECODE ===\");\n\n// Mendapatkan method Math.Max via Reflection\nvar method = typeof(Math).GetMethod(\"Max\", new[] { typeof(int), typeof(int) });\nif (method != null)\n{\n    var body = method.GetMethodBody();\n    if (body != null)\n    {\n        byte[] ilBytes = body.GetILAsByteArray() ?? Array.Empty\u003cbyte\u003e();\n        Console.WriteLine($\"Method: {method.Name}(int, int)\");\n        Console.WriteLine($\"Ukuran IL Bytecode: {ilBytes.Length} byte\");\n        Console.Write(\"Raw IL Opcode: \");\n        foreach (var b in ilBytes)\n        {\n            Console.Write($\"0x{b:X2} \");\n        }\n        Console.WriteLine();\n    }\n}\n\n// TODO: Perhatikan bagaimana method yang kita panggil sebenarnya hanyalah urutan byte opcode!",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-01-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa output utama yang dihasilkan oleh C# Roslyn Compiler saat proses build selesai?",
+                              "options":  [
+                                              "Machine code biner spesifik arsitektur hardware CPU lokal",
+                                              "Common Intermediate Language (CIL/IL Bytecode) beserta Metadata",
+                                              "Script assembly C++ yang diterjemahkan ulang",
+                                              "Bytecode Java Virtual Machine (.class)"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Roslyn mengompilasi source code C# menjadi Common Intermediate Language (CIL) yang netral terhadap CPU, dibungkus dalam assembly .NET (.dll).",
+                              "optionExplanations":  [
+                                                         "Salah. Machine code CPU baru dihasilkan saat runtime oleh JIT compiler (kecuali menggunakan mode Native AOT).",
+                                                         "Benar! Roslyn menghasilkan IL bytecode dan metadata tipe.",
+                                                         "Salah. .NET tidak menerjemahkan kode ke C++.",
+                                                         "Salah. .NET menggunakan CIL, bukan Java bytecode."
+                                                     ],
+                              "sectionRef":  "Ilusi Teks: Komputer Tidak Mengerti Teks C#",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-01-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Komponen apakah di dalam .NET CoreCLR yang bertugas mengonversi IL Bytecode menjadi instruksi mesin native CPU saat aplikasi dijalankan?",
+                              "options":  [
+                                              "Roslyn Compiler",
+                                              "Garbage Collector (GC)",
+                                              "RyuJIT (Just-In-Time Compiler)",
+                                              "MSBuild Runner"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "RyuJIT adalah JIT compiler resmi di dalam CoreCLR yang mengompilasi IL method menjadi instruksi native mesin saat method tersebut pertama kali dipanggil.",
+                              "optionExplanations":  [
+                                                         "Salah. Roslyn bekerja saat tahap build untuk menghasilkan IL.",
+                                                         "Salah. GC mengelola memori heap, bukan kompilasi instruksi.",
+                                                         "Benar! RyuJIT bertugas mengompilasi IL menjadi machine code secara just-in-time.",
+                                                         "Salah. MSBuild adalah build orchestration tool."
+                                                     ],
+                              "sectionRef":  "Mengapa Menggunakan Bytecode IL Perantara?",
+                              "difficulty":  "Beginner"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-02-01",
+                               "title":  "Ekosistem .NET Modern: CLR \u0026 Roslyn",
+                               "levelName":  "LEVEL 02",
+                               "context":  "Mendalami arsitektur compiler Roslyn dan runtime CoreCLR secara detail."
+                           },
+                           {
+                               "lessonId":  "lesson-08-01",
+                               "title":  "CoreCLR Internals \u0026 Dynamic PGO",
+                               "levelName":  "LEVEL 08",
+                               "context":  "Optimasi tingkat lanjut RyuJIT dengan Profile-Guided Optimization."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "ECMA-335 Common Language Infrastructure (CLI) Specification",
+                           "url":  "https://www.ecma-international.org/publications-and-standards/standards/ecma-335/"
+                       },
+                       {
+                           "title":  "The Roslyn .NET Compiler Platform",
+                           "url":  "https://github.com/dotnet/roslyn"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class StackMachine\n{\n    public static int Evaluate(string[] opcodes)\n    {\n        if (opcodes == null) return 0;\n        var stack = new Stack\u003cint\u003e();\n\n        foreach (var op in opcodes)\n        {\n            if (string.IsNullOrWhiteSpace(op)) continue;\n            var parts = op.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n            string cmd = parts[0].ToUpperInvariant();\n\n            if (cmd == \"PUSH\" \u0026\u0026 parts.Length \u003e 1 \u0026\u0026 int.TryParse(parts[1], out int val))\n            {\n                stack.Push(val);\n            }\n            else if (cmd == \"ADD\" \u0026\u0026 stack.Count \u003e= 2)\n            {\n                int b = stack.Pop();\n                int a = stack.Pop();\n                stack.Push(a + b);\n            }\n            else if (cmd == \"MUL\" \u0026\u0026 stack.Count \u003e= 2)\n            {\n                int b = stack.Pop();\n                int a = stack.Pop();\n                stack.Push(a * b);\n            }\n        }\n\n        return stack.Count \u003e 0 ? stack.Peek() : 0;\n    }\n\n    public static void Main()\n    {\n        string[] program = { \"PUSH 5\", \"PUSH 3\", \"ADD\", \"PUSH 2\", \"MUL\" };\n        Console.WriteLine($\"Hasil: {Evaluate(program)}\");\n    }\n}"
+}

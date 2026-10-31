@@ -1,0 +1,104 @@
+{
+    "id":  "lesson-09-01",
+    "levelId":  "level-09",
+    "moduleId":  "mod-09-01",
+    "order":  1,
+    "title":  "Relational Modeling: Normalisasi 1NF-3NF, Foreign Keys, dan Integritas Relasional",
+    "slug":  "relational-modeling-normalization-foreign-keys",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Merancang skema basis data relasional enterprise: prinsip Normalisasi data (1NF, 2NF, 3NF), eliminasi anomali insersi/update/delete, penegakan integritas referensial Foreign Key, dan kapan melakukan denormalisasi terukur.",
+    "prerequisites":  [
+
+                      ],
+    "introduces":  [
+                       "Relational Database Management System (RDBMS)",
+                       "Primary Key \u0026 Surrogate Key",
+                       "Foreign Key Constraints",
+                       "First Normal Form (1NF - Atomicity)",
+                       "Second Normal Form (2NF - Partial Dependency)",
+                       "Third Normal Form (3NF - Transitive Dependency)",
+                       "Referential Integrity (CASCADE, RESTRICT)"
+                   ],
+    "learningObjectives":  [
+                               "Menerapkan aturan normalisasi 1NF, 2NF, dan 3NF pada skema database perbankan dan e-commerce.",
+                               "Mengidentifikasi 3 anomali data: Update Anomaly, Insertion Anomaly, dan Deletion Anomaly.",
+                               "Menganalisis konsekuensi integritas data vs performa join kueri (Denormalisasi terencana)."
+                           ],
+    "markdownContent":  "# Relational Modeling: Normalisasi 1NF-3NF, Foreign Keys, dan Integritas Relasional\n\n## Fondasi Integritas Data Enterprise\nDalam aplikasi perbankan atau finansial, **kehilangan atau inkonsistensi data adalah dosa yang tidak termaafkan**.\nModel data relasional (RDBMS seperti PostgreSQL dan SQL Server) bertumpu pada teori matematika aljabar relasional yang dirumuskan oleh Edgar F. Codd pada tahun 1970.\n\nTujuan utama pemodelan relasional adalah **menghilangkan redundansi data** dan **mencegah anomali data**:\n- **Insertion Anomaly**: Tidak bisa mencatat data baru karena ada kolom wajib lain yang belum ada.\n- **Update Anomaly**: Mengubah alamat pelanggan di 1 baris, namun baris lain masih menyimpan alamat lama.\n- **Deletion Anomaly**: Menghapus data order menyebabkan informasi profil pelanggan terhapus permanen tanpa sengaja.\n\n---\n\n## Tiga Tingkat Normalisasi Formal\n\n### 1. First Normal Form (1NF) - Atomisitas Nilai\n- Setiap kolom wajib menyimpan **nilai tunggal atomik** (tidak boleh ada daftar nilai dipisahkan koma seperti: `NomorHP: \"0812, 0856, 0878\"`).\n- Setiap baris harus memiliki identitas unik (**Primary Key**).\n- Tidak boleh ada kelompok kolom berulang (`Hobi1`, `Hobi2`, `Hobi3`).\n\n### 2. Second Normal Form (2NF) - Tidak Ada Partial Dependency\n- Syarat: Sudah memenuhi 1NF.\n- Setiap kolom non-kunci wajib bergantung sepenuhnya pada **seluruh Primary Key**, bukan hanya sebagian kunci (*No Partial Functional Dependency*).\n- *(Hanya relevan jika tabel menggunakan Composite Primary Key yang terdiri dari lebih dari 1 kolom)*.\n\n### 3. Third Normal Form (3NF) - Tidak Ada Transitive Dependency\n- Syarat: Sudah memenuhi 2NF.\n- Kolom non-kunci **DILARANG bergantung pada kolom non-kunci lainnya** (*No Transitive Dependency*):\n```sql\n-- PELANGGARAN 3NF (Kecamatan bergantung pada KodePos, bukan pada IdNasabah):\n[IdNasabah (PK)] -\u003e [Nama] -\u003e [KodePos] -\u003e [NamaKecamatan]\n\n-- SOLUSI 3NF: Pisahkan master KodePos ke tabel referensi tersendiri!\nTabel Nasabah: [IdNasabah (PK)], [Nama], [KodePos (FK)]\nTabel Wilayah: [KodePos (PK)], [NamaKecamatan]\n```\n\n---\n\n## Integritas Referensial \u0026 Foreign Key\nForeign Key (FK) adalah aturan database fisik yang menjamin bahwa nilai di tabel anak **pasti ada** di tabel induk:\n- **ON DELETE RESTRICT / NO ACTION**: Menolak penghapusan nasabah jika nasabah tersebut masih memiliki riwayat transaksi aktif di database (Standar perbankan!).\n- **ON DELETE CASCADE**: Jika sebuah order dihapus, seluruh detail item order tersebut otomatis ikut terhapus.",
+    "starterCode":  "using System;\n\n// PROGRAM: Simulasi Integritas Relasional Relasi Induk-Anak di Memori\npublic record CustomerEntity(string Id, string Name);\npublic record AccountEntity(string AccountNumber, string CustomerId, decimal Balance);\n\npublic class RelationalDatabaseSimulator\n{\n    private readonly System.Collections.Generic.Dictionary\u003cstring, CustomerEntity\u003e _customers = new();\n    private readonly System.Collections.Generic.Dictionary\u003cstring, AccountEntity\u003e _accounts = new();\n\n    public void AddCustomer(CustomerEntity customer)\n    {\n        _customers[customer.Id] = customer;\n    }\n\n    public void AddAccount(AccountEntity account)\n    {\n        // Enforce Foreign Key Constraint: CustomerId WAJIB ada di tabel _customers!\n        if (!_customers.ContainsKey(account.CustomerId))\n        {\n            throw new InvalidOperationException($\"FK Violation: CustomerId \u0027{account.CustomerId}\u0027 tidak ditemukan!\");\n        }\n\n        _accounts[account.AccountNumber] = account;\n        Console.WriteLine($\"[DB INSERT SUCCESS] Akun {account.AccountNumber} terdaftar untuk nasabah {_customers[account.CustomerId].Name}.\");\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var db = new RelationalDatabaseSimulator();\n        db.AddCustomer(new CustomerEntity(\"CUST-1\", \"Budi Santoso\"));\n        \n        // 1. Akun valid (FK lolos)\n        db.AddAccount(new AccountEntity(\"ACC-001\", \"CUST-1\", 1_000_000m));\n        \n        // 2. Akun tidak valid (FK violation)\n        try\n        {\n            db.AddAccount(new AccountEntity(\"ACC-002\", \"CUST-999_TIDAK_ADA\", 500_000m));\n        }\n        catch (Exception ex)\n        {\n            Console.WriteLine($\"[DB ERROR] {ex.Message}\");\n        }\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-09-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Kondisi apakah yang wajib dipenuhi sebuah tabel database agar dapat dinyatakan memenuhi Third Normal Form (3NF)?",
+                              "options":  [
+                                              "Tabel harus memiliki minimal 100 kolom",
+                                              "Tabel telah memenuhi 2NF dan tidak memiliki ketergantungan transitif (kolom non-kunci tidak boleh bergantung pada kolom non-kunci lainnya)",
+                                              "Tabel tidak boleh memiliki Primary Key",
+                                              "Tabel disimpan dalam format file JSON"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "3NF mengharuskan tabel memenuhi 2NF serta mengeliminasi Transitive Dependency di mana kolom non-kunci bergantung pada kolom non-kunci yang lain.",
+                              "optionExplanations":  [
+                                                         "Salah. 3NF justru memecah tabel lebar menjadi tabel-tabel ramping terfokus.",
+                                                         "Benar! Menghilangkan transitive functional dependencies adalah definisi baku 3NF.",
+                                                         "Salah. Primary Key adalah syarat mutlak sejak 1NF.",
+                                                         "Salah. Database relasional menggunakan format penyimpanan biner terindeks, bukan file JSON mentah."
+                                                     ],
+                              "sectionRef":  "3. Third Normal Form (3NF) - Tidak Ada Transitive Dependency",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-09-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Opsi Foreign Key constraint apakah yang paling tepat dipilih untuk tabel master nasabah perbankan agar nasabah yang masih memiliki rekening aktif dilarang keras untuk dihapus?",
+                              "options":  [
+                                              "ON DELETE CASCADE",
+                                              "ON DELETE RESTRICT (atau NO ACTION)",
+                                              "ON DELETE SET NULL",
+                                              "ON DELETE TRUNCATE"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "ON DELETE RESTRICT mencegah penghapusan baris pada tabel induk jika masih ada referensi yang menunjuk padanya di tabel anak, menjaga integritas riwayat finansial.",
+                              "optionExplanations":  [
+                                                         "Salah. ON DELETE CASCADE akan ikut menghapus seluruh rekening nasabah secara otomatis, yang sangat berbahaya bagi audit perbankan.",
+                                                         "Benar! ON DELETE RESTRICT menolak penghapusan induk selama data anak masih ada.",
+                                                         "Salah. ON DELETE SET NULL akan membuat kolom rekening menjadi yatim tanpa pemilik.",
+                                                         "Salah. TRUNCATE bukan opsi klausa ON DELETE."
+                                                     ],
+                              "sectionRef":  "Integritas Referensial \u0026 Foreign Key",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-09-02",
+                               "title":  "Database Storage \u0026 Indexing",
+                               "levelName":  "LEVEL 09",
+                               "context":  "Bagaimana tabel relasional disimpan dan diindeks secara fisik di disk."
+                           },
+                           {
+                               "lessonId":  "lesson-10-03",
+                               "title":  "Entity Framework Core Architecture",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Memetakan model relasional 1NF-3NF ke C# DbSet entities."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "A Relational Model of Data for Large Shared Data Banks - E. F. Codd",
+                           "url":  "https://dl.acm.org/doi/10.1145/362384.362685"
+                       },
+                       {
+                           "title":  "Database Normalization Basics - Microsoft Documentation",
+                           "url":  "https://learn.microsoft.com/en-us/office/troubleshoot/access/database-normalization-description"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class NormalizationHelper\n{\n    public static string[] NormalizeTo1Nf(string id, string name, string? phonesCsv)\n    {\n        if (string.IsNullOrWhiteSpace(phonesCsv)) return Array.Empty\u003cstring\u003e();\n\n        var parts = phonesCsv.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var result = new List\u003cstring\u003e();\n\n        foreach (var p in parts)\n        {\n            string clean = p.Trim();\n            if (!string.IsNullOrEmpty(clean))\n            {\n                result.Add($\"{id.Trim()}|{name.Trim()}|{clean}\");\n            }\n        }\n\n        return result.ToArray();\n    }\n\n    public static void Main()\n    {\n        var rows = NormalizeTo1Nf(\"U-1\", \"Budi\", \"0812, 0856\");\n        foreach (var r in rows) Console.WriteLine(r);\n    }\n}"
+}

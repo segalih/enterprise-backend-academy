@@ -1,0 +1,164 @@
+{
+  "id": "lesson-16-04",
+  "levelId": "level-16",
+  "moduleId": "mod-16-02",
+  "order": 4,
+  "title": "CI/CD Pipeline \u0026 Kubernetes Deployment: Automated Testing, Zero-Downtime Rolling Update",
+  "slug": "cicd-kubernetes-zero-downtime",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 65,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membangun alur otomasi rilis modern: GitHub Actions CI/CD pipeline, Kubernetes Deployment manifest, Readiness vs Liveness Probes, dan strategi Zero-Downtime Rolling Updates.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-16-02",
+      "reason": "Integration Testing \u0026 Automated Test Execution"
+    },
+    {
+      "lessonId": "lesson-16-03",
+      "reason": "Docker Containerization \u0026 Image Optimization"
+    }
+  ],
+  "introduces": [
+    "Continuous Integration (CI) automated gates",
+    "Kubernetes Pod, Deployment, and Service architecture",
+    "Liveness Probes vs Readiness Probes vs Startup Probes",
+    "Zero-Downtime Rolling Updates (maxSurge \u0026 maxUnavailable)",
+    "Graceful Shutdown \u0026 SIGTERM handling in ASP.NET Core"
+  ],
+  "learningObjectives": [
+    "Merancang alur pipeline CI di GitHub Actions yang menjalankan linting, unit test, integration test, dan build Docker secara berurutan",
+    "Membedakan fungsi kritis \u0060readinessProbe\u0060 (apakah pod siap menerima trafik) dengan \u0060livenessProbe\u0060 (apakah pod harus di-restart)",
+    "Mengonfigurasi parameter Rolling Update di Kubernetes untuk menjamin nol detik downtime selama proses deployment versi baru",
+    "Menangani sinyal OS \u0060SIGTERM\u0060 di ASP.NET Core agar menyelesaikan request yang sedang berjalan (*in-flight requests*) sebelum proses dimatikan"
+  ],
+  "markdownContent": "# CI/CD Pipeline \u0026 Kubernetes Deployment: Automated Testing, Zero-Downtime Rolling Update\n\nDi era modern, software enterprise tidak dirilis secara manual dengan meng-upload file ZIP via FTP ke server di tengah malam. Rilis aplikasi dilakukan secara otomatis puluhan kali sehari melalui **CI/CD Pipeline** dan diorkestrasi oleh **Kubernetes (K8s)** tanpa ada satu pun pengguna yang mengalami pemutusan koneksi (**Zero-Downtime Deployment**).\n\nMateri ini membahas konfigurasi end-to-end pipeline CI/CD dan mekanisme internal Kubernetes dalam mengelola siklus hidup pod .NET Anda.\n\n---\n\n## 1. Arsitektur CI/CD Pipeline (GitHub Actions)\n\nContinuous Integration (CI) adalah pagar penjaga kualitas kode. Setiap kali ada Pull Request (PR) yang diajukan ke branch \u0060main\u0060, pipeline otomatis mengeksekusi serangkaian tahapan (*gates*):\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Dev[\u0022Developer Git Push ke Main Branch\u0022]\n    \n    subgraph CI[\u0022Automated CI Pipeline (GitHub Actions)\u0022]\n        G1[\u00221. Lint \u0026 Format Check (dotnet format)\u0022]\n        G2[\u00222. Security Static Scan (Trivy / SonarQube)\u0022]\n        G3[\u00223. Unit Tests (dotnet test fast)\u0022]\n        G4[\u00224. Integration Tests (Testcontainers)\u0022]\n        G5[\u00225. Docker Multi-stage Build\u0022]\n        G6[\u00226. Push Image ke Registry (ACR / Harbor)\u0022]\n    end\n\n    CD[\u0022Automated CD: Rolling Update ke Kubernetes Cluster\u0022]\n\n    Dev --\u003E G1 --\u003E G2 --\u003E G3 --\u003E G4 --\u003E G5 --\u003E G6\n    G6 --\u003E|Semua Gate Lolos 100%| CD\n\u0060\u0060\u0060\n\n---\n\n## 2. Kubernetes Probes: Liveness vs Readiness vs Startup\n\nKesalahan konfigurasi *Health Checks* di Kubernetes adalah penyebab nomor satu aplikasi \u0022drop traffic\u0022 saat rilis baru.\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    subgraph Node[\u0022Kubernetes Worker Node\u0022]\n        Ingress[\u0022Ingress Controller / Load Balancer\u0022]\n        Probe{\u0022Readiness Probe Lolos?\u003Cbr/\u003E(GET /healthz == HTTP 200)\u0022}\n        PodNew[\u0022Pod v2 Baru (Aktif Menerima Trafik)\u0022]\n        PodWarm[\u0022Pod v2 (Warming Up / JANGAN Kirim Trafik)\u0022]\n\n        Ingress --\u003E Probe\n        Probe --\u003E|YA| PodNew\n        Probe --\u003E|TIDAK| PodWarm\n    end\n\u0060\u0060\u0060\n\n### Tiga Jenis Probe Kubernetes:\n1. **Startup Probe**: Memeriksa apakah aplikasi sudah selesai boot awal (berguna jika aplikasi membutuhkan waktu 15 detik untuk memuat cache besar saat startup). Selama startup probe belum sukses, liveness dan readiness tidak akan dievaluasi.\n2. **Readiness Probe (\u0060/health/ready\u0060)**: **\u0022Apakah aplikasi siap melayani lalu lintas request pengguna?\u0022**\n   - Menguji koneksi database SQL dan broker Kafka.\n   - **Jika gagal**: Kubernetes **TIDAK me-restart pod**, melainkan **mencabut pod dari daftar load balancer Service** sehingga pengguna tidak dikirimi request ke pod ini sampai koneksi pulih!\n3. **Liveness Probe (\u0060/health/live\u0060)**: **\u0022Apakah proses aplikasi masih hidup atau mengalami deadlock total?\u0022**\n   - Hanya menguji apakah Kestrel merespons ping sederhana di memori.\n   - **JANGAN PERNAH menguji koneksi database di Liveness Probe!** Jika database pusat sedang restart selama 1 menit, liveness probe yang menguji DB akan gagal serentak di 50 pod, membuat Kubernetes **me-restart seluruh pod aplikasi secara bersamaan (CrashLoopBackOff massal)**!\n   - **Jika gagal**: Kubernetes mematikan dan membuat ulang pod tersebut.\n\n---\n\n## 3. Zero-Downtime Rolling Update Strategy\n\nBagaimana Kubernetes memperbarui aplikasi dari Versi 1 ke Versi 2 tanpa downtime?\n\n\u0060\u0060\u0060yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: academy-api\nspec:\n  replicas: 4\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1        # Boleh membuat maksimal 1 pod baru di atas replica (4 \u002B 1 = 5)\n      maxUnavailable: 0  # TIDAK BOLEH ADA pod yang mati sebelum pod pengganti siap melayani!\n  template:\n    spec:\n      containers:\n      - name: api\n        image: myregistry.azurecr.io/academy-api:v2.1.0\n        ports:\n        - containerPort: 8080\n        readinessProbe:\n          httpGet:\n            path: /health/ready\n            port: 8080\n          initialDelaySeconds: 5\n          periodSeconds: 5\n        livenessProbe:\n          httpGet:\n            path: /health/live\n            port: 8080\n          initialDelaySeconds: 10\n          periodSeconds: 10\n\u0060\u0060\u0060\n\n### Mekanisme Rolling Update:\n1. K8s membuat 1 pod Versi 2 baru (\u0060maxSurge: 1\u0060).\n2. Pod Versi 2 mulai start. K8s menunggu hingga **Readiness Probe** pod tersebut mengembalikan HTTP 200 OK.\n3. Setelah Pod Versi 2 dinyatakan sehat, K8s mengalirkan sebagian trafik ke pod tersebut.\n4. K8s mengirim sinyal \u0060SIGTERM\u0060 ke 1 pod Versi 1 lama untuk dimatikan secara anggun (*graceful shutdown*).\n5. Proses ini diulangi satu per satu hingga seluruh 4 pod berhasil diganti ke Versi 2. Pengguna tidak pernah mengalami 1 detik pun error!\n\n---\n\n## 4. Graceful Shutdown \u0026 Penanganan \u0060SIGTERM\u0060 di .NET\n\nSaat Kubernetes memutuskan untuk menghentikan pod lama, K8s mengirimkan sinyal OS **\u0060SIGTERM\u0060**.\nSecara default, ASP.NET Core:\n1. Menghentikan penerimaan request HTTP baru di Kestrel.\n2. Memberikan waktu toleransi (*grace period*, default 30 detik) bagi request yang sedang berjalan (*in-flight requests*) untuk selesai.\n3. Menjalankan method \u0060StopAsync\u0060 pada seluruh \u0060IHostedService\u0060 / \u0060BackgroundService\u0060.\n4. Menutup koneksi database dan mendaur ulang memori sebelum proses keluar (\u0060Exit 0\u0060).\n\n---\n\n## 5. Ringkasan \u0026 Aturan Rilis Produksi\n\n1. **Pisahkan Liveness dari Readiness**: Liveness hanya untuk mendeteksi internal hang/deadlock. Readiness untuk kesiapan dependensi eksternal (database/cache).\n2. **Set \u0060maxUnavailable: 0\u0060**: Menjamin kapasitas pod minimal aplikasi tidak pernah berkurang selama rilis rolling update.\n3. **Automasi Sepenuhnya**: Jangan pernah mengubah konfigurasi produksi secara manual di terminal server (No SSH in Production). Gunakan GitOps (ArgoCD / Flux) atau pipeline CI/CD resmi.",
+  "starterCode": "using System;\n\n// Simulasi Mini Kubernetes Health Check Evaluator\npublic class HealthProbeResult\n{\n    public bool IsDatabaseConnected { get; set; }\n    public bool IsProcessResponsive { get; set; }\n\n    public int EvaluateLiveness()\n    {\n        // TODO: Liveness hanya boleh memeriksa IsProcessResponsive!\n        // Kembalikan 200 jika responsif, 500 jika hang.\n        return 500;\n    }\n\n    public int EvaluateReadiness()\n    {\n        // TODO: Readiness harus memeriksa IsProcessResponsive DAN IsDatabaseConnected.\n        // Kembalikan 200 jika keduanya true, 503 jika salah satu false.\n        return 503;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Skenario: Database sedang mengalami network glitch sesaat, tetapi proses API sehat\n        var health = new HealthProbeResult\n        {\n            IsProcessResponsive = true,\n            IsDatabaseConnected = false // Database sedang gangguan\n        };\n\n        int liveness = health.EvaluateLiveness();\n        int readiness = health.EvaluateReadiness();\n\n        Console.WriteLine($\u0022Liveness Status  : {liveness} (Harus 200: JANGAN bunuh pod!)\u0022);\n        Console.WriteLine($\u0022Readiness Status : {readiness} (Harus 503: Jangan kirim trafik sementara!)\u0022);\n    }\n}",
+  "solutionCode": "using System;\n\npublic class HealthProbeResult\n{\n    public bool IsDatabaseConnected { get; set; }\n    public bool IsProcessResponsive { get; set; }\n\n    public int EvaluateLiveness()\n    {\n        return IsProcessResponsive ? 200 : 500;\n    }\n\n    public int EvaluateReadiness()\n    {\n        return (IsProcessResponsive \u0026\u0026 IsDatabaseConnected) ? 200 : 503;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var health = new HealthProbeResult\n        {\n            IsProcessResponsive = true,\n            IsDatabaseConnected = false\n        };\n\n        int liveness = health.EvaluateLiveness();\n        int readiness = health.EvaluateReadiness();\n\n        Console.WriteLine($\u0022Liveness Status  : {liveness} (Harus 200: JANGAN bunuh pod!)\u0022);\n        Console.WriteLine($\u0022Readiness Status : {readiness} (Harus 503: Jangan kirim trafik sementara!)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-16-04-1",
+      "type": "single_choice",
+      "question": "Apa bencana yang terjadi jika Liveness Probe dikonfigurasi untuk memeriksa koneksi database SQL di dalam cluster Kubernetes berkapasitas 50 pod?",
+      "options": [
+        "Kubernetes otomatis membeli 10 server fisik baru.",
+        "Jika database mengalami restart atau gangguan jaringan sesaat, seluruh 50 pod akan gagal liveness secara bersamaan, memicu Kubernetes me-restart seluruh pod secara serentak (CrashLoopBackOff massal) dan melumpuhkan sistem total.",
+        "Trafik akan otomatis dialihkan ke satelit NASA.",
+        "Koneksi database berubah menjadi file Excel."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Liveness probe bertugas mendeteksi deadlock internal proses. Jika liveness bergantung pada database eksternal, gangguan sesaat pada database akan memicu restart berantai serentak pada seluruh pod di cluster (cascading failure / restart storm). Ketergantungan eksternal hanya boleh dievaluasi di Readiness Probe.",
+      "optionExplanations": [
+        "Salah. Kubernetes tidak membeli hardware fisik secara otomatis.",
+        "Benar! Inilah jebakan paling sering di Kubernetes: liveness yang salah memicu CrashLoop massal saat database down sesaat.",
+        "Salah. Tidak ada hubungan dengan NASA.",
+        "Salah. Format database tidak berubah."
+      ],
+      "sectionRef": "2. Kubernetes Probes: Liveness vs Readiness vs Startup",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-16-04-2",
+      "type": "single_choice",
+      "question": "Apa arti dari parameter \u0027maxUnavailable: 0\u0027 pada konfigurasi RollingUpdate Deployment di Kubernetes?",
+      "options": [
+        "Aplikasi tidak boleh diakses oleh pengguna gratis.",
+        "Selama proses pembaharuan versi baru berlangsung, tidak boleh ada pod lama yang dimatikan sebelum pod versi baru selesai booting dan lulus evaluasi Readiness Probe, menjamin kapasitas layanan tidak berkurang.",
+        "Aplikasi tidak boleh memiliki error log sama sekali.",
+        "Kubernetes tidak mengizinkan deployment pada hari libur."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "maxUnavailable: 0 menjamin bahwa Kubernetes selalu mempertahankan 100% kapasitas pod aktif selama proses rolling update, mencegah penurunan performa atau hilangnya koneksi saat transisi versi aplikasi.",
+      "optionExplanations": [
+        "Salah. Tidak berhubungan dengan model bisnis aplikasi.",
+        "Benar! Menjamin ketersediaan penuh tanpa pengurangan jumlah pod minimum yang melayani request.",
+        "Salah. Tidak berkaitan dengan filtering error log.",
+        "Salah. Jadwal rilis ditentukan oleh tim engineering, bukan dibatasi Kubernetes."
+      ],
+      "sectionRef": "3. Zero-Downtime Rolling Update Strategy",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-16-04",
+    "Title": "Implementasi Evaluasi Probe K8s (Liveness \u0026 Readiness)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Sebuah microservice mengevaluasi status kesehatan sistem untuk endpoint Kubernetes Probe:\nBaca status 3 komponen dari stdin dipisahkan spasi: DB (OK/FAIL), Cache (OK/FAIL), dan MemoryPressure (NORMAL/CRITICAL).\nAturan K8s:\n- Liveness Probe: \u0027LIVENESS_OK\u0027 selama MemoryPressure == \u0027NORMAL\u0027 (jika CRITICAL, cetak \u0027LIVENESS_FAIL\u0027 agar pod direstart).\n- Readiness Probe: \u0027READINESS_OK\u0027 jika Liveness == OK DAN DB == \u0027OK\u0027 (Cache boleh FAIL). Jika DB FAIL, cetak \u0027READINESS_FAIL\u0027.\nCetak dua baris: baris 1 status Liveness, baris 2 status Readiness.",
+    "InputFormat": "Satu baris: \u0027\u003CDB\u003E \u003CCache\u003E \u003CMemoryPressure\u003E\u0027.",
+    "OutputFormat": "Dua baris hasil evaluasi Liveness dan Readiness.",
+    "Constraints": "Status string token standar.",
+    "Examples": [
+      {
+        "Input": "OK OK NORMAL",
+        "Output": "LIVENESS_OK\nREADINESS_OK",
+        "Explanation": "Semua komponen sehat, pod siap menerima trafik."
+      },
+      {
+        "Input": "FAIL OK NORMAL",
+        "Output": "LIVENESS_OK\nREADINESS_FAIL",
+        "Explanation": "DB gagal: pod tetap hidup tapi tidak menerima trafik."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Evaluasi Liveness dan Readiness Probe Kubernetes.\n        Console.WriteLine(\u0022LIVENESS_OK\\nREADINESS_OK\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 3) return;\n\n        string db = p[0].ToUpperInvariant();\n        string cache = p[1].ToUpperInvariant();\n        string mem = p[2].ToUpperInvariant();\n\n        bool liveness = (mem == \u0022NORMAL\u0022);\n        bool readiness = liveness \u0026\u0026 (db == \u0022OK\u0022);\n\n        Console.WriteLine(liveness ? \u0022LIVENESS_OK\u0022 : \u0022LIVENESS_FAIL\u0022);\n        Console.WriteLine(readiness ? \u0022READINESS_OK\u0022 : \u0022READINESS_FAIL\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Sehat Semua)",
+        "Description": "Contoh 1 (Sehat Semua): input \u0027OK OK NORMAL\u0027 -\u003E expected \u0027LIVENESS_OK\nREADINESS_OK\u0027",
+        "Input": "OK OK NORMAL",
+        "ExpectedOutput": "LIVENESS_OK\nREADINESS_OK",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (DB Gangguan)",
+        "Description": "Contoh 2 (DB Gangguan): input \u0027FAIL OK NORMAL\u0027 -\u003E expected \u0027LIVENESS_OK\nREADINESS_FAIL\u0027",
+        "Input": "FAIL OK NORMAL",
+        "ExpectedOutput": "LIVENESS_OK\nREADINESS_FAIL",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Memory Critical",
+        "Description": "Memory Critical: input \u0027OK OK CRITICAL\u0027 -\u003E expected \u0027LIVENESS_FAIL\nREADINESS_FAIL\u0027",
+        "Input": "OK OK CRITICAL",
+        "ExpectedOutput": "LIVENESS_FAIL\nREADINESS_FAIL",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Cache Saja yang Gangguan",
+        "Description": "Cache Saja yang Gangguan: input \u0027OK FAIL NORMAL\u0027 -\u003E expected \u0027LIVENESS_OK\nREADINESS_OK\u0027",
+        "Input": "OK FAIL NORMAL",
+        "ExpectedOutput": "LIVENESS_OK\nREADINESS_OK",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Liveness probe menentukan apakah pod masih responsif atau perlu di-restart oleh kubelet.",
+      "Readiness probe menentukan apakah pod siap menerima request trafik dari Ingress/Service."
+    ],
+    "Explanation": "Memisahkan Liveness Probe dari Readiness Probe sangat krusial: dependensi eksternal (DB) yang bermasalah tidak boleh memicu restart pod (liveness), melainkan cukup mencopot pod dari routing traffic (readiness)."
+  },
+  "relatedLessons": [
+    "lesson-16-02",
+    "lesson-16-03",
+    "lesson-17-02"
+  ],
+  "references": [
+    {
+      "title": "Configure Liveness, Readiness and Startup Probes - Kubernetes Documentation",
+      "url": "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/",
+      "type": "documentation"
+    },
+    {
+      "title": "Building a CI/CD pipeline with GitHub Actions and .NET",
+      "url": "https://learn.microsoft.com/en-us/dotnet/architecture/devops-for-aspnet-developers/actions-cicd",
+      "type": "article"
+    }
+  ]
+}

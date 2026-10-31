@@ -1,0 +1,161 @@
+{
+  "id": "lesson-00-04",
+  "levelId": "level-00",
+  "moduleId": "mod-00-02",
+  "order": 4,
+  "title": "Sistem Biner \u0026 Heksadesimal: Bahasa Dasar Komputer",
+  "slug": "binary-hexadecimal",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 35,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "binary",
+  "simulatorContext": "Gunakan simulator biner di bawah untuk memanipulasi setiap bit (0 atau 1) dan mengamati bagaimana representasi desimal dan heksadesimal berubah secara real-time.",
+  "description": "Memahami representasi bit dan byte, konversi antara basis bilangan (Biner Basis 2, Desimal Basis 10, Heksadesimal Basis 16), serta manipulasi bitwise dasar.",
+  "prerequisites": [],
+  "introduces": [
+    "Bit \u0026 Byte",
+    "Radix / Base (2, 10, 16)",
+    "Nibble (4 Bits)",
+    "Hexadecimal Prefix (0x)",
+    "Bitwise Shift"
+  ],
+  "learningObjectives": [
+    "Memahami hubungan matematis antara Biner (Basis 2), Heksadesimal (Basis 16), dan Desimal.",
+    "Mengonversi nilai antara format biner, heksadesimal, dan desimal secara cepat.",
+    "Memahami mengapa heksadesimal menjadi standar representasi memori di dunia rekayasa sistem."
+  ],
+  "markdownContent": "# Sistem Biner \u0026 Heksadesimal: Bahasa Dasar Komputer\n\n## Mengapa Komputer Menggunakan Biner?\nKomputer digital tidak memahami angka 10, huruf \u0027A\u0027, atau string JSON. Sirkuit transistor silikon hanya memahami dua kondisi fisik:\n- **Tegangan Rendah (~0V)**: Logika \u00600\u0060 (OFF)\n- **Tegangan Tinggi (~1.2V-3.3V)**: Logika \u00601\u0060 (ON)\n\nSatu unit logika ini disebut **Bit (Binary Digit)**.\n\n\u0060\u0060\u0060text\n1 Bit  = 0 atau 1\n1 Byte = 8 Bit (Dapat merepresentasikan 2^8 = 256 nilai unik: 0 sampai 255)\n1 Nibble = 4 Bit (Tepat 1 digit Heksadesimal: 0x0 sampai 0xF)\n\u0060\u0060\u0060\n\n---\n\n## Hubungan Emas: Mengapa Heksadesimal (Base-16)?\nMembaca urutan biner seperti \u00601101101011110010\u0060 sangat melelahkan dan rentan kesalahan bagi manusia. Karena \u006016 = 2^4\u0060, maka **setiap 4 digit biner (1 nibble) dapat dipadatkan secara tepat menjadi 1 digit heksadesimal**!\n\n| Desimal | Biner (4-bit Nibble) | Heksadesimal |\n| :---: | :---: | :---: |\n| 0 | \u00600000\u0060 | \u00600x0\u0060 |\n| 5 | \u00600101\u0060 | \u00600x5\u0060 |\n| 9 | \u00601001\u0060 | \u00600x9\u0060 |\n| 10 | \u00601010\u0060 | \u00600xA\u0060 |\n| 11 | \u00601011\u0060 | \u00600xB\u0060 |\n| 12 | \u00601100\u0060 | \u00600xC\u0060 |\n| 13 | \u00601101\u0060 | \u00600xD\u0060 |\n| 14 | \u00601110\u0060 | \u00600xE\u0060 |\n| 15 | \u00601111\u0060 | \u00600xF\u0060 |\n\n### Contoh Pemadatan Alamat Memori\nMisalkan sebuah alamat memori biner 16-bit:\n\u0060\u0060\u0060text\nBiner  :  1101   1010   1111   0010\nNibble :  [D]    [A]    [F]    [2]\nHex    :  0xDAF2\n\u0060\u0060\u0060\nSangat ringkas dan tidak ada ambiguitas bit! Inilah alasan alamat RAM, hash kriptografi SHA-256, dan kode warna CSS selalu ditulis dalam format heksadesimal.\n\n---\n\n## Representasi Literal di C# Modern\nDalam C# modern, Anda dapat menulis bilangan langsung dalam format biner dan heksadesimal menggunakan digit separator (\u0060_\u0060) agar mudah dibaca:\n\n\u0060\u0060\u0060csharp\nbyte mask = 0b1111_0000;    // Literal Biner (prefix 0b)\nint hexColor = 0xFF_57_33;   // Literal Heksadesimal (prefix 0x)\nint decimalVal = 255;\n\nConsole.WriteLine(mask == 0xF0); // True! Nilainya identik di memori.\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksplorasi Format Biner dan Heksadesimal di C#\nbyte value = 0b1010_1100; // 0xAC dalam heksadesimal, atau 172 desimal\n\nConsole.WriteLine($\u0022Format Desimal: {value}\u0022);\nConsole.WriteLine($\u0022Format Heksadesimal: 0x{value:X2}\u0022);\nConsole.WriteLine($\u0022Format Biner: {Convert.ToString(value, 2).PadLeft(8, \u00270\u0027)}\u0022);\n\n// Operasi Bitwise: AND, OR, XOR\nbyte mask = 0b0000_1111; // Mengisolasi 4 bit bawah (lower nibble)\nbyte lowerNibble = (byte)(value \u0026 mask);\n\nConsole.WriteLine($\u0022Lower Nibble (Biner): {Convert.ToString(lowerNibble, 2).PadLeft(8, \u00270\u0027)}\u0022);\nConsole.WriteLine($\u0022Lower Nibble (Desimal): {lowerNibble}\u0022);\n\n// TODO: Cobalah buat operasi shift left (value \u003C\u003C 1) dan amati hasilnya!",
+  "quizQuestions": [
+    {
+      "id": "q-00-04-1",
+      "type": "MultipleChoice",
+      "question": "Berapa banyak bit biner yang direpresentasikan secara tepat oleh 1 digit angka heksadesimal?",
+      "options": [
+        "2 Bit",
+        "4 Bit (1 Nibble)",
+        "8 Bit (1 Byte)",
+        "16 Bit"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Karena \u00602^4 = 16\u0060, maka tepat 4 bit biner (1 nibble) dapat dipetakan secara satu-ke-satu ke dalam 1 digit heksadesimal (0 sampai F).",
+      "optionExplanations": [
+        "Salah. 2 bit hanya dapat merepresentasikan 4 nilai unik (0 sampai 3).",
+        "Benar! 1 digit heksadesimal (0-F) merepresentasikan tepat 4 bit biner (0000-1111).",
+        "Salah. 8 bit membutuhkan 2 digit heksadesimal (misal 0xFF).",
+        "Salah. 16 bit membutuhkan 4 digit heksadesimal."
+      ],
+      "sectionRef": "Hubungan Emas: Mengapa Heksadesimal (Base-16)?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-00-04-2",
+      "type": "MultipleChoice",
+      "question": "Nilai heksadesimal \u00600x2A\u0060 setara dengan berapa dalam sistem bilangan desimal?",
+      "options": [
+        "42",
+        "26",
+        "52",
+        "38"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Kalkulasi: (2 \u00D7 16\u00B9) \u002B (A \u00D7 16\u2070) = (2 \u00D7 16) \u002B (10 \u00D7 1) = 32 \u002B 10 = 42.",
+      "optionExplanations": [
+        "Benar! (2 * 16) \u002B 10 = 42.",
+        "Salah. Periksa kembali nilai digit \u0027A\u0027 yaitu 10 desimal.",
+        "Salah. Perhitungan tidak cocok dengan basis 16.",
+        "Salah. 38 adalah 0x26, bukan 0x2A."
+      ],
+      "sectionRef": "Hubungan Emas: Mengapa Heksadesimal (Base-16)?",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-00-04",
+    "Title": "Konverter Hex String ke Desimal 64-bit",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca sebuah string heksadesimal dari stdin dan konversikan menjadi bilangan bulat desimal 64-bit (long).\nFormat string dapat diawali \u00270x\u0027 atau tanpa prefix, dan dapat menggunakan huruf kapital maupun kecil.\nJika memuat karakter non-heksadesimal, cetak \u0027INVALID\u0027.",
+    "InputFormat": "Satu baris string berisi representasi bilangan heksadesimal.",
+    "OutputFormat": "Satu baris bilangan bulat desimal 64-bit, atau \u0027INVALID\u0027.",
+    "Constraints": "Panjang string 1 s/d 18 karakter. Nilai tidak negatif.",
+    "Examples": [
+      {
+        "Input": "0x1A",
+        "Output": "26",
+        "Explanation": "Nilai 0x1A = (1 * 16) \u002B 10 = 26."
+      },
+      {
+        "Input": "FF",
+        "Output": "255",
+        "Explanation": "Nilai FF tanpa prefix 0x = (15 * 16) \u002B 15 = 255."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022INVALID\u0022); return; }\n        // TODO: Baca string, hilangkan prefix 0x (bila ada), dan parse ke long.\n        Console.WriteLine(0);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022INVALID\u0022); return; }\n        string clean = line.Trim();\n        if (clean.StartsWith(\u00220x\u0022, StringComparison.OrdinalIgnoreCase)) clean = clean.Substring(2);\n        if (clean.Length \u003E 0 \u0026\u0026 long.TryParse(clean, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long val) \u0026\u0026 val \u003E= 0)\n        {\n            Console.WriteLine(val);\n        }\n        else\n        {\n            Console.WriteLine(\u0022INVALID\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Prefix 0x)",
+        "Description": "Contoh 1 (Prefix 0x): input \u00270x1A\u0027 -\u003E expected \u002726\u0027",
+        "Input": "0x1A",
+        "ExpectedOutput": "26",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Tanpa Prefix)",
+        "Description": "Contoh 2 (Tanpa Prefix): input \u0027FF\u0027 -\u003E expected \u0027255\u0027",
+        "Input": "FF",
+        "ExpectedOutput": "255",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Kasus Normal Huruf Kecil",
+        "Description": "Kasus Normal Huruf Kecil: input \u00270x2a\u0027 -\u003E expected \u002742\u0027",
+        "Input": "0x2a",
+        "ExpectedOutput": "42",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Edge Case Karakter Invalid",
+        "Description": "Edge Case Karakter Invalid: input \u00270xG12\u0027 -\u003E expected \u0027INVALID\u0027",
+        "Input": "0xG12",
+        "ExpectedOutput": "INVALID",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan StartsWith(\u00220x\u0022, StringComparison.OrdinalIgnoreCase) untuk mendeteksi prefix.",
+      "Gunakan long.TryParse dengan NumberStyles.HexNumber untuk konversi aman."
+    ],
+    "Explanation": "Tipe data bilangan biner dan heksadesimal dapat dikonversi ke long secara deterministik menggunakan System.Globalization.NumberStyles.HexNumber."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-00-05",
+      "title": "Aritmatika Biner \u0026 Two\u0027s Complement",
+      "levelName": "LEVEL 00",
+      "context": "Representasi bilangan negatif dan operasi bitwise."
+    },
+    {
+      "lessonId": "lesson-00-06",
+      "title": "Encoding Karakter \u0026 UTF-8",
+      "levelName": "LEVEL 00",
+      "context": "Bagaimana teks disimpan dalam urutan byte heksadesimal."
+    }
+  ],
+  "references": [
+    {
+      "title": "Binary Numbers and Hexadecimal - Khan Academy",
+      "url": "https://www.khanacademy.org/computing/computers-and-internet-alternative/x2e464f14f195062d:digital-information"
+    },
+    {
+      "title": "C# Numeric Literals Documentation",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/integral-numeric-types"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class HexConverter\n{\n    public static int HexToDecimal(string hex)\n    {\n        if (string.IsNullOrWhiteSpace(hex)) return 0;\n        int result = 0;\n        foreach (char c in hex.Trim().ToUpperInvariant())\n        {\n            int val;\n            if (c \u003E= \u00270\u0027 \u0026\u0026 c \u003C= \u00279\u0027) val = c - \u00270\u0027;\n            else if (c \u003E= \u0027A\u0027 \u0026\u0026 c \u003C= \u0027F\u0027) val = 10 \u002B (c - \u0027A\u0027);\n            else continue;\n\n            result = (result \u003C\u003C 4) | val;\n        }\n        return result;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u0022FF -\u003E {HexToDecimal(\u0022FF\u0022)}\u0022);\n        Console.WriteLine($\u00222A -\u003E {HexToDecimal(\u00222A\u0022)}\u0022);\n    }\n}"
+}

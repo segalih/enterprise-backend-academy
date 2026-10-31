@@ -1,0 +1,164 @@
+{
+  "id": "lesson-13-03",
+  "levelId": "level-13",
+  "moduleId": "mod-13-02",
+  "order": 3,
+  "title": "Tactical Domain-Driven Design (DDD): Entities, Value Objects, Aggregate Roots, dan Invariant",
+  "slug": "domain-driven-design-tactical-aggregates",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 65,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menerapkan Tactical Domain-Driven Design di C# modern: membedakan Entity vs Value Object (C# Records), Aggregate Root sebagai Transactional Boundary, penegakan Invariant bisnis, dan Domain Events.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-03-05",
+      "reason": "Records, With Expressions, dan Nilai Immutability"
+    },
+    {
+      "lessonId": "lesson-13-02",
+      "reason": "Clean Architecture \u0026 Domain Core Boundaries"
+    }
+  ],
+  "introduces": [
+    "Entities with Identity vs Value Objects with Structural Equality",
+    "Aggregate Root as the guardian of business invariants",
+    "Transactional Boundaries (One Aggregate per Transaction)",
+    "Anemic Domain Model vs Rich Domain Model",
+    "Domain Events for internal decoupled reactivity"
+  ],
+  "learningObjectives": [
+    "Memodelkan Value Object menggunakan C# \u0060record\u0060 dengan validasi self-contained immutable",
+    "Membangun Aggregate Root yang membungkus child entities dan menolak perubahan state ilegal",
+    "Mengidentifikasi dan merombak \u0027Anemic Domain Model\u0027 (getter/setter publik tanpa logika) menjadi \u0027Rich Domain Model\u0027",
+    "Menerapkan Domain Events untuk memicu efek samping internal tanpa merusak isolasi aggregate"
+  ],
+  "markdownContent": "# Tactical Domain-Driven Design (DDD): Entities, Value Objects, Aggregate Roots, dan Invariant\n\nBanyak aplikasi enterprise dimulai dengan rapi, namun perlahan berubah menjadi kekacauan rumit (*Big Ball of Mud*). Salah satu penyebab utamanya adalah **Anemic Domain Model**: entitas bisnis diperlakukan hanya sebagai kantong data pasif berisi properti \u0060{ get; set; }\u0060, sementara logika bisnis penting tercecer di puluhan service layer, controller, atau script SQL.\n\n**Tactical Domain-Driven Design (DDD)**\u2014diperkenalkan oleh Eric Evans\u2014memberikan pola rekayasa terstruktur untuk memodelkan logika bisnis yang kaya dan melindungi integritas data sistem (*invariants*).\n\n---\n\n## 1. Value Object: Nilai Tanpa Identitas\n\nSebuah konsep bisnis adalah **Value Object** jika ia didefinisikan murni oleh **nilainya**, bukan oleh ID unik:\n- Contoh: Uang (\u0060Money: Amount \u002B Currency\u0060), Alamat (\u0060Address\u0060), Rentang Tanggal (\u0060DateRange\u0060), Nomor Telepon.\n- Jika dua objek \u0060Money\u0060 memiliki Amount 100.000 dan Currency \u0022IDR\u0022, keduanya **identik sama**.\n\nDi C# modern, tipe data paling ideal untuk Value Object adalah **\u0060record\u0060**:\n\u0060\u0060\u0060csharp\npublic record Money\n{\n    public decimal Amount { get; }\n    public string Currency { get; }\n\n    public Money(decimal amount, string currency)\n    {\n        if (amount \u003C 0) throw new ArgumentException(\u0022Jumlah uang tidak boleh negatif!\u0022);\n        if (string.IsNullOrWhiteSpace(currency)) throw new ArgumentException(\u0022Mata uang wajib diisi!\u0022);\n        \n        Amount = amount;\n        Currency = currency.ToUpperInvariant();\n    }\n\n    public Money Add(Money other)\n    {\n        if (Currency != other.Currency)\n            throw exciting InvalidOperationException($\u0022Tidak dapat menjumlahkan {Currency} dengan {other.Currency}!\u0022);\n        return new Money(Amount \u002B other.Amount, Currency);\n    }\n}\n\u0060\u0060\u0060\nValue Object bersifat **Immutable**: sekali dibuat, nilainya tidak dapat diubah. Modifikasi menghasilkan instans baru.\n\n---\n\n## 2. Entity: Objek dengan Identitas Berkelanjutan\n\nSebuah konsep bisnis adalah **Entity** jika ia memiliki **Identitas Unik (\u0060Id\u0060)** yang membedakannya dari objek lain sepanjang waktu hidupnya, meskipun atributnya berubah:\n- Contoh: \u0060Customer\u0060, \u0060Order\u0060, \u0060BankAccount\u0060.\n- Jika dua Customer memiliki Nama dan Email yang sama, mereka tetap merupakan dua orang yang berbeda jika \u0060CustomerId\u0060-nya berbeda.\n\n---\n\n## 3. Aggregate Root: Penjaga Batas Invariant Bisnis\n\nApa itu **Invariant**?\n\u003E **Invariant** adalah aturan bisnis yang HARUS SELALU BENAR di setiap detik kehidupan aplikasi.\n\u003E Contoh: *\u0022Total nilai pesanan tidak boleh melebihi batas kredit pelanggan\u0022* atau *\u0022Item pesanan tidak boleh ditambahkan jika status pesanan sudah Dispatched\u0022*.\n\n**Aggregate Root** adalah Entity utama yang bertindak sebagai satu-satunya pintu gerbang (*entry point*) untuk memodifikasi sekelompok entity terkait:\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    subgraph AR[\u0022Order (Aggregate Root)\u0022]\n        Id[\u0022OrderId: Guid\u0022]\n        St[\u0022Status: OrderStatus\u0022]\n        Items[\u0022_items: List\u0026lt;OrderItem\u0026gt; (Private Encapsulated)\u0022]\n        Methods[\u0022\u002B AddItem(productId, qty, price)\u003Cbr/\u003E\u002B CancelOrder()\u003Cbr/\u003E\u002B Pay()\u0022]\n    end\n    Caller[\u0022Dunia Luar (Application Layer)\u0022] --\u003E|HANYA lewat Method Publik| Methods\n    Caller -.-\u003E|DILARANG Akses Langsung| Items\n\u0060\u0060\u0060\n\n### Aturan Emas Aggregate Root:\n1. **Private Setters \u0026 Encapsulation**: Jangan izinkan kode luar mengubah properti secara sembarangan (\u0060order.Status = Dispatched\u0060 dilarang!). Buat method eksplisit: \u0060order.MarkAsDispatched()\u0060.\n2. **Koleksi Bersifat Read-Only**: Jangan ekspos \u0060List\u003CT\u003E\u0060 publik. Gunakan \u0060IReadOnlyCollection\u003CT\u003E\u0060 dengan backing field privat (\u0060_items.AsReadOnly()\u0060).\n3. **Satu Transaksi = Satu Aggregate**: Database transaction hanya boleh memuat dan menyimpan SATU Aggregate Root. Jangan pernah meng-update dua aggregate root berbeda dalam satu DbContext transaction jika ingin sistem scalable.\n\n---\n\n## 4. Anemic vs Rich Domain Model\n\n\u0060\u0060\u0060csharp\n// ANEMIC DOMAIN MODEL (BURUK):\n// Class ini hanya kantong data pasif; logic bocor ke mana-mana.\npublic class Order\n{\n    public Guid Id { get; set; }\n    public decimal TotalAmount { get; set; }\n    public string Status { get; set; }\n    public List\u003COrderItem\u003E Items { get; set; }\n}\n\n// RICH DOMAIN MODEL (DDD SEJATI):\npublic class Order\n{\n    public Guid Id { get; private set; }\n    public OrderStatus Status { get; private set; }\n    \n    private readonly List\u003COrderItem\u003E _items = new();\n    public IReadOnlyCollection\u003COrderItem\u003E Items =\u003E _items.AsReadOnly();\n\n    public decimal TotalAmount =\u003E _items.Sum(x =\u003E x.Subtotal);\n\n    private Order() { } // Untuk EF Core\n\n    public Order(Guid customerId)\n    {\n        Id = Guid.NewGuid();\n        Status = OrderStatus.Pending;\n    }\n\n    public void AddItem(Guid productId, int quantity, decimal unitPrice)\n    {\n        if (Status != OrderStatus.Pending)\n            throw new InvalidOperationException(\u0022Pesanan yang sudah diproses tidak dapat ditambah item baru!\u0022);\n\n        if (quantity \u003C= 0)\n            throw new ArgumentException(\u0022Jumlah item harus lebih dari 0!\u0022);\n\n        _items.Add(new OrderItem(productId, quantity, unitPrice));\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 5. Ringkasan \u0026 Aturan Rekayasa DDD\n\n1. **Jadikan Value Object sebagai Senjata Pertama**: Ubah tipe primitif (\u0060string email\u0060, \u0060decimal amount\u0060) menjadi Value Object (\u0060EmailAddress\u0060, \u0060Money\u0060) untuk mencegah *Primitive Obsession*.\n2. **Kunci Seluruh Setter**: Pastikan semua setter entity bersifat \u0060private\u0060 atau \u0060init\u0060. Setiap perubahan state harus melalui method dengan nama bisnis yang jelas (\u0060Approve()\u0060, \u0060Cancel()\u0060, \u0060Ship()\u0060).\n3. **Patuhi Boundary Aggregate**: Lindungi seluruh entity anak di dalam aggregate; jangan pernah mengekspos referensi yang memungkinkan modifikasi langsung dari luar.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic record Money(decimal Amount, string Currency)\n{\n    public static Money IDR(decimal amount) =\u003E new(amount, \u0022IDR\u0022);\n}\n\npublic class OrderItem\n{\n    public string ProductName { get; }\n    public int Quantity { get; }\n    public decimal Price { get; }\n\n    public OrderItem(string productName, int quantity, decimal price)\n    {\n        ProductName = productName;\n        Quantity = quantity;\n        Price = price;\n    }\n}\n\npublic class Order\n{\n    public Guid Id { get; } = Guid.NewGuid();\n    public bool IsFinalized { get; private set; }\n\n    private readonly List\u003COrderItem\u003E _items = new();\n    public IReadOnlyCollection\u003COrderItem\u003E Items =\u003E _items.AsReadOnly();\n\n    public void AddItem(string product, int quantity, decimal price)\n    {\n        if (IsFinalized)\n            throw new InvalidOperationException(\u0022Order sudah final! Tidak dapat menambah item.\u0022);\n        if (quantity \u003C= 0)\n            throw new ArgumentException(\u0022Quantity harus lebih besar dari 0!\u0022);\n\n        _items.Add(new OrderItem(product, quantity, price));\n    }\n\n    public void FinalizeOrder()\n    {\n        if (_items.Count == 0) throw new InvalidOperationException(\u0022Order kosong tidak bisa di-finalize!\u0022);\n        IsFinalized = true;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var order = new Order();\n        order.AddItem(\u0022Server Rack 42U\u0022, 1, 15_000_000);\n        order.FinalizeOrder();\n\n        Console.WriteLine($\u0022Order {order.Id} Finalized. Total Item: {order.Items.Count}\u0022);\n\n        try\n        {\n            // Coba tambahkan item setelah finalized (Harus Gagal!)\n            order.AddItem(\u0022UPS Backup\u0022, 1, 3_000_000);\n        }\n        catch (InvalidOperationException ex)\n        {\n            Console.WriteLine($\u0022[INVARIANT TERJAGA]: {ex.Message}\u0022);\n        }\n    }\n}",
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic record Money(decimal Amount, string Currency)\n{\n    public static Money IDR(decimal amount) =\u003E new(amount, \u0022IDR\u0022);\n}\n\npublic class OrderItem\n{\n    public string ProductName { get; }\n    public int Quantity { get; }\n    public decimal Price { get; }\n\n    public OrderItem(string productName, int quantity, decimal price)\n    {\n        ProductName = productName;\n        Quantity = quantity;\n        Price = price;\n    }\n}\n\npublic class Order\n{\n    public Guid Id { get; } = Guid.NewGuid();\n    public bool IsFinalized { get; private set; }\n\n    private readonly List\u003COrderItem\u003E _items = new();\n    public IReadOnlyCollection\u003COrderItem\u003E Items =\u003E _items.AsReadOnly();\n\n    public void AddItem(string product, int quantity, decimal price)\n    {\n        if (IsFinalized)\n        {\n            throw new InvalidOperationException(\u0022Order sudah final!\u0022);\n        }\n\n        if (quantity \u003C= 0)\n        {\n            throw new ArgumentException(\u0022Quantity harus positif!\u0022);\n        }\n\n        _items.Add(new OrderItem(product, quantity, price));\n    }\n\n    public void FinalizeOrder()\n    {\n        if (_items.Count == 0) throw new InvalidOperationException(\u0022Order kosong tidak bisa di-finalize!\u0022);\n        IsFinalized = true;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var order = new Order();\n        order.AddItem(\u0022Server Rack 42U\u0022, 1, 15_000_000);\n        order.FinalizeOrder();\n\n        Console.WriteLine($\u0022Order Finalized. Total Item: {order.Items.Count}\u0022);\n\n        try\n        {\n            order.AddItem(\u0022UPS Backup\u0022, 1, 3_000_000);\n        }\n        catch (InvalidOperationException ex)\n        {\n            Console.WriteLine($\u0022[INVARIANT TERJAGA]: {ex.Message}\u0022);\n        }\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-13-03-1",
+      "type": "single_choice",
+      "question": "Apa perbedaan fundamental antara Entity dan Value Object dalam Domain-Driven Design?",
+      "options": [
+        "Entity ditulis dalam file .cs, sedangkan Value Object ditulis dalam database SQL.",
+        "Entity didefinisikan oleh Identitas Unik (ID) yang bertahan meski datanya berubah, sedangkan Value Object didefinisikan murni oleh kesamaan seluruh atribut nilainya (dan bersifat immutable).",
+        "Entity hanya boleh memiliki 1 properti, sedangkan Value Object bebas.",
+        "Value Object wajib memiliki primary key Auto Increment di database."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Entity memiliki identitas unik (ID) yang membedakannya dari entitas lain dengan data serupa. Sebaliknya, Value Object (seperti Money atau Address) tidak memiliki identitas terpisah dan nilainya setara jika seluruh atributnya bernilai sama.",
+      "optionExplanations": [
+        "Salah. Keduanya adalah class/record C# di domain model.",
+        "Benar! Identitas membedakan Entity, sedangkan kesetaraan nilai membedakan Value Object.",
+        "Salah. Entity dapat memiliki banyak properti domain.",
+        "Salah. Value Object umumnya tidak memiliki primary key mandiri (disimpan sebagai complex type / owned entity di EF Core)."
+      ],
+      "sectionRef": "1. Value Object: Nilai Tanpa Identitas",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-13-03-2",
+      "type": "single_choice",
+      "question": "Mengapa Aggregate Root tidak boleh mengekspos List\u003CT\u003E publik yang dapat dimodifikasi langsung oleh kode luar?",
+      "options": [
+        "Karena compiler C# akan otomatis crash jika melihat List publik.",
+        "Karena kode luar dapat menambah, menghapus, atau mengubah item secara langsung tanpa melewati validasi bisnis Aggregate Root, merusak invariant data.",
+        "Karena List\u003CT\u003E dilarang oleh standar ISO backend.",
+        "Karena List\u003CT\u003E otomatis mengunci seluruh proses CPU."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Enkapsulasi adalah pilar Aggregate Root. Jika List\u003CT\u003E diekspos publik, pihak luar dapat melakukan list.Clear() atau list.Add(itemIlegal) tanpa sepengetahuan Aggregate Root, sehingga invariant bisnis tidak lagi terjamin konsistensinya.",
+      "optionExplanations": [
+        "Salah. Compiler mengizinkan properti List publik.",
+        "Benar! Enkapsulasi koleksi via IReadOnlyCollection melindungi integritas invariant data bisnis.",
+        "Salah. Tidak ada aturan ISO seperti itu.",
+        "Salah. List\u003CT\u003E adalah koleksi memori biasa."
+      ],
+      "sectionRef": "3. Aggregate Root: Penjaga Batas Invariant Bisnis",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-13-03",
+    "Title": "Penegakan Invariant Bisnis pada Aggregate Root (Tactical DDD)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat Aggregate Root \u0060OrderAggregate\u0060 dengan aturan invariant:\n1. Status awal adalah \u0027Draft\u0027.\n2. Hanya order berstatus \u0027Draft\u0027 yang boleh menambahkan item (\u0060AddItem(string name, decimal price)\u0060).\n3. Transisi status: \u0060Confirm()\u0060 hanya valid jika total item \u003E 0 dan total harga \u003E 0 (mengubah status ke \u0027Confirmed\u0027).\nBaca perintah dari stdin dipisahkan koma: \u0027ADD:ItemA:50000, ADD:ItemB:25000, CONFIRM\u0027.\nCetak status akhir dan total harga: \u0027STATUS: \u003CStatus\u003E, TOTAL: \u003CTotal\u003E\u0027.\nJika aturan invariant dilanggar, cetak \u0027INVARIANT_VIOLATION\u0027.",
+    "InputFormat": "Satu baris perintah dipisahkan koma.",
+    "OutputFormat": "Satu baris status dan total, atau \u0027INVARIANT_VIOLATION\u0027.",
+    "Constraints": "Price decimal \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "ADD:Laptop:10000, CONFIRM",
+        "Output": "STATUS: Confirmed, TOTAL: 10000",
+        "Explanation": "Item ditambahkan saat Draft, lalu di-confirm."
+      },
+      {
+        "Input": "CONFIRM",
+        "Output": "INVARIANT_VIOLATION",
+        "Explanation": "Order kosong tidak boleh di-confirm."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Implementasikan Aggregate Root dengan invariant validation.\n        Console.WriteLine(\u0022STATUS: Draft, TOTAL: 0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022STATUS: Draft, TOTAL: 0\u0022); return; }\n\n        string status = \u0022Draft\u0022;\n        decimal total = 0;\n        int itemCount = 0;\n\n        var ops = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var op in ops)\n        {\n            string t = op.Trim();\n            if (t.StartsWith(\u0022ADD:\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                if (status != \u0022Draft\u0022)\n                {\n                    Console.WriteLine(\u0022INVARIANT_VIOLATION\u0022);\n                    return;\n                }\n                var p = t.Substring(4).Split(\u0027:\u0027);\n                if (p.Length == 2 \u0026\u0026 decimal.TryParse(p[1], CultureInfo.InvariantCulture, out decimal price))\n                {\n                    itemCount\u002B\u002B;\n                    total \u002B= price;\n                }\n            }\n            else if (t.Equals(\u0022CONFIRM\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                if (status != \u0022Draft\u0022 || itemCount == 0 || total \u003C= 0)\n                {\n                    Console.WriteLine(\u0022INVARIANT_VIOLATION\u0022);\n                    return;\n                }\n                status = \u0022Confirmed\u0022;\n            }\n        }\n\n        Console.WriteLine($\u0022STATUS: {status}, TOTAL: {total}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Valid Confirm)",
+        "Description": "Contoh 1 (Valid Confirm): input \u0027ADD:Laptop:10000, CONFIRM\u0027 -\u003E expected \u0027STATUS: Confirmed, TOTAL: 10000\u0027",
+        "Input": "ADD:Laptop:10000, CONFIRM",
+        "ExpectedOutput": "STATUS: Confirmed, TOTAL: 10000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Confirm Kosong)",
+        "Description": "Contoh 2 (Confirm Kosong): input \u0027CONFIRM\u0027 -\u003E expected \u0027INVARIANT_VIOLATION\u0027",
+        "Input": "CONFIRM",
+        "ExpectedOutput": "INVARIANT_VIOLATION",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Add Setelah Confirm",
+        "Description": "Add Setelah Confirm: input \u0027ADD:Item:100, CONFIRM, ADD:Extra:50\u0027 -\u003E expected \u0027INVARIANT_VIOLATION\u0027",
+        "Input": "ADD:Item:100, CONFIRM, ADD:Extra:50",
+        "ExpectedOutput": "INVARIANT_VIOLATION",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Draft Saja",
+        "Description": "Draft Saja: input \u0027ADD:Book:5000\u0027 -\u003E expected \u0027STATUS: Draft, TOTAL: 5000\u0027",
+        "Input": "ADD:Book:5000",
+        "ExpectedOutput": "STATUS: Draft, TOTAL: 5000",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Dalam DDD, Aggregate Root adalah batas konsistensi transaksional.",
+      "Seluruh mutasi data harus melalui method publik Aggregate Root yang memvalidasi invariant bisnis."
+    ],
+    "Explanation": "Tactical Domain-Driven Design memastikan setiap state transition pada aggregate root terlindungi oleh invariant bisnis yang ketat."
+  },
+  "relatedLessons": [
+    "lesson-03-05",
+    "lesson-13-01",
+    "lesson-13-02"
+  ],
+  "references": [
+    {
+      "title": "Domain-Driven Design: Tackling Complexity in the Heart of Software - Eric Evans",
+      "url": "https://www.oreilly.com/library/view/domain-driven-design-tackling/0321125215/",
+      "type": "book"
+    },
+    {
+      "title": "Effective Aggregate Design - Vaughn Vernon",
+      "url": "https://www.dddcommunity.org/library/vernon_2011/",
+      "type": "article"
+    }
+  ]
+}

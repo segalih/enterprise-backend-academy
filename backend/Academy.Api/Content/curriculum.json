@@ -1,0 +1,748 @@
+{
+  "levels": [
+    {
+      "id": "level-00",
+      "title": "LEVEL 00 — Computer & Digital Fundamentals",
+      "subtitle": "Arsitektur Komputer, Biner, CPU, Memori & Sistem Operasi",
+      "description": "Fondasi komputasi dari level gerbang logika hingga kernel OS, virtual memory, dan CLI untuk pemula.",
+      "difficulty": "Beginner",
+      "icon": "Cpu",
+      "keyTopics": [
+        "CPU & ALU",
+        "Cache L1/L2/L3",
+        "Binary & Two's Complement",
+        "Virtual Memory",
+        "Kernel vs User Mode",
+        "CLI & Shell"
+      ],
+      "modules": [
+        {
+          "id": "mod-00-01",
+          "title": "Hardware, CPU & Komponen Komputasi",
+          "description": "Cara kerja CPU, Register, Cache, Siklus Fetch-Decode-Execute, dan Hierarki Memori.",
+          "lessons": [
+            "lesson-00-01",
+            "lesson-00-02",
+            "lesson-00-03"
+          ]
+        },
+        {
+          "id": "mod-00-02",
+          "title": "Sistem Bilangan & Representasi Data Digital",
+          "description": "Biner, Hexadesimal, Two's Complement, Floating Point IEEE 754, dan Karakter Encoding (ASCII, UTF-8).",
+          "lessons": [
+            "lesson-00-04",
+            "lesson-00-05",
+            "lesson-00-06"
+          ]
+        },
+        {
+          "id": "mod-00-03",
+          "title": "Sistem Operasi, Kernel & Command Line Interface",
+          "description": "Kernel vs User Mode, System Calls, Process & Thread, File System, PowerShell & Bash.",
+          "lessons": [
+            "lesson-00-07",
+            "lesson-00-08",
+            "lesson-00-09"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-01",
+      "title": "LEVEL 01 — Programming Logic & Problem Solving",
+      "subtitle": "Logika Pemrograman, Algoritma, Dekomposisi Masalah & Matematika Komputasi",
+      "description": "Membangun cara berpikir algoritmik dari nol sebelum menulis kode konkret dalam C#.",
+      "difficulty": "Beginner",
+      "icon": "Brain",
+      "keyTopics": [
+        "Compiler vs Interpreter",
+        "Algoritma & Pseudocode",
+        "Alur Kontrol (Branching & Looping)",
+        "Logika Boolean & Truth Tables",
+        "Dekomposisi Masalah"
+      ],
+      "modules": [
+        {
+          "id": "mod-01-01",
+          "title": "Konsep Dasar Pemrograman & Eksekusi Kode",
+          "description": "Source code, Mesin penerjemah, Kompilasi vs Interpretasi, dan Runtime.",
+          "lessons": [
+            "lesson-01-01",
+            "lesson-01-02"
+          ]
+        },
+        {
+          "id": "mod-01-02",
+          "title": "Algoritma & Alur Kontrol Logika",
+          "description": "Sequence, Selection (Branching), Iteration (Looping), dan Rekursi.",
+          "lessons": [
+            "lesson-01-03",
+            "lesson-01-04",
+            "lesson-01-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-02",
+      "title": "LEVEL 02 — C# Programming Fundamentals",
+      "subtitle": "Sintaks C#, Tipe Data, Value vs Reference, Kontrol Alur, Method & Koleksi",
+      "description": "Pengenalan lengkap ekosistem modern .NET dan C#, dari console app pertama hingga exception handling dan manipulasi file.",
+      "difficulty": "Beginner",
+      "icon": "Terminal",
+      "keyTopics": [
+        "CLR & Roslyn",
+        "Value Types vs Reference Types",
+        "Boxing & Unboxing",
+        "Control Flow",
+        "Methods & Ref/Out",
+        "Collections & Exceptions"
+      ],
+      "modules": [
+        {
+          "id": "mod-02-01",
+          "title": "Ekosistem .NET & Anatomi Program C#",
+          "description": "Sejarah .NET, CLR, Roslyn Compiler, .csproj, dotnet CLI, dan Program.cs.",
+          "lessons": [
+            "lesson-02-01",
+            "lesson-02-02"
+          ]
+        },
+        {
+          "id": "mod-02-02",
+          "title": "Sistem Tipe C#, Memori & Konversi",
+          "description": "Value Types, Reference Types, Stack vs Heap, Boxing/Unboxing, dan Nullable Types.",
+          "lessons": [
+            "lesson-02-03",
+            "lesson-02-04",
+            "lesson-02-05"
+          ]
+        },
+        {
+          "id": "mod-02-03",
+          "title": "Struktur Kontrol, Methods & Koleksi Data",
+          "description": "Kondisional, Pattern Matching, Perulangan, Method Parameters (ref, out, in), Arrays, List & Dictionary.",
+          "lessons": [
+            "lesson-02-06",
+            "lesson-02-07",
+            "lesson-02-08",
+            "lesson-02-09"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-03",
+      "title": "LEVEL 03 — Object-Oriented Programming (OOP)",
+      "subtitle": "Enkapsulasi, Abstraksi, Pewarisan, Polimorfisme, Struct, Record, Generics & Events",
+      "description": "Memahami paradigma berorientasi objek dalam C# dengan kedalaman arsitektur enterprise.",
+      "difficulty": "Intermediate",
+      "icon": "Layers",
+      "keyTopics": [
+        "Class vs Struct vs Record",
+        "Polymorphism & Virtual/Override",
+        "Interfaces & Abstraction",
+        "Generics & Constraints",
+        "Delegates & Events"
+      ],
+      "modules": [
+        {
+          "id": "mod-03-01",
+          "title": "Pilar Utama OOP & Anatomi Kelas",
+          "description": "Class, Object, Constructor, Properties, Enkapsulasi, dan Access Modifiers.",
+          "lessons": [
+            "lesson-03-01",
+            "lesson-03-02"
+          ]
+        },
+        {
+          "id": "mod-03-02",
+          "title": "Polimorfisme, Interface & Tipe Modern (Record & Struct)",
+          "description": "Virtual, Override, Abstract Class, Interface, Record Immutability, dan Struct.",
+          "lessons": [
+            "lesson-03-03",
+            "lesson-03-04",
+            "lesson-03-05"
+          ]
+        },
+        {
+          "id": "mod-03-03",
+          "title": "Generics, Delegates & Events",
+          "description": "Generics, Type Constraints, Func, Action, Events, dan Pencegahan Memory Leak.",
+          "lessons": [
+            "lesson-03-06",
+            "lesson-03-07"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-04",
+      "title": "LEVEL 04 — Intermediate & Advanced C#",
+      "subtitle": "LINQ, Deferred Execution, Reflection, Source Generators, Span<T> & Memory<T>",
+      "description": "Teknik tingkat lanjut C# untuk manipulasi data efisien, metaprogramming, dan high-performance memory semantics.",
+      "difficulty": "Advanced",
+      "icon": "Zap",
+      "keyTopics": [
+        "LINQ & Deferred Execution",
+        "IEnumerable vs IQueryable",
+        "Span<T> & ref struct",
+        "Reflection & Metadata",
+        "Roslyn Source Generators"
+      ],
+      "modules": [
+        {
+          "id": "mod-04-01",
+          "title": "LINQ & Internal Iterasi",
+          "description": "Query vs Method Syntax, Deferred vs Immediate Execution, IEnumerable vs IQueryable, dan Yield Return.",
+          "lessons": [
+            "lesson-04-01",
+            "lesson-04-02"
+          ]
+        },
+        {
+          "id": "mod-04-02",
+          "title": "High-Performance Memory Semantics: Span<T> & Ref Struct",
+          "description": "Span<T>, ReadOnlySpan<T>, Memory<T>, stackalloc, dan zero-allocation parsing.",
+          "lessons": [
+            "lesson-04-03"
+          ]
+        },
+        {
+          "id": "mod-04-03",
+          "title": "Metaprogramming & Serialisasi Modern",
+          "description": "Reflection, Custom Attributes, Roslyn Source Generators, dan System.Text.Json Custom Converters.",
+          "lessons": [
+            "lesson-04-04",
+            "lesson-04-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-05",
+      "title": "LEVEL 05 — Data Structures & Algorithms",
+      "subtitle": "Kompleksitas Asimptotik Big O, Hash Table, Pohon B-Tree/AVL, Graph & Dynamic Programming",
+      "description": "Struktur data dan algoritma fundamental yang diimplementasikan secara konkret dalam C# berorientasi performa enterprise.",
+      "difficulty": "Advanced",
+      "icon": "Activity",
+      "keyTopics": [
+        "Big O, Omega, Theta",
+        "Hash Tables & Collisions",
+        "Binary Search Trees & B-Trees",
+        "Graph BFS/DFS & Dijkstra",
+        "Dynamic Programming"
+      ],
+      "modules": [
+        {
+          "id": "mod-05-01",
+          "title": "Analisis Algoritma & Kompleksitas Asimptotik",
+          "description": "Big O, Big Omega, Big Theta, Analisis Amortized, Best/Average/Worst Case.",
+          "lessons": [
+            "lesson-05-01"
+          ]
+        },
+        {
+          "id": "mod-05-02",
+          "title": "Struktur Data Linear & Hash-Based",
+          "description": "Dynamic Arrays, Linked List, Stack, Queue, Circular Queue, dan Hash Table Internals.",
+          "lessons": [
+            "lesson-05-02"
+          ]
+        },
+        {
+          "id": "mod-05-03",
+          "title": "Trees, B-Trees & Graph Algorithms",
+          "description": "Binary Search Tree, AVL, Red-Black, B-Tree (Index DB), Graph Traversal, dan Dijkstra.",
+          "lessons": [
+            "lesson-05-03",
+            "lesson-05-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-06",
+      "title": "LEVEL 06 — Computer Architecture & Operating Systems",
+      "subtitle": "Cache Coherency, Context Switching, Paging, Inter-Process Communication & Thread Lifecycle",
+      "description": "Pemahaman mendalam mengenai interaksi perangkat lunak backend enterprise dengan OS dan hardware CPU modern.",
+      "difficulty": "Advanced",
+      "icon": "Server",
+      "keyTopics": [
+        "Branch Prediction & Out-of-Order",
+        "Cache Line False Sharing",
+        "Process vs Thread",
+        "Race Conditions & Deadlocks",
+        "Linux vs Windows Internals"
+      ],
+      "modules": [
+        {
+          "id": "mod-06-01",
+          "title": "Mikroarsitektur CPU & Cache Locality",
+          "description": "Pipeline, Branch Prediction, Cache Lines, Spatial/Temporal Locality, dan False Sharing.",
+          "lessons": [
+            "lesson-06-01"
+          ]
+        },
+        {
+          "id": "mod-06-02",
+          "title": "Proses, Thread, Context Switch & Sinkronisasi",
+          "description": "Process Lifecycle, Thread Scheduling, Context Switching Cost, Critical Sections, dan Deadlocks.",
+          "lessons": [
+            "lesson-06-02",
+            "lesson-06-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-07",
+      "title": "LEVEL 07 — Networking & Internet Engineering",
+      "subtitle": "OSI, TCP/IP, Three-Way Handshake, HTTP/1.1-2-3, TLS 1.3, Reverse Proxy & Load Balancer",
+      "description": "Arsitektur jaringan backend dari paket Ethernet fisik hingga Layer 7 HTTP/3, WebSockets, dan TLS Handshake.",
+      "difficulty": "Advanced",
+      "icon": "Globe",
+      "keyTopics": [
+        "TCP 3-Way Handshake",
+        "TCP Flow & Congestion Control",
+        "HTTP/1.1 vs HTTP/2 vs HTTP/3 (QUIC)",
+        "TLS 1.3 Handshake & PKI",
+        "Reverse Proxy & L4/L7 Load Balancing"
+      ],
+      "modules": [
+        {
+          "id": "mod-07-01",
+          "title": "Fondasi Jaringan Komputer & Model TCP/IP",
+          "description": "OSI 7 Layers, IP Routing, Subnetting CIDR, TCP vs UDP, dan Socket.",
+          "lessons": [
+            "lesson-07-01",
+            "lesson-07-02"
+          ]
+        },
+        {
+          "id": "mod-07-02",
+          "title": "Protokol Aplikasi Web & Keamanan Transport",
+          "description": "HTTP/1.1, HTTP/2 (Multiplexing), HTTP/3 (QUIC), TLS 1.3 Handshake, Certificates, PKI.",
+          "lessons": [
+            "lesson-07-03",
+            "lesson-07-04",
+            "lesson-07-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-08",
+      "title": "LEVEL 08 — .NET Runtime & Internal Engineering",
+      "subtitle": "CoreCLR, JIT Compilation, Tiered PGO, Garbage Collector Gen 0/1/2/LOH & Profiling",
+      "description": "Bedah internal Common Language Runtime, pipeline kompilasi IL ke machine code, memori heap managed, dan garbage collection.",
+      "difficulty": "Expert",
+      "icon": "Cpu",
+      "keyTopics": [
+        "CoreCLR & IL Execution",
+        "JIT, Dynamic PGO & Native AOT",
+        "GC Gen 0/1/2, LOH, POH",
+        "IDisposable & SafeHandle",
+        "dotnet-trace & dotnet-dump"
+      ],
+      "modules": [
+        {
+          "id": "mod-08-01",
+          "title": "Arsitektur CoreCLR & Pipeline Kompilasi JIT",
+          "description": "Intermediate Language (IL), JIT Compilation, Tiered Compilation, Dynamic PGO, dan Native AOT.",
+          "lessons": [
+            "lesson-08-01"
+          ]
+        },
+        {
+          "id": "mod-08-02",
+          "title": "Managed Memory & Garbage Collector Deep Dive",
+          "description": "Generational GC (Gen 0, 1, 2), Large Object Heap (LOH), Pinned Object Heap (POH), Workstation vs Server GC.",
+          "lessons": [
+            "lesson-08-02",
+            "lesson-08-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-09",
+      "title": "LEVEL 09 — Database Engineering",
+      "subtitle": "Relasional vs NoSQL, Index B-Tree, ACID, MVCC, Query Execution Plan & Sharding",
+      "description": "Desain basis data enterprise berskala tinggi, indexing mendalam, transaksi ACID, isolasi MVCC, dan query tuning.",
+      "difficulty": "Advanced",
+      "icon": "Database",
+      "keyTopics": [
+        "Relational Modeling & Normalization",
+        "B-Tree vs Clustered Indexes",
+        "ACID & Transaction Isolation Levels",
+        "MVCC & Lock Contention",
+        "SARGability & Query Optimization"
+      ],
+      "modules": [
+        {
+          "id": "mod-09-01",
+          "title": "Database Modeling & Relational Schema Design",
+          "description": "Relational Modeling, Normalisasi 1NF-BCNF, Denormalisasi Strategis, Keys & Constraints.",
+          "lessons": [
+            "lesson-09-01"
+          ]
+        },
+        {
+          "id": "mod-09-02",
+          "title": "Database Engine Architecture, Indexing & Storage Pages",
+          "description": "Pages & Extents, Buffer Pool, Clustered vs Non-Clustered Indexes, Covering Index, B-Tree Traversal.",
+          "lessons": [
+            "lesson-09-02"
+          ]
+        },
+        {
+          "id": "mod-09-03",
+          "title": "Transaksi, Tingkat Isolasi ACID, Lock & MVCC",
+          "description": "Read Uncommitted, Read Committed, Repeatable Read, Serializable, Snapshot Isolation, MVCC, dan Deadlock.",
+          "lessons": [
+            "lesson-09-03",
+            "lesson-09-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-10",
+      "title": "LEVEL 10 — C# Database Integration",
+      "subtitle": "ADO.NET, Dapper High-Performance Micro-ORM, EF Core 8 & Repository Pattern",
+      "description": "Integrasi data tingkat enterprise di C#: Dari ADO.NET murni, Dapper ultra-fast, hingga Entity Framework Core 8.",
+      "difficulty": "Advanced",
+      "icon": "HardDrive",
+      "keyTopics": [
+        "ADO.NET DbConnection/Command",
+        "Dapper Micro-ORM",
+        "EF Core Change Tracking",
+        "Migrations & Fluent API",
+        "Repository & Unit of Work"
+      ],
+      "modules": [
+        {
+          "id": "mod-10-01",
+          "title": "Akses Data Tingkat Rendah & Dapper Micro-ORM",
+          "description": "ADO.NET, Parameterized Queries (Anti-SQLi), Dapper Query/Execute, dan Multi-Mapping.",
+          "lessons": [
+            "lesson-10-01",
+            "lesson-10-02"
+          ]
+        },
+        {
+          "id": "mod-10-02",
+          "title": "Entity Framework Core 8 Architecture & Optimasi",
+          "description": "DbContext, Change Tracker, AsNoTracking, Fluent API, Migrations, Eager/Lazy/Explicit Loading.",
+          "lessons": [
+            "lesson-10-03",
+            "lesson-10-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-11",
+      "title": "LEVEL 11 — ASP.NET Core & Backend API Engineering",
+      "subtitle": "Kestrel, Request Pipeline, Middleware, Minimal APIs, Dependency Injection & REST",
+      "description": "Membangun REST API modern, scalable, dan secure menggunakan ASP.NET Core 8 Kestrel dan Generic Host.",
+      "difficulty": "Advanced",
+      "icon": "Network",
+      "keyTopics": [
+        "Kestrel & Request Pipeline",
+        "Custom Middleware",
+        "Minimal APIs vs Controllers",
+        "Dependency Injection Lifetimes",
+        "Options Pattern & Configuration",
+        "Rate Limiting & Health Checks"
+      ],
+      "modules": [
+        {
+          "id": "mod-11-01",
+          "title": "Arsitektur ASP.NET Core & Middleware Pipeline",
+          "description": "Kestrel Web Server, HttpContext, Middleware Execution Chain, dan Custom Middleware.",
+          "lessons": [
+            "lesson-11-01",
+            "lesson-11-02"
+          ]
+        },
+        {
+          "id": "mod-11-02",
+          "title": "Dependency Injection Container & Konfigurasi Enterprise",
+          "description": "Service Lifetimes (Transient, Scoped, Singleton), Captive Dependencies, Circular References, Options Pattern.",
+          "lessons": [
+            "lesson-11-03",
+            "lesson-11-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-12",
+      "title": "LEVEL 12 — Concurrency, Threading & Parallel Programming",
+      "subtitle": "Task, Async/Await State Machine, SemaphoreSlim, Channels & Lock-Free Interlocked",
+      "description": "Pemrograman konkuren dan asinkronus bebas deadlock, high-throughput I/O processing, dan sinkronisasi thread di .NET.",
+      "difficulty": "Expert",
+      "icon": "FastForward",
+      "keyTopics": [
+        "Async/Await State Machine",
+        "SynchronizationContext & ConfigureAwait",
+        "SemaphoreSlim & Mutex",
+        "System.Threading.Channels",
+        "Lock-Free & Interlocked"
+      ],
+      "modules": [
+        {
+          "id": "mod-12-01",
+          "title": "Model Asinkronus & State Machine C#",
+          "description": "Task-Based Asynchronous Pattern (TAP), State Machine Generation, Task vs ValueTask, CancellationToken.",
+          "lessons": [
+            "lesson-12-01",
+            "lesson-12-02"
+          ]
+        },
+        {
+          "id": "mod-12-02",
+          "title": "Sinkronisasi Thread, Lock & High-Throughput Channels",
+          "description": "Monitor (lock), SemaphoreSlim, ReaderWriterLockSlim, Interlocked CAS, System.Threading.Channels.",
+          "lessons": [
+            "lesson-12-03",
+            "lesson-12-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-13",
+      "title": "LEVEL 13 — Software Design Principles & Architecture",
+      "subtitle": "SOLID, Clean Architecture, Vertical Slice, Tactical Domain-Driven Design (DDD) & ADR",
+      "description": "Prinsip rekayasa perangkat lunak enterprise, pemisahan dependensi, domain-driven design, dan arsitektur yang tahan uji masa depan.",
+      "difficulty": "Expert",
+      "icon": "Compass",
+      "keyTopics": [
+        "SOLID Principles in C#",
+        "Clean vs Onion vs Hexagonal Architecture",
+        "Vertical Slice Architecture",
+        "Tactical DDD (Aggregate, Value Object)",
+        "Architecture Decision Records (ADR)"
+      ],
+      "modules": [
+        {
+          "id": "mod-13-01",
+          "title": "Prinsip Desain SOLID & Pola Desain Enterprise",
+          "description": "Single Responsibility, Open/Closed, Liskov, Interface Segregation, Dependency Inversion, Strategy, Mediator.",
+          "lessons": [
+            "lesson-13-01"
+          ]
+        },
+        {
+          "id": "mod-13-02",
+          "title": "Arsitektur Aplikasi Bersih & Domain-Driven Design",
+          "description": "Clean Architecture, Vertical Slice Architecture, Strategic & Tactical DDD (Aggregates, Value Objects, Domain Events).",
+          "lessons": [
+            "lesson-13-02",
+            "lesson-13-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-14",
+      "title": "LEVEL 14 — Distributed Systems & Microservices",
+      "subtitle": "CAP Theorem, Event-Driven Architecture, Kafka/RabbitMQ, Saga Pattern & Outbox",
+      "description": "Prinsip sistem terdistribusi, komunikasi pesan asinkronus, transaksi kompensasi Saga, dan ketahanan terhadap kegagalan parsial.",
+      "difficulty": "Expert",
+      "icon": "Share2",
+      "keyTopics": [
+        "CAP & PACELC Theorems",
+        "Event-Driven Architecture",
+        "Kafka vs RabbitMQ Internals",
+        "Outbox & Inbox Pattern",
+        "Saga Orchestration vs Choreography",
+        "Circuit Breaker & Retry with Jitter"
+      ],
+      "modules": [
+        {
+          "id": "mod-14-01",
+          "title": "Fondasi Sistem Terdistribusi & Konsistensi Data",
+          "description": "Network Partitions, Partial Failure, CAP Theorem, Eventual Consistency, Vector Clocks, Consensus Raft.",
+          "lessons": [
+            "lesson-14-01"
+          ]
+        },
+        {
+          "id": "mod-14-02",
+          "title": "Event-Driven Architecture & Message Brokers",
+          "description": "RabbitMQ Exchanges/Queues, Apache Kafka Partitions/Consumer Groups, Message Ordering, Dead Letter Queues.",
+          "lessons": [
+            "lesson-14-02"
+          ]
+        },
+        {
+          "id": "mod-14-03",
+          "title": "Pola Transaksi Terdistribusi & Ketahanan Sistem",
+          "description": "Transactional Outbox Pattern, Saga Pattern (Orchestration vs Choreography), Polly Circuit Breaker, Exponential Backoff.",
+          "lessons": [
+            "lesson-14-03",
+            "lesson-14-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-15",
+      "title": "LEVEL 15 — Security Engineering",
+      "subtitle": "Zero Trust, OAuth 2.0 / OIDC, JWT Hardening, OWASP Top 10 & Kriptografi Modern",
+      "description": "Keamanan backend enterprise: Otentikasi, otorisasi berbasis klaim, enkripsi data at rest & transit, dan mitigasi kerentanan tingkat sistem.",
+      "difficulty": "Expert",
+      "icon": "ShieldCheck",
+      "keyTopics": [
+        "Zero Trust & Least Privilege",
+        "JWT Signing, Claims & Rotation",
+        "OAuth 2.0 Authorization Code + PKCE",
+        "OWASP Top 10 Backend Defense",
+        "AES-256-GCM & RSA Cryptography"
+      ],
+      "modules": [
+        {
+          "id": "mod-15-01",
+          "title": "Identitas, Otentikasi & Otorisasi Modern",
+          "description": "Password Hashing (Argon2id, BCrypt), JWT Architecture, Refresh Token Rotation, Policy-Based Authorization.",
+          "lessons": [
+            "lesson-15-01",
+            "lesson-15-02"
+          ]
+        },
+        {
+          "id": "mod-15-02",
+          "title": "Pertahanan OWASP Top 10 & Kriptografi Backend",
+          "description": "SQL Injection, SSRF, IDOR, Mass Assignment, AES Enkripsi Simetris, RSA Asimetris, Audit Trail.",
+          "lessons": [
+            "lesson-15-03",
+            "lesson-15-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-16",
+      "title": "LEVEL 16 — Testing, Quality Engineering & DevOps",
+      "subtitle": "Piramida Tes, xUnit, WebApplicationFactory, Docker Multi-Stage, CI/CD & Kubernetes",
+      "description": "Otomasi kualitas perangkat lunak dari unit test, integration test database kontainer, hingga pipeline CI/CD dan deployment Kubernetes.",
+      "difficulty": "Expert",
+      "icon": "CheckCircle2",
+      "keyTopics": [
+        "Test Pyramid & TDD",
+        "xUnit & WebApplicationFactory",
+        "Docker Multi-Stage Builds",
+        "GitHub Actions CI/CD Pipeline",
+        "Kubernetes Pods, Deployments & Probes"
+      ],
+      "modules": [
+        {
+          "id": "mod-16-01",
+          "title": "Strategi Pengujian Backend & Otomasi xUnit",
+          "description": "Unit Test vs Integration Test, xUnit Theories/Facts, WebApplicationFactory, Mocking vs Faking.",
+          "lessons": [
+            "lesson-16-01",
+            "lesson-16-02"
+          ]
+        },
+        {
+          "id": "mod-16-02",
+          "title": "Konteinerisasi Docker, CI/CD & Kubernetes",
+          "description": "Dockerfile Multi-stage aman, Docker Compose, GitHub Actions CI/CD, Kubernetes Pods, Deployments, Readiness/Liveness Probes.",
+          "lessons": [
+            "lesson-16-03",
+            "lesson-16-04"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-17",
+      "title": "LEVEL 17 — Production, Performance & Reliability Engineering (SRE)",
+      "subtitle": "Observability, OpenTelemetry, BenchmarkDotNet, SLI/SLO, Postmortem & GC Tuning",
+      "description": "Mengoperasikan backend di produksi dengan keandalan 99.99%: Observability terdistribusi, profiling performa mikrodetik, dan SRE incident response.",
+      "difficulty": "Expert",
+      "icon": "BarChart2",
+      "keyTopics": [
+        "Distributed Tracing with OpenTelemetry",
+        "Structured Logging & Correlation IDs",
+        "SLI, SLO & Error Budgets",
+        "BenchmarkDotNet Hot Path Tuning",
+        "Production Memory Leak Investigation"
+      ],
+      "modules": [
+        {
+          "id": "mod-17-01",
+          "title": "Observability Terdistribusi & Monitoring",
+          "description": "Structured Logging, Distributed Tracing dengan OpenTelemetry, Correlation ID propagation, Prometheus & Grafana.",
+          "lessons": [
+            "lesson-17-01"
+          ]
+        },
+        {
+          "id": "mod-17-02",
+          "title": "Site Reliability Engineering (SRE) & Incident Management",
+          "description": "SLI, SLO, SLA, Error Budget, Blameless Postmortem, On-Call Playbooks, Graceful Degradation.",
+          "lessons": [
+            "lesson-17-02"
+          ]
+        },
+        {
+          "id": "mod-17-03",
+          "title": "Investigasi & Optimasi Performa Produksi",
+          "description": "BenchmarkDotNet, dotnet-dump, dotnet-trace, Analisis High CPU & Memory Leak di Produksi.",
+          "lessons": [
+            "lesson-17-03"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "level-18",
+      "title": "LEVEL 18 — Enterprise Architecture & Principal Engineering",
+      "subtitle": "Double-Entry Ledger, Financial Transactions, Legacy Modernization & Kepemimpinan Teknik",
+      "description": "Tingkat tertinggi rekayasa backend: Arsitektur perbankan dan transaksi finansial, buku besar double-entry, tata kelola arsitektur, dan kepemimpinan engineering organisasi.",
+      "difficulty": "Principal",
+      "icon": "Award",
+      "keyTopics": [
+        "Double-Entry Ledger Architecture",
+        "Idempotent Financial Settlement",
+        "Multi-Tenant & Multi-Region",
+        "Legacy System Modernization",
+        "Architecture Review & Technical Leadership"
+      ],
+      "modules": [
+        {
+          "id": "mod-18-01",
+          "title": "Arsitektur Transaksi Finansial & Buku Besar Double-Entry",
+          "description": "Prinsip Akuntansi Finansial, Double-Entry Ledger, Debit/Kredit Invariants, Settlement, Idempotency, dan Reversal.",
+          "lessons": [
+            "lesson-18-01",
+            "lesson-18-02"
+          ]
+        },
+        {
+          "id": "mod-18-02",
+          "title": "Arsitektur Enterprise Skala Global & Modernisasi Sistem",
+          "description": "Multi-Tenant Isolation, Multi-Region Active-Active, Zero-Downtime Database Migration, Strangler Fig Pattern.",
+          "lessons": [
+            "lesson-18-03"
+          ]
+        },
+        {
+          "id": "mod-18-03",
+          "title": "Kepemimpinan Teknik & Peran Principal Engineer",
+          "description": "Architecture Governance, Architecture Decision Records (ADR), Mentoring, Technical Vision, dan Risk Management.",
+          "lessons": [
+            "lesson-18-04"
+          ]
+        }
+      ]
+    }
+  ]
+}

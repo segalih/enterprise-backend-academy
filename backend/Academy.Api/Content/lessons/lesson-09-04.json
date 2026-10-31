@@ -1,0 +1,169 @@
+{
+  "id": "lesson-09-04",
+  "levelId": "level-09",
+  "moduleId": "mod-09-02",
+  "order": 4,
+  "title": "Query Optimization Enterprise: SARGability, Execution Plans, dan Masalah N\u002B1",
+  "slug": "sql-query-optimization-sargability-n-plus-1",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mengoptimalkan performa kueri SQL di lingkungan produksi: konsep SARGable predicates (Search Argument Able), membaca Graphical Execution Plan (Cost, Index Seek vs Scan), dan mengeliminasi wabah bencana query N\u002B1 pada ORM.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-09-02",
+      "title": "Database Storage \u0026 Indexing",
+      "levelName": "LEVEL 09",
+      "context": "Memahami Index Seek dan Index Scan."
+    }
+  ],
+  "introduces": [
+    "SARGability (Search Argument Able)",
+    "Non-SARGable Anti-patterns (Fungsi di Kolom WHERE)",
+    "Database Execution Plan (Cost, Spills, Warning)",
+    "The N\u002B1 Query Problem",
+    "Eager Loading (Include) vs Lazy Loading",
+    "SQL Batching \u0026 Split Queries"
+  ],
+  "learningObjectives": [
+    "Mengidentifikasi dan memperbaiki ekspresi query non-SARGable yang membunuh indeks B-Tree.",
+    "Menganalisis Execution Plan untuk menemukan bottleneck kueri (Sort Spill, Hash Join, Table Scan).",
+    "Mendeteksi dan mengeliminasi bug bencana N\u002B1 Query pada Entity Framework Core."
+  ],
+  "markdownContent": "# Query Optimization Enterprise: SARGability, Execution Plans, dan Masalah N\u002B1\n\n## 1. SARGability: Jangan Bunuh Indeks Database Anda!\nIstilah **SARGable** berasal dari singkatan **Search Argument Able**. Sebuah kueri dikatakan SARGable jika database optimizer mampu memanfaatkan **B\u002B Tree Index Seek** secara langsung untuk melompat ke data target.\n\n### Bencana Non-SARGable: Membungkus Kolom dengan Fungsi\nPerhatikan kueri pencarian transaksi berdasarkan tahun:\n\n\u0060\u0060\u0060sql\n-- SANGAT BURUK! NON-SARGABLE (INDEX SEEK MATI TOTAL!):\nSELECT * FROM Transaksi WHERE YEAR(TanggalTransaksi) = 2026;\n\u0060\u0060\u0060\n**Mengapa Ini Bencana?**\nB\u002B Tree indeks diurutkan berdasarkan nilai tanggal mentah (\u0060\u00272026-01-15\u0027\u0060), bukan hasil dari fungsi \u0060YEAR()\u0060.\nDatabase terpaksa **menjalankan fungsi \u0060YEAR()\u0060 pada setiap baris di 10.000.000 data satu per satu**, memicu **Full Table Scan O(N)**!\n\n### Perbaikan Menjadi SARGable:\n\u0060\u0060\u0060sql\n-- SEMPURNA! SARGABLE (100% INDEX SEEK O(log N)):\nSELECT * FROM Transaksi \nWHERE TanggalTransaksi \u003E= \u00272026-01-01\u0027 AND TanggalTransaksi \u003C \u00272027-01-01\u0027;\n\u0060\u0060\u0060\n\n### Dosa Non-SARGable Lainnya:\n- \u0060WHERE LOWER(Nama) = \u0027budi\u0027\u0060 \u2192 Ubah menjadi collation case-insensitive!\n- \u0060WHERE Nama LIKE \u0027%Santoso\u0027\u0060 (Wildcard di depan) \u2192 Indeks tidak bisa digunakan karena awal string tidak diketahui!\n\n---\n\n## 2. Bencana Kueri N\u002B1 pada Backend ORM\nIni adalah bug performa #1 yang paling sering ditemukan saat code review backend:\n\n\u0060\u0060\u0060csharp\n// KODE KELIHATANNYA INOSEN DI C#:\nvar customers = dbContext.Customers.Take(100).ToList(); // Kueri 1: Mengambil 100 nasabah\n\nforeach (var c in customers)\n{\n    // BENCANA! DI DALAM LOOP MEMANGGIL RELASI ORDERS!\n    Console.WriteLine(c.Orders.Count); // MENGEKSEKUSI 1 KUERI SQL KE DATABASE PER ITERASI!\n}\n\u0060\u0060\u0060\n**Akibat:**\n- 1 kueri untuk mengambil customers.\n- DITAMBAH **100 kueri SQL terpisah** untuk mengambil orders!\n- Total: **101 Network Roundtrips ke database!** Jika latensi jaringan DB adalah 5 ms, endpoint API membutuhkan minimal **505 milidetik hanya untuk menunggu roundtrip jaringan!**\n\n### Solusi Wajib: Eager Loading dengan \u0060.Include()\u0060\n\u0060\u0060\u0060csharp\n// EAGER LOADING: MENGAMBIL SELURUH DATA DALAM TEPAT 1 KUERI JOIN!\nvar customers = dbContext.Customers\n    .Include(c =\u003E c.Orders) // Hanya 1 kueri SQL dengan JOIN!\n    .Take(100)\n    .ToList();\n\u0060\u0060\u0060",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Simulasi Penalti Latensi Jaringan pada Masalah N\u002B1 Kueri\nconst int CustomerCount = 50;\nconst int SimulatedNetworkLatencyMs = 2; // 2 ms per network roundtrip\n\nConsole.WriteLine(\u0022=== SIMULASI MASALAH KUERI N\u002B1 ===\u0022);\n\n// 1. Skenario N\u002B1 (51 Panggilan Network Roundtrip)\nvar swNPlus1 = Stopwatch.StartNew();\nint totalQueryNPlus1 = 1 \u002B CustomerCount; // 1 kueri awal \u002B 50 kueri di loop\nint waktuNPlus1 = totalQueryNPlus1 * SimulatedNetworkLatencyMs;\nswNPlus1.Stop();\nConsole.WriteLine($\u0022[N\u002B1 Query Pattern] Jumlah Kueri DB: {totalQueryNPlus1} | Estimasi Waktu Jaringan: {waktuNPlus1} ms\u0022);\n\n// 2. Skenario Eager Loading (1 Kueri Tunggal dengan JOIN)\nvar swEager = Stopwatch.StartNew();\nint totalQueryEager = 1; // Tepat 1 kueri SQL\nint waktuEager = totalQueryEager * SimulatedNetworkLatencyMs;\nswEager.Stop();\nConsole.WriteLine($\u0022[Eager Loading .Include] Jumlah Kueri DB: {totalQueryEager}  | Estimasi Waktu Jaringan: {waktuEager} ms\u0022);\n\nConsole.WriteLine($\u0022\\nEager loading memangkas latensi sebesar {waktuNPlus1 - waktuEager} ms ({waktuNPlus1 / waktuEager}x lebih cepat)!\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-09-04-1",
+      "type": "MultipleChoice",
+      "question": "Manakah klausa WHERE di bawah ini yang bersifat \u0027SARGable\u0027 dan mampu memanfaatkan B\u002B Tree Index Seek secara optimal?",
+      "options": [
+        "WHERE UPPER(Email) = \u0027BUDI@GMAIL.COM\u0027",
+        "WHERE CreatedAt \u003E= \u00272026-01-01\u0027 AND CreatedAt \u003C \u00272026-02-01\u0027",
+        "WHERE SUBSTRING(NIK, 1, 4) = \u00273201\u0027",
+        "WHERE Nominal \u002B 5000 \u003E 100000"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Klausa \u0060CreatedAt \u003E= ... AND CreatedAt \u003C ...\u0060 membandingkan kolom langsung tanpa membungkusnya dalam fungsi manipulasi, memungkinkan B\u002B Tree Index Seek bekerja optimal.",
+      "optionExplanations": [
+        "Salah. Fungsi UPPER membungkus kolom dan mematikan index seek.",
+        "Benar! Pembandingan kolom mentah dengan rentang konstan adalah bentuk predikat SARGable murni.",
+        "Salah. Fungsi SUBSTRING memaksa pemindaian table scan menyeluruh.",
+        "Salah. Operasi aritmatika pada kolom \u0060Nominal \u002B 5000\u0060 adalah non-SARGable (seharusnya \u0060Nominal \u003E 95000\u0060)."
+      ],
+      "sectionRef": "1. SARGability: Jangan Bunuh Indeks Database Anda!",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-09-04-2",
+      "type": "MultipleChoice",
+      "question": "Metode apakah di Entity Framework Core yang digunakan untuk mengeliminasi masalah N\u002B1 Query dengan memuat data relasi secara Eager Loading dalam satu kueri SQL terkoordinasi?",
+      "options": [
+        ".ToList()",
+        ".Include()",
+        ".AsNoTracking()",
+        ".Attach()"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Method \u0060.Include()\u0060 menginstruksikan EF Core untuk melakukan JOIN atau split query teroptimasi guna menarik entitas relasi sekaligus dalam satu batch operasi database.",
+      "optionExplanations": [
+        "Salah. ToList hanya mengeksekusi kueri utama tanpa menarik relasi navigasi.",
+        "Benar! \u0060.Include(x =\u003E x.Relation)\u0060 adalah API resmi EF Core untuk Eager Loading.",
+        "Salah. AsNoTracking menonaktifkan change tracker untuk query read-only.",
+        "Salah. Attach menempelkan entity detached ke DbContext."
+      ],
+      "sectionRef": "Solusi Wajib: Eager Loading dengan .Include()",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-09-04",
+    "Title": "Pengubah Kueri Non-SARGable Menjadi SARGable Range Predicate",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Fungsi pada kolom seperti \u0060YEAR(OrderDate) = 2024\u0060 bersifat non-SARGable sehingga indeks kolom tidak dapat digunakan (memicu Full Table Scan).\nBaca string pola non-SARGable dari stdin dalam format \u0027YEAR(Column) = YYYY\u0027.\nUbah menjadi predikat rentang SARGable dengan format persis:\n\u0027Column \u003E= YYYY-01-01 AND Column \u003C (YYYY\u002B1)-01-01\u0027.",
+    "InputFormat": "Satu baris: \u0027YEAR(\u003CColumn\u003E) = \u003CYYYY\u003E\u0027.",
+    "OutputFormat": "Satu baris predikat rentang SARGable.",
+    "Constraints": "YYYY adalah tahun integer 4 digit.",
+    "Examples": [
+      {
+        "Input": "YEAR(OrderDate) = 2024",
+        "Output": "OrderDate \u003E= 2024-01-01 AND OrderDate \u003C 2025-01-01",
+        "Explanation": "Fungsi YEAR diubah menjadi rentang batas tanggal."
+      },
+      {
+        "Input": "YEAR(CreatedAt) = 2023",
+        "Output": "CreatedAt \u003E= 2023-01-01 AND CreatedAt \u003C 2024-01-01",
+        "Explanation": "Tahun 2023 menjadi rentang 2023 s/d 2024."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? query = Console.ReadLine();\n        // TODO: Ekstrak nama kolom dan tahun, lalu bentuk ekspresi SARGable.\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? query = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(query)) return;\n\n        // Pattern: YEAR(Col) = YYYY\n        int openParen = query.IndexOf(\u0027(\u0027);\n        int closeParen = query.IndexOf(\u0027)\u0027);\n        int equalsIdx = query.IndexOf(\u0027=\u0027);\n\n        if (openParen \u003E= 0 \u0026\u0026 closeParen \u003E openParen \u0026\u0026 equalsIdx \u003E closeParen)\n        {\n            string col = query.Substring(openParen \u002B 1, closeParen - openParen - 1).Trim();\n            string yearStr = query.Substring(equalsIdx \u002B 1).Trim();\n\n            if (int.TryParse(yearStr, out int year))\n            {\n                int nextYear = year \u002B 1;\n                Console.WriteLine($\u0022{col} \u003E= {year}-01-01 AND {col} \u003C {nextYear}-01-01\u0022);\n            }\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (OrderDate 2024)",
+        "Description": "Contoh 1 (OrderDate 2024): input \u0027YEAR(OrderDate) = 2024\u0027 -\u003E expected \u0027OrderDate \u003E= 2024-01-01 AND OrderDate \u003C 2025-01-01\u0027",
+        "Input": "YEAR(OrderDate) = 2024",
+        "ExpectedOutput": "OrderDate \u003E= 2024-01-01 AND OrderDate \u003C 2025-01-01",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (CreatedAt 2023)",
+        "Description": "Contoh 2 (CreatedAt 2023): input \u0027YEAR(CreatedAt) = 2023\u0027 -\u003E expected \u0027CreatedAt \u003E= 2023-01-01 AND CreatedAt \u003C 2024-01-01\u0027",
+        "Input": "YEAR(CreatedAt) = 2023",
+        "ExpectedOutput": "CreatedAt \u003E= 2023-01-01 AND CreatedAt \u003C 2024-01-01",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Tahun 2030",
+        "Description": "Tahun 2030: input \u0027YEAR(TransDate) = 2030\u0027 -\u003E expected \u0027TransDate \u003E= 2030-01-01 AND TransDate \u003C 2031-01-01\u0027",
+        "Input": "YEAR(TransDate) = 2030",
+        "ExpectedOutput": "TransDate \u003E= 2030-01-01 AND TransDate \u003C 2031-01-01",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Spasi Banyak",
+        "Description": "Spasi Banyak: input \u0027YEAR(  DeliveryDate  )   =   2025\u0027 -\u003E expected \u0027DeliveryDate \u003E= 2025-01-01 AND DeliveryDate \u003C 2026-01-01\u0027",
+        "Input": "YEAR(  DeliveryDate  )   =   2025",
+        "ExpectedOutput": "DeliveryDate \u003E= 2025-01-01 AND DeliveryDate \u003C 2026-01-01",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Predikat SARGable (Search Argument Able) memungkinkan Query Optimizer database memanfaatkan B-Tree Index Seek.",
+      "Mengubah fungsi YEAR menjadi rentang tanggal \u003E= dan \u003C memungkinkan engine melakukan range seek."
+    ],
+    "Explanation": "Membungkus kolom terindeks dalam pemanggilan fungsi (seperti YEAR(Col)) membatalkan kemampuan database menggunakan Index Seek, memaksa Table Scan pada seluruh baris tabel."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-09-02",
+      "title": "Database Storage \u0026 Indexing",
+      "levelName": "LEVEL 09",
+      "context": "Prinsip struktur B\u002B Tree yang menentukan SARGability."
+    },
+    {
+      "lessonId": "lesson-10-03",
+      "title": "Entity Framework Core Architecture",
+      "levelName": "LEVEL 10",
+      "context": "Penerapan Eager Loading .Include() dan AsNoTracking() pada EF Core."
+    }
+  ],
+  "references": [
+    {
+      "title": "What makes a SQL query SARGable? - Stack Overflow",
+      "url": "https://stackoverflow.com/questions/799584/what-makes-a-sql-statement-sargable"
+    },
+    {
+      "title": "Loading Related Data - EF Core Documentation",
+      "url": "https://learn.microsoft.com/en-us/ef/core/querying/related-data/"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class SqlSargableOptimizer\n{\n    public static string MakeYearFilterSargable(string columnName, int targetYear)\n    {\n        if (string.IsNullOrWhiteSpace(columnName) || targetYear \u003C= 0) return \u0022\u0022;\n\n        string col = columnName.Trim();\n        return $\u0022{col} \u003E= \u0027{targetYear}-01-01\u0027 AND {col} \u003C \u0027{targetYear \u002B 1}-01-01\u0027\u0022;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(MakeYearFilterSargable(\u0022CreatedDate\u0022, 2026));\n    }\n}"
+}

@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-17-01",
+    "levelId":  "level-17",
+    "moduleId":  "mod-17-01",
+    "order":  1,
+    "title":  "Observability Terdistribusi: OpenTelemetry Tracing, Correlation IDs, dan W3C TraceContext",
+    "slug":  "opentelemetry-distributed-tracing",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membangun pilar observability di arsitektur microservices: Tiga Pilar (Logs, Metrics, Traces), standar OpenTelemetry (OTel), propagasi W3C TraceContext (traceparent), dan Correlation ID.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-11-01",
+                              "reason":  "Middleware Pipeline \u0026 HttpContext"
+                          },
+                          {
+                              "lessonId":  "lesson-14-01",
+                              "reason":  "Sistem Terdistribusi \u0026 Partial Failures"
+                          }
+                      ],
+    "introduces":  [
+                       "The Three Pillars of Observability (Logs, Metrics, Traces)",
+                       "OpenTelemetry (OTel) standard \u0026 semantic conventions",
+                       "ActivitySource \u0026 Activity in .NET Core (System.Diagnostics)",
+                       "W3C TraceContext specification (\u0027traceparent\u0027 header)",
+                       "Distributed context propagation across HTTP \u0026 Message Brokers"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan fungsi dan karakteristik Tiga Pilar Observability (Logs, Metrics, dan Distributed Traces)",
+                               "Menggunakan API native .NET `System.Diagnostics.ActivitySource` dan `Activity` untuk membuat distributed spans",
+                               "Menerapkan propagasi header W3C TraceContext (`traceparent`) melintasi batas service HTTP dan broker Kafka",
+                               "Mendiagnosa bottleneck latensi end-to-end pada waterfall chart tracing (Jaeger / Honeycomb / Azure App Insights)"
+                           ],
+    "markdownContent":  "# Observability Terdistribusi: OpenTelemetry Tracing, Correlation IDs, dan W3C TraceContext\n\nDi era monolitik lawas, ketika ada bug atau transaksi lambat, Anda cukup membuka satu file `app.log` di server dan mencari error menggunakan `grep`.\n\nNamun dalam arsitektur sistem terdistribusi modern dengan 50 microservices yang saling berkomunikasi, satu klik tombol \"Bayar Sekarang\" oleh pengguna memicu puluhan network call lintas-service. Jika transaksi memakan waktu 8 detik, service mana yang menjadi biang keroknya? Tanpa **Observability Terdistribusi**, Anda bagaikan pilot pesawat yang terbang buta di tengah badai malam.\n\nMateri ini membahas implementasi standar **OpenTelemetry (OTel)** di .NET, propagasi konteks **W3C TraceContext**, dan pelacakan transaksi end-to-end.\n\n---\n\n## 1. Tiga Pilar Observability: Logs, Metrics, Traces\n\n```mermaid\nflowchart TD\n    Obs[\"Tiga Pilar Observability\"]\n    Obs --\u003e Logs[\"1. Logs (Event Historis Diskrit)\u003cbr/\u003eâ€¢ Contoh: Gagal checkout saldo kurang\u003cbr/\u003eâ€¢ Format: Structured JSON (Serilog)\"]\n    Obs --\u003e Metrics[\"2. Metrics (Agregasi Numerik Time-Series)\u003cbr/\u003eâ€¢ Contoh: RPS, Latensi P99, CPU %\u003cbr/\u003eâ€¢ Format: Prometheus / Grafana\"]\n    Obs --\u003e Traces[\"3. Traces (Jejak Request Lintas Service)\u003cbr/\u003eâ€¢ Contoh: Web -\u003e Order -\u003e DB -\u003e Payment\u003cbr/\u003eâ€¢ Format: W3C TraceContext / OpenTelemetry\"]\n```\n\n---\n\n## 2. Standar W3C TraceContext (`traceparent` Header)\n\nUntuk menghubungkan jejak request dari Service A ke Service B, seluruh industri komputasi cloud mengadopsi standar **W3C TraceContext** melalui HTTP header bernama **`traceparent`**:\n\n```text\ntraceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\n              â”‚                  â”‚                               â”‚       â”‚\n           Version            Trace ID                        Parent   Trace\n             (00)            (16 bytes)                       Span ID  Flags\n                                                             (8 bytes) (Sampled)\n```\n\n1. **Trace ID**: Pengenal unik 16-byte hex yang **TETAP SAMA** di sepanjang perjalanan request melintasi seluruh 50 microservices.\n2. **Parent Span ID**: Pengenal 8-byte yang menunjuk siapa pemanggil langsung dari span saat ini (membentuk relasi hirarki pohon *parent-child*).\n3. **Trace Flags**: Menentukan apakah trace ini di-sampling untuk dikirim ke backend telemetri.\n\n---\n\n## 3. Implementasi Native di .NET: `ActivitySource` dan `Activity`\n\nHebatnya, .NET tidak memerlukan library eksternal yang berat untuk membuat tracing. Microsoft menyematkan dukungan OpenTelemetry langsung di level BCL melalui namespace **`System.Diagnostics`**:\n- `ActivitySource` = OTel Tracer\n- `Activity` = OTel Span\n\n```csharp\npublic class OrderService\n{\n    // Deklarasikan ActivitySource static sekali di assembly Anda\n    private static readonly ActivitySource MyActivitySource = new(\"Enterprise.OrderService\", \"1.0.0\");\n\n    public async Task ProcessOrderAsync(Order order)\n    {\n        // 1. Mulai span baru\n        using Activity? activity = MyActivitySource.StartActivity(\"ProcessOrderExecution\");\n\n        // 2. Tambahkan metadata bisnis (Tags / Attributes)\n        activity?.SetTag(\"order.id\", order.Id);\n        activity?.SetTag(\"order.total\", order.TotalAmount);\n\n        try\n        {\n            await ExecuteDatabaseWriteAsync(order);\n            activity?.SetStatus(ActivityStatusCode.Ok);\n        }\n        catch (Exception ex)\n        {\n            // Catat error ke dalam trace span\n            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);\n            activity?.RecordException(ex);\n            throw;\n        }\n    }\n}\n```\n\n---\n\n## 4. Konfigurasi OpenTelemetry di `Program.cs` (.NET 8)\n\n```csharp\nbuilder.Services.AddOpenTelemetry()\n    .ConfigureResource(resource =\u003e resource.AddService(\"OrderApi\"))\n    .WithTracing(tracing =\u003e\n    {\n        tracing\n            .AddAspNetCoreInstrumentation() // Auto-trace incoming HTTP requests\n            .AddHttpClientInstrumentation() // Auto-propagate traceparent to outgoing HTTP calls\n            .AddEntityFrameworkCoreInstrumentation() // Auto-trace SQL queries\n            .AddSource(\"Enterprise.OrderService\") // Custom source kita\n            .AddOtlpExporter(opt =\u003e opt.Endpoint = new Uri(\"http://otel-collector:4317\"));\n    });\n```\n\nDengan konfigurasi di atas, setiap pemanggilan `HttpClient` ke service downstream akan **secara otomatis menginjeksi header `traceparent`** tanpa perlu satu baris pun kode manual!\n\n---\n\n## 5. Ringkasan \u0026 Aturan Observability\n\n1. **Gunakan Structured Logging**: Jangan lakukan `logger.LogInformation(\"User \" + id + \" login\")`. Selalu gunakan template terstruktur: `logger.LogInformation(\"User {UserId} login\", id)` agar dapat diindeks di Elasticsearch/Loki.\n2. **Sertakan TraceId di Log Output**: Pastikan konfigurasi log Anda menyertakan `Activity.Current?.TraceId` agar log dan distributed trace dapat dihubungkan dengan satu klik di dashboard monitoring.\n3. **Patuhi Batasan High-Cardinality Tags**: Jangan memasukkan data yang memiliki variasi miliaran kemungkinan acak (seperti timestamp mentah atau random GUID baru) ke dalam *Metric Dimensions*, karena dapat merusak memory database Prometheus.",
+    "starterCode":  "using System;\nusing System.Diagnostics;\n\n// Simulasi W3C TraceContext Parser \u0026 Span Generator\npublic class TraceContext\n{\n    public string TraceId { get; set; } = \"\";\n    public string ParentSpanId { get; set; } = \"\";\n\n    public static TraceContext? ParseTraceParent(string headerValue)\n    {\n        // Format: version-trace_id-parent_span_id-flags\n        // Contoh: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\n        \n        // TODO:\n        // 1. Pecah string headerValue berdasarkan karakter \u0027-\u0027.\n        // 2. Validasi apakah array memiliki 4 bagian dan bagian[0] == \"00\".\n        // 3. Jika valid, kembalikan objek TraceContext dengan TraceId = bagian[1] dan ParentSpanId = bagian[2].\n        // 4. Jika format salah, kembalikan null.\n        \n        return null;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        string rawHeader = \"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\";\n        var context = TraceContext.ParseTraceParent(rawHeader);\n\n        if (context != null)\n        {\n            Console.WriteLine($\"[TraceContext Parsed]\");\n            Console.WriteLine($\"Trace ID       : {context.TraceId}\");\n            Console.WriteLine($\"Parent Span ID : {context.ParentSpanId}\");\n        }\n        else\n        {\n            Console.WriteLine(\"Format header traceparent tidak valid!\");\n        }\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Diagnostics;\n\npublic class TraceContext\n{\n    public string TraceId { get; set; } = \"\";\n    public string ParentSpanId { get; set; } = \"\";\n\n    public static TraceContext? ParseTraceParent(string headerValue)\n    {\n        if (string.IsNullOrWhiteSpace(headerValue)) return null;\n\n        string[] parts = headerValue.Split(\u0027-\u0027);\n        if (parts.Length != 4 || parts[0] != \"00\")\n        {\n            return null;\n        }\n\n        if (parts[1].Length != 32 || parts[2].Length != 16)\n        {\n            return null;\n        }\n\n        return new TraceContext\n        {\n            TraceId = parts[1],\n            ParentSpanId = parts[2]\n        };\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        string rawHeader = \"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\";\n        var context = TraceContext.ParseTraceParent(rawHeader);\n\n        if (context != null)\n        {\n            Console.WriteLine($\"[TraceContext Parsed]\");\n            Console.WriteLine($\"Trace ID       : {context.TraceId}\");\n            Console.WriteLine($\"Parent Span ID : {context.ParentSpanId}\");\n        }\n        else\n        {\n            Console.WriteLine(\"Format header traceparent tidak valid!\");\n        }\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-17-01-1",
+                              "type":  "single_choice",
+                              "question":  "Apa fungsi utama dari standar header \u0027traceparent\u0027 (W3C TraceContext) dalam arsitektur microservices?",
+                              "options":  [
+                                              "Memaksa browser pengguna menampilkan iklan produk sponsor.",
+                                              "Meneruskan Trace ID dan Parent Span ID unik secara konsisten melintasi batas jaringan antar-service HTTP dan message broker, sehingga seluruh aktivitas request terdistribusi dapat direkonstruksi menjadi satu waterfall trace utuh.",
+                                              "Menghapus database log setiap 24 jam.",
+                                              "Mengubah protokol HTTP menjadi FTP."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "traceparent adalah standar terbuka IETF/W3C untuk distributed context propagation. Ia membawa Trace ID global dan Parent Span ID dari satu service ke service hilir lainnya, memungkinkan telemetri merekonstruksi urutan eksekusi sistem secara menyeluruh.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak berhubungan dengan iklan sponsor.",
+                                                         "Benar! traceparent adalah kunci propagasi konteks terdistribusi lintas boundary jaringan.",
+                                                         "Salah. Standar ini tidak mengatur retensi data log.",
+                                                         "Salah. Header HTTP tetap berjalan di atas protokol HTTP."
+                                                     ],
+                              "sectionRef":  "2. Standar W3C TraceContext (traceparent Header)",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-17-01-2",
+                              "type":  "single_choice",
+                              "question":  "Di dalam framework .NET modern, class BCL manakah yang merepresentasikan konsep \u0027Tracer\u0027 dan \u0027Span\u0027 dari OpenTelemetry?",
+                              "options":  [
+                                              "System.Console dan System.Math",
+                                              "System.Diagnostics.ActivitySource (Tracer) dan System.Diagnostics.Activity (Span)",
+                                              "System.IO.FileStream dan System.IO.MemoryStream",
+                                              "System.Text.StringBuilder dan System.String"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Microsoft mendesain System.Diagnostics.ActivitySource sebagai representasi resmi dari OTel Tracer, dan System.Diagnostics.Activity sebagai representasi dari OTel Span, memungkinkan instrumentasi tracing native tanpa ketergantungan library eksternal pihak ketiga.",
+                              "optionExplanations":  [
+                                                         "Salah. Console dan Math adalah fungsi I/O teks dan matematika dasar.",
+                                                         "Benar! ActivitySource dan Activity adalah API native tracing di .NET Core 3.1+ hingga .NET 8.",
+                                                         "Salah. FileStream dan MemoryStream menangani I/O stream byte data.",
+                                                         "Salah. StringBuilder menangani manipulasi string memori."
+                                                     ],
+                              "sectionRef":  "3. Implementasi Native di .NET: ActivitySource dan Activity",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-11-01",
+                           "lesson-14-01",
+                           "lesson-17-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "W3C TraceContext Recommendation",
+                           "url":  "https://www.w3.org/TR/trace-context/",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "OpenTelemetry .NET Documentation",
+                           "url":  "https://opentelemetry.io/docs/languages/net/",
+                           "type":  "documentation"
+                       }
+                   ]
+}

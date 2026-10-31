@@ -1,0 +1,169 @@
+{
+  "id": "lesson-03-05",
+  "levelId": "level-03",
+  "moduleId": "mod-03-03",
+  "order": 5,
+  "title": "Record \u0026 Value Immutability: Deep Dive C# Records vs Class vs Struct",
+  "slug": "csharp-records-immutability-class-struct",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami fitur revolusioner C# Records: value-based equality semantik, nondestructive mutation menggunakan ekspresi \u0027with\u0027, dekonstruksi data, dan kapan memilih record class vs record struct vs class tradisional.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami alokasi memori Stack vs Heap."
+    }
+  ],
+  "introduces": [
+    "record (record class)",
+    "record struct",
+    "Value-Based Equality vs Reference Equality",
+    "Non-Destructive Mutation (\u0027with\u0027)",
+    "Positional Records \u0026 Deconstruction",
+    "Data Transfer Objects (DTO)"
+  ],
+  "learningObjectives": [
+    "Membedakan semantik Value-Based Equality pada Record dengan Reference Equality pada Class.",
+    "Menggunakan ekspresi \u0027with\u0027 untuk melakukan modifikasi data secara aman tanpa merusak objek asli.",
+    "Memilih tipe yang tepat: class (domain entity), record class (DTO/Events), atau record struct (high-throughput low-allocation)."
+  ],
+  "markdownContent": "# Record \u0026 Value Immutability: Deep Dive C# Records vs Class vs Struct\n\n## Masalah Klasik Class Tradisional: Reference Equality\nPerhatikan perilaku dua instance class biasa yang memiliki data identik:\n\n\u0060\u0060\u0060csharp\npublic class NasabahClass\n{\n    public string Nik { get; set; }\n    public string Nama { get; set; }\n}\n\nvar n1 = new NasabahClass { Nik = \u00223201\u0022, Nama = \u0022Budi\u0022 };\nvar n2 = new NasabahClass { Nik = \u00223201\u0022, Nama = \u0022Budi\u0022 };\n\nConsole.WriteLine(n1 == n2); // MENCETAK: FALSE!\n\u0060\u0060\u0060\nMengapa \u0060false\u0060? Karena secara default, \u0060class\u0060 membandingkan **alamat memori referensi pointer di Heap**. Karena \u0060n1\u0060 dan \u0060n2\u0060 dialokasikan pada alamat fisik yang berbeda, runtime menganggap keduanya tidak sama!\n\nUntuk memperbaikinya di class biasa, Anda harus menulis manual 40 baris kode: \u0060Equals\u0060, \u0060GetHashCode\u0060, operator \u0060==\u0060, operator \u0060!=\u0060, dan \u0060IEquatable\u003CT\u003E\u0060.\n\n---\n\n## Solusi Elegan: C# Records (Value-Based Equality)\nDiperkenalkan pada C# 9, **\u0060record\u0060** secara otomatis membangkitkan perbandingan nilai (*value-based equality*) di balik layar:\n\n\u0060\u0060\u0060csharp\npublic record NasabahRecord(string Nik, string Nama);\n\nvar r1 = new NasabahRecord(\u00223201\u0022, \u0022Budi\u0022);\nvar r2 = new NasabahRecord(\u00223201\u0022, \u0022Budi\u0022);\n\nConsole.WriteLine(r1 == r2); // MENCETAK: TRUE! (Semua field dicocokkan otomatis!)\n\u0060\u0060\u0060\n\n---\n\n## Mutasi Non-Destruktif Menggunakan Ekspresi \u0060with\u0060\nDalam sistem finansial dan event-driven architecture, **data tidak boleh dimodifikasi sembarangan di tempat (in-place mutation)** untuk menghindari race condition antar-thread.\n\nJika Anda ingin mengubah saldo atau status, buatlah salinan baru dengan ekspresi **\u0060with\u0060**:\n\n\u0060\u0060\u0060csharp\npublic record AccountState(string Id, decimal Saldo, string Status);\n\nvar stateAwal = new AccountState(\u0022ACC-01\u0022, 1_000_000m, \u0022Active\u0022);\n\n// Menghasilkan objek baru dengan saldo bertambah, stateAwal tetap utuh tidak tersentuh!\nvar stateBaru = stateAwal with { Saldo = stateAwal.Saldo \u002B 500_000m };\n\nConsole.WriteLine(stateAwal.Saldo); // Tetap 1.000.000!\nConsole.WriteLine(stateBaru.Saldo); // 1.500.000!\n\u0060\u0060\u0060\n\n---\n\n## Kapan Memilih Class vs Record vs Struct?\n\n| Jenis Tipe | Lokasi Memori | Semantik Kesetaraan | Imutabilitas | Kasus Penggunaan Ideal |\n| :--- | :---: | :---: | :---: | :--- |\n| **\u0060class\u0060** | Heap | Reference Equality (Alamat Pointer) | Bawaan Mutable | Entitas Bisnis yang memiliki siklus hidup dan identitas unik (Domain Entity) |\n| **\u0060record class\u0060** | Heap | Value Equality (Isi Field) | Bawaan Immutable | DTO API, Domain Events, Pesan Antrian Kafka/RabbitMQ |\n| **\u0060struct\u0060** | Stack | Value Equality (Bitwise) | Tergantung definisi | Tipe data primitif kecil tanpa kebutuhan record |\n| **\u0060record struct\u0060**| Stack | Value Equality \u002B \u0060with\u0060 support | Bawaan Mutable (Kecuali \u0060readonly record struct\u0060)| Koordinat, Value Objects performa tinggi, Zero-Allocation |",
+  "starterCode": "using System;\n\npublic record BankTransaction(string TxId, decimal Amount, DateTime CreatedAt);\n\npublic class Program\n{\n    public static void Main()\n    {\n        var txAsli = new BankTransaction(\u0022TX-999\u0022, 500_000m, DateTime.UtcNow);\n        var txDuplikat = new BankTransaction(\u0022TX-999\u0022, 500_000m, txAsli.CreatedAt);\n\n        Console.WriteLine($\u0022Apakah txAsli == txDuplikat? {txAsli == txDuplikat}\u0022);\n\n        // Mutasi Non-Destruktif dengan \u0027with\u0027\n        var txReversal = txAsli with { Amount = -txAsli.Amount };\n        Console.WriteLine($\u0022Tx Asli    : {txAsli.TxId} sebesar Rp {txAsli.Amount:N0}\u0022);\n        Console.WriteLine($\u0022Tx Reversal: {txReversal.TxId} sebesar Rp {txReversal.Amount:N0}\u0022);\n\n        // Dekonstruksi Positional Record ke Variabel Terpisah\n        var (id, nominal, waktu) = txAsli;\n        Console.WriteLine($\u0022Dekonstruksi -\u003E ID: {id}, Nominal: {nominal:N0}\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-03-05-1",
+      "type": "MultipleChoice",
+      "question": "Bagaimana perilaku perbandingan kesetaraan operator \u0060==\u0060 secara default pada tipe \u0060record\u0060 di C#?",
+      "options": [
+        "Membandingkan alamat referensi memori di heap seperti class biasa",
+        "Membandingkan kesamaan nilai seluruh field dan properti di dalam record (Value-Based Equality)",
+        "Selalu mengembalikan false jika objek dibuat dari keyword new terpisah",
+        "Membandingkan panjang nama class secara alfabetis"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Record secara otomatis mengimplementasikan IEquatable\u003CT\u003E berbasis nilai, sehingga dua instance berbeda dengan data field identik akan bernilai true pada perbandingan \u0060==\u0060.",
+      "optionExplanations": [
+        "Salah. Reference equality adalah perilaku default dari class biasa.",
+        "Benar! Record membandingkan kesetaraan isi field (Value-Based Equality).",
+        "Salah. Jika isinya sama persis, record mengembalikan true.",
+        "Salah. Nama class tidak dibandingkan secara alfabetis."
+      ],
+      "sectionRef": "Solusi Elegan: C# Records (Value-Based Equality)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-05-2",
+      "type": "MultipleChoice",
+      "question": "Apa fungsi ekspresi keyword \u0060with\u0060 pada tipe Record C# (contoh: \u0060var updated = original with { Status = \u0027Approved\u0027 };\u0060)?",
+      "options": [
+        "Menghapus objek original dari database",
+        "Menciptakan instance baru hasil salinan objek original dengan properti yang ditentukan dimodifikasi (Non-Destructive Mutation)",
+        "Mengubah properti pada objek original secara langsung di memori",
+        "Mengunci thread agar tidak terjadi race condition"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Ekspresi \u0060with\u0060 melakukan mutasi non-destruktif: menduplikasi seluruh field objek lama ke objek baru, lalu memperbarui hanya properti yang ditentukan pada blok kurung kurawal.",
+      "optionExplanations": [
+        "Salah. Objek original tetap ada dan tidak dihapus.",
+        "Benar! \u0060with\u0060 membuat salinan objek baru dengan perubahan properti spesifik.",
+        "Salah. Objek lama bersifat imutabel dan tidak tersentuh.",
+        "Salah. \u0060with\u0060 bukan mekanisme locking thread."
+      ],
+      "sectionRef": "Mutasi Non-Destruktif Menggunakan Ekspresi with",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-05",
+    "Title": "Pembaruan Status Pesanan Menggunakan Record dan With-Expression",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Buat positional record \u0060Order(string Id, decimal Total, string Status)\u0060.\nBaca satu baris dari stdin: \u0027\u003CID\u003E \u003CTOTAL\u003E \u003CSTATUS_AWAL\u003E \u003CSTATUS_BARU\u003E\u0027.\nBuat record pesanan awal, lalu buat pesanan baru yang diperbarui statusnya menggunakan C# \u0060with\u0060 expression.\nCetak record baru dalam format: \u0027\u003CId\u003E|\u003CTotal\u003E|\u003CStatus\u003E\u0027.",
+    "InputFormat": "Satu baris memuat empat token dipisahkan spasi.",
+    "OutputFormat": "Satu baris: \u0027\u003CId\u003E|\u003CTotal\u003E|\u003CStatus\u003E\u0027.",
+    "Constraints": "Id string tanpa spasi, Total decimal.",
+    "Examples": [
+      {
+        "Input": "ORD-101 250000 PENDING PAID",
+        "Output": "ORD-101|250000|PAID",
+        "Explanation": "Status diperbarui dari PENDING menjadi PAID."
+      },
+      {
+        "Input": "ORD-999 50000 CREATED CANCELLED",
+        "Output": "ORD-999|50000|CANCELLED",
+        "Explanation": "Status diperbarui menjadi CANCELLED."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic record Order(string Id, decimal Total, string Status);\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Gunakan record with { Status = ... }\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic record Order(string Id, decimal Total, string Status);\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 4) return;\n\n        string id = p[0];\n        decimal total = decimal.Parse(p[1], CultureInfo.InvariantCulture);\n        string initStatus = p[2];\n        string newStatus = p[3];\n\n        var initialOrder = new Order(id, total, initStatus);\n        var updatedOrder = initialOrder with { Status = newStatus };\n\n        Console.WriteLine($\u0022{updatedOrder.Id}|{updatedOrder.Total}|{updatedOrder.Status}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Pending ke Paid)",
+        "Description": "Contoh 1 (Pending ke Paid): input \u0027ORD-101 250000 PENDING PAID\u0027 -\u003E expected \u0027ORD-101|250000|PAID\u0027",
+        "Input": "ORD-101 250000 PENDING PAID",
+        "ExpectedOutput": "ORD-101|250000|PAID",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Cancelled)",
+        "Description": "Contoh 2 (Cancelled): input \u0027ORD-999 50000 CREATED CANCELLED\u0027 -\u003E expected \u0027ORD-999|50000|CANCELLED\u0027",
+        "Input": "ORD-999 50000 CREATED CANCELLED",
+        "ExpectedOutput": "ORD-999|50000|CANCELLED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Status Tetap",
+        "Description": "Status Tetap: input \u0027ORD-001 10000 PAID PAID\u0027 -\u003E expected \u0027ORD-001|10000|PAID\u0027",
+        "Input": "ORD-001 10000 PAID PAID",
+        "ExpectedOutput": "ORD-001|10000|PAID",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Total Desimal",
+        "Description": "Total Desimal: input \u0027ORD-002 99.99 NEW PROCESSING\u0027 -\u003E expected \u0027ORD-002|99.99|PROCESSING\u0027",
+        "Input": "ORD-002 99.99 NEW PROCESSING",
+        "ExpectedOutput": "ORD-002|99.99|PROCESSING",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Record C# 9\u002B mendukung non-destructive mutation menggunakan kata kunci \u0060with\u0060.",
+      "Sintaks: \u0060var updated = original with { Status = newStatus };\u0060"
+    ],
+    "Explanation": "C# Records menerapkan konsep immutability secara elegan melalui copy-and-update with-expression tanpa mengubah objek aslinya."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Perbedaan mendasar antara alokasi stack struct dan heap record."
+    },
+    {
+      "lessonId": "lesson-14-02",
+      "title": "Event-Driven Architecture",
+      "levelName": "LEVEL 14",
+      "context": "Memanfaatkan Record sebagai payload event Kafka/RabbitMQ yang immutable."
+    }
+  ],
+  "references": [
+    {
+      "title": "Records - C# Reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/records"
+    },
+    {
+      "title": "Non-destructive mutation with the with expression",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/operators/with-expression"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic record OrderRecord(string OrderId, decimal TotalAmount, string Status);\n\npublic class OrderManager\n{\n    public static OrderRecord ApproveOrder(OrderRecord order)\n    {\n        if (order == null) throw new ArgumentNullException(nameof(order));\n        if (string.Equals(order.Status, \u0022Pending\u0022, StringComparison.OrdinalIgnoreCase))\n        {\n            return order with { Status = \u0022Approved\u0022 };\n        }\n        return order;\n    }\n\n    public static void Main()\n    {\n        var o1 = new OrderRecord(\u0022ORD-101\u0022, 250000m, \u0022Pending\u0022);\n        var o2 = ApproveOrder(o1);\n        Console.WriteLine($\u0022Order 1: {o1.Status}\u0022);\n        Console.WriteLine($\u0022Order 2: {o2.Status}\u0022);\n    }\n}"
+}

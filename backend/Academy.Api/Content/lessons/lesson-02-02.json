@@ -1,0 +1,168 @@
+{
+  "id": "lesson-02-02",
+  "levelId": "level-02",
+  "moduleId": "mod-02-01",
+  "order": 2,
+  "title": "Anatomi Program C#: Top-Level Statements, Namespace, dan Main Method",
+  "slug": "csharp-program-anatomy",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 35,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar struktur fisik file C#: perbedaan sintaks tradisional (namespace, class Program, static void Main) vs Top-Level Statements C# modern, file-scoped namespaces, dan aturan urutan kompilasi Roslyn.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-01",
+      "title": "Ekosistem .NET Modern",
+      "levelName": "LEVEL 02",
+      "context": "Memahami bagaimana dotnet compiler memproses file *.cs."
+    }
+  ],
+  "introduces": [
+    "Top-Level Statements",
+    "File-Scoped Namespaces",
+    "EntryPoint / Main Method",
+    "Implicit Usings",
+    "Roslyn Generated Program Class (CS8803)"
+  ],
+  "learningObjectives": [
+    "Memahami apa yang terjadi di balik layar saat menggunakan C# Top-Level Statements.",
+    "Menganalisis peran Namespace dalam mencegah konflik penamaan pada kode skala enterprise.",
+    "Menghindari error CS8803 dengan meletakkan deklarasi tipe setelah baris instruksi top-level."
+  ],
+  "markdownContent": "# Anatomi Program C#: Top-Level Statements, Namespace, dan Main Method\n\n## Dua Gaya Menulis Titik Masuk (Entry Point) C#\nSebelum C# 9, setiap program C# yang paling sederhana pun wajib memiliki struktur bersarang (*ceremony code*) yang tebal:\n\n### Gaya Tradisional (C# 1 hingga C# 8)\n\u0060\u0060\u0060csharp\nusing System;\n\nnamespace EnterpriseAcademy.Banking\n{\n    internal class Program\n    {\n        static void Main(string[] args)\n        {\n            Console.WriteLine(\u0022Sistem Siap.\u0022);\n        }\n    }\n}\n\u0060\u0060\u0060\n\n### Gaya Modern C# 10/12 (Top-Level Statements \u002B File-Scoped Namespace)\n\u0060\u0060\u0060csharp\nusing System;\n\nConsole.WriteLine(\u0022Sistem Siap.\u0022);\n\u0060\u0060\u0060\n\n---\n\n## Rahasia di Balik Layar: Roslyn Synthesizer\nBanyak pemula salah mengira bahwa C# kini menjadi bahasa scripting tanpa class atau method \u0060Main\u0060. **Ini keliru!**\nCompiler C# (Roslyn) secara otomatis membungkus seluruh pernyataan top-level Anda ke dalam class dan method tersembunyi saat proses kompilasi:\n\n\u0060\u0060\u0060csharp\n// APA YANG SEBENARNYA DIHASILKAN OLEH ROSLYN COMPILER:\n[CompilerGenerated]\ninternal class \u003CProgram\u003E$\n{\n    private static void \u003CMain\u003E$(string[] args)\n    {\n        Console.WriteLine(\u0022Sistem Siap.\u0022);\n    }\n}\n\u0060\u0060\u0060\nArtinya, arsitektur CLR tetap deterministik dan 100% konsisten: tetap ada method entry point \u0060Main\u0060 yang dipanggil oleh runtime!\n\n---\n\n## Aturan Sakral Top-Level Statements: Menghindari Error CS8803\nDalam sebuah file yang menggunakan top-level statements, **seluruh baris instruksi yang dieksekusi HARUS mendahului deklarasi tipe (\u0060class\u0060, \u0060struct\u0060, \u0060record\u0060, \u0060enum\u0060)**:\n\n\u0060\u0060\u0060csharp\n// BENAR:\nvar tx = new Transaction(\u0022TX-100\u0022, 50000);\nConsole.WriteLine(tx.Id);\n\n// Deklarasi tipe diletakkan di bagian bawah file:\nrecord Transaction(string Id, decimal Amount);\n\u0060\u0060\u0060\n\nJika Anda meletakkan baris yang dieksekusi (seperti \u0060Console.WriteLine\u0060) SETELAH \u0060record Transaction\u0060, compiler akan melempar error:\n\u0060CS8803: Top-level statements must precede namespace and type declarations.\u0060\n\n---\n\n## File-Scoped Namespaces (C# 10)\nUntuk menghindari indentasi horizontal yang tidak perlu di seluruh file:\n\u0060\u0060\u0060csharp\n// File-scoped namespace: menghemat 1 tingkat tab indentasi di seluruh dokumen!\nnamespace EnterpriseAcademy.Core.Services;\n\npublic class PaymentGateway\n{\n    // Logika kelas berada sejajar dengan batas kiri\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Memahami Top-Level Statements dan Argumen CLI\nConsole.WriteLine(\u0022=== PROGRAM BERJALAN ===\u0022);\n\n// Menampilkan argumen baris perintah (secara otomatis tersedia via variabel \u0027args\u0027)\nConsole.WriteLine($\u0022Jumlah Argumen Diterima: {args.Length}\u0022);\nfor (int i = 0; i \u003C args.Length; i\u002B\u002B)\n{\n    Console.WriteLine($\u0022  Argumen [{i}]: {args[i]}\u0022);\n}\n\n// Menggunakan tipe yang dideklarasikan di bawah (mematuhi CS8803)\nvar invoice = new Invoice(\u0022INV-001\u0022, 1_500_000m);\nConsole.WriteLine($\u0022Invoice dibuat: {invoice.Number} sebesar Rp {invoice.Total:N0}\u0022);\n\n// DEKLARASI TIPE WAJIB DI BAWAH TOP-LEVEL STATEMENTS\nrecord Invoice(string Number, decimal Total);",
+  "quizQuestions": [
+    {
+      "id": "q-02-02-1",
+      "type": "MultipleChoice",
+      "question": "Apa penyebab error kompilasi Roslyn \u0027CS8803: Top-level statements must precede namespace and type declarations\u0027?",
+      "options": [
+        "Ada pernyataan kode yang dapat dieksekusi yang diletakkan setelah deklarasi class, record, atau enum",
+        "Nama file tidak berakhiran dengan ekstensi .cs",
+        "Tidak ada keyword static void Main di dalam file",
+        "Variabel args belum diinisialisasi secara manual"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Sesuai aturan C#, semua top-level executable statements harus berada di bagian paling atas sebelum definisi tipe (class, struct, record, enum) dimulai.",
+      "optionExplanations": [
+        "Benar! Menempatkan baris eksekusi setelah deklarasi tipe melanggar urutan top-level C#.",
+        "Salah. Ekstensi file diatur oleh compiler input.",
+        "Salah. Top-level statement sengaja menghilangkan boilerplate static void Main.",
+        "Salah. Variabel args otomatis disediakan oleh compiler."
+      ],
+      "sectionRef": "Aturan Sakral Top-Level Statements: Menghindari Error CS8803",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-02-2",
+      "type": "MultipleChoice",
+      "question": "Apa fungsi utama fitur File-Scoped Namespace (contoh: \u0060namespace MyCompany.Services;\u0060) yang diperkenalkan pada C# 10?",
+      "options": [
+        "Menjadikan seluruh class di dalamnya berstatus private",
+        "Menghilangkan kebutuhan kurung kurawal pembungkus \u0060{ ... }\u0060 sehingga menghemat satu tingkat tab indentasi horizontal di seluruh file",
+        "Mengenkripsi isi file agar tidak dapat dibaca decompiler",
+        "Mempercepat alokasi memori pada CPU L1 Cache"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "File-scoped namespace menyederhanakan sintaks dengan menghilangkan nesting kurung kurawal pembungkus namespace, membuat kode lebih bersih dan mudah dibaca.",
+      "optionExplanations": [
+        "Salah. Aksesibilitas class ditentukan oleh keyword public/internal.",
+        "Benar! Menghilangkan kurung kurawal pembungkus dan tab indentasi yang tidak perlu.",
+        "Salah. Namespace tidak melakukan enkripsi kode.",
+        "Salah. Namespace hanyalah scoping logis, tidak berdampak pada cache hardware."
+      ],
+      "sectionRef": "File-Scoped Namespaces (C# 10)",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-02",
+    "Title": "Pemformat Log Entry Point Berstruktur",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca dua baris dari stdin:\nBaris 1: Level Log (\u0027INFO\u0027, \u0027WARN\u0027, \u0027ERROR\u0027)\nBaris 2: Pesan Log.\nCetak string log terstruktur dengan format persis: \u0027[\u003CLEVEL\u003E] \u003CPESAN\u003E\u0027.\nJika Level Log di luar ketiga kategori tersebut, ubah level menjadi \u0027INFO\u0027.",
+    "InputFormat": "Dua baris stdin: baris pertama level, baris kedua pesan.",
+    "OutputFormat": "Satu baris string terformat \u0027[\u003CLEVEL\u003E] \u003CPESAN\u003E\u0027.",
+    "Constraints": "Level case-insensitive. Pesan tidak kosong.",
+    "Examples": [
+      {
+        "Input": "ERROR\nKoneksi database terputus.",
+        "Output": "[ERROR] Koneksi database terputus.",
+        "Explanation": "Level ERROR valid."
+      },
+      {
+        "Input": "DEBUG\nAplikasi dimulai.",
+        "Output": "[INFO] Aplikasi dimulai.",
+        "Explanation": "Level DEBUG dinormalisasi menjadi INFO."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? level = Console.ReadLine();\n        string? msg = Console.ReadLine();\n        // TODO: Format string log terstruktur.\n        Console.WriteLine(\u0022[INFO] Ready\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? level = Console.ReadLine()?.Trim().ToUpperInvariant();\n        string? msg = Console.ReadLine()?.Trim();\n        if (level != \u0022INFO\u0022 \u0026\u0026 level != \u0022WARN\u0022 \u0026\u0026 level != \u0022ERROR\u0022)\n        {\n            level = \u0022INFO\u0022;\n        }\n        Console.WriteLine($\u0022[{level}] {msg}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Level ERROR)",
+        "Description": "Contoh 1 (Level ERROR): input \u0027ERROR\nKoneksi database terputus.\u0027 -\u003E expected \u0027[ERROR] Koneksi database terputus.\u0027",
+        "Input": "ERROR\nKoneksi database terputus.",
+        "ExpectedOutput": "[ERROR] Koneksi database terputus.",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Level Default)",
+        "Description": "Contoh 2 (Level Default): input \u0027DEBUG\nAplikasi dimulai.\u0027 -\u003E expected \u0027[INFO] Aplikasi dimulai.\u0027",
+        "Input": "DEBUG\nAplikasi dimulai.",
+        "ExpectedOutput": "[INFO] Aplikasi dimulai.",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Level WARN Huruf Kecil",
+        "Description": "Level WARN Huruf Kecil: input \u0027warn\nPenyimpanan hampir penuh.\u0027 -\u003E expected \u0027[WARN] Penyimpanan hampir penuh.\u0027",
+        "Input": "warn\nPenyimpanan hampir penuh.",
+        "ExpectedOutput": "[WARN] Penyimpanan hampir penuh.",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Level Kosong",
+        "Description": "Level Kosong: input \u0027\nSistem berjalan normal.\u0027 -\u003E expected \u0027[INFO] Sistem berjalan normal.\u0027",
+        "Input": "\nSistem berjalan normal.",
+        "ExpectedOutput": "[INFO] Sistem berjalan normal.",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan ToUpperInvariant() untuk menyamakan level log.",
+      "Gunakan string interpolation $[{level}] {msg}."
+    ],
+    "Explanation": "Standardisasi penulisan log entry point mempermudah agregasi log pada backend monitoring tools seperti ELK atau Seq."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-03",
+      "title": "Sistem Tipe C#: Nilai \u0026 Variabel",
+      "levelName": "LEVEL 02",
+      "context": "Mendalami tipe data C# yang digunakan dalam program."
+    },
+    {
+      "lessonId": "lesson-17-01",
+      "title": "Observability Terdistribusi",
+      "levelName": "LEVEL 17",
+      "context": "Penerapan structured logging terstandar pada aplikasi enterprise."
+    }
+  ],
+  "references": [
+    {
+      "title": "Top-level statements - C# Tutorials",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/program-structure/top-level-statements"
+    },
+    {
+      "title": "File-scoped namespaces specification",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/proposals/csharp-10.0/file-scoped-namespaces"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class LogFormatter\n{\n    public static string FormatStartupLog(string? environment, string? serviceName, int argCount)\n    {\n        string env = string.IsNullOrWhiteSpace(environment) ? \u0022DEVELOPMENT\u0022 : environment.Trim().ToUpperInvariant();\n        string name = string.IsNullOrWhiteSpace(serviceName) ? \u0022CORE-API\u0022 : serviceName.Trim();\n        \n        return $\u0022[ENV:{env}] Service {name} initialized with {argCount} arguments.\u0022;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(FormatStartupLog(\u0022Production\u0022, \u0022PaymentService\u0022, 2));\n    }\n}"
+}

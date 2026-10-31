@@ -1,0 +1,115 @@
+{
+    "id":  "lesson-06-01",
+    "levelId":  "level-06",
+    "moduleId":  "mod-06-01",
+    "order":  1,
+    "title":  "CPU Pipeline, Branch Prediction, Cache Locality, dan False Sharing",
+    "slug":  "cpu-pipeline-branch-prediction-false-sharing",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendalami interaksi kode C# dengan mikroarsitektur prosesor: instruksi pipelining, biaya penalti Branch Misprediction, penataan data Cache-Conscious, dan bahaya performa multi-thread False Sharing pada CPU Cache Line 64-byte.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-02",
+                              "title":  "CPU Deep Dive",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami ALU dan siklus instruksi Fetch-Decode-Execute."
+                          },
+                          {
+                              "lessonId":  "lesson-00-03",
+                              "title":  "Hierarki Memori \u0026 Cache Lines",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami ukuran Cache Line 64 byte."
+                          }
+                      ],
+    "introduces":  [
+                       "Instruction Pipeline Stages",
+                       "Branch Predictor \u0026 Speculative Execution",
+                       "Pipeline Flush Penalty",
+                       "Data-Oriented Design (DOD)",
+                       "False Sharing",
+                       "MESI Cache Coherence Protocol",
+                       "StructLayout \u0026 Padding [64 Byte]"
+                   ],
+    "learningObjectives":  [
+                               "Menganalisis mengapa percabangan if/else yang tidak teratur memperlambat eksekusi pada CPU pipelined.",
+                               "Mengidentifikasi anomali False Sharing ketika dua thread menulis ke variabel independen yang berada pada Cache Line yang sama.",
+                               "Menerapkan padding memori dan layout struct untuk mengeliminasi cache line contention."
+                           ],
+    "markdownContent":  "# CPU Pipeline, Branch Prediction, Cache Locality, dan False Sharing\n\n## 1. CPU Pipelining \u0026 Branch Prediction\nProsesor modern tidak mengeksekusi satu instruksi hingga selesai baru mengambil instruksi berikutnya. CPU bekerja seperti lini perakitan pabrik mobil (**Instruction Pipeline 14-20 tahap**):\n- Saat instruksi 1 sedang di-execute di ALU, instruksi 2 sedang di-decode, dan instruksi 3 sedang di-fetch dari cache.\n\n### Masalah Besar: Percabangan (`if / else`)\nKetika CPU menemukan instruksi percabangan (`if (x \u003e 0)`), CPU belum tahu jalur mana yang akan dieksekusi sebelum nilai `x` selesai dihitung beberapa siklus kemudian!\n- Menunggu berarti pipeline menganggur (*stall*).\n- Solusi CPU: **Branch Predictor (Prediktor Cabang)** menebak secara spekulatif jalur mana yang kemungkinan besar diambil.\n- **Branch Misprediction Penalty**: Jika tebakan CPU salah, seluruh pipeline harus dibatalkan dan dibersihkan (*Pipeline Flush*), membuang 15-20 siklus clock!\n- Inilah mengapa mengurutkan data (*sorted array*) sebelum filtering membuat loop berjalan **3x hingga 5x lebih cepat** (prediktor selalu menebak benar)!\n\n---\n\n## 2. Fenomena Mematikan: False Sharing\nBayangkan dua thread C# yang berjalan pada dua core CPU yang berbeda:\n```csharp\npublic class CounterHolder\n{\n    public long Thread1Counter; // 8 Byte\n    public long Thread2Counter; // 8 Byte (Letaknya berdampingan persis!)\n}\n```\n\n```mermaid\nflowchart TD\n    subgraph CacheLine[\"Cache Line 64-Byte (L1/L2 Cache)\"]\n        Var1[\"Thread1Counter (8 Byte)\"]\n        Var2[\"Thread2Counter (8 Byte)\"]\n    end\n    C1[\"CPU Core 1\"] --\u003e|Menulis Nilai| Var1\n    C2[\"CPU Core 2\"] --\u003e|Menulis Nilai| Var2\n    Var1 -.-\u003e|False Sharing: Invalidasi Cache Line!| C2\n    Var2 -.-\u003e|False Sharing: Invalidasi Cache Line!| C1\n```\n\n### Apa yang Terjadi di Tingkat Silikon Hardware?\n1. Walaupun Core 1 dan Core 2 memodifikasi variabel yang berbeda secara logika, **kedua variabel tersebut berbagi Cache Line 64-byte yang sama persis**!\n2. Melalui protokol hardware **MESI Cache Coherence**:\n   - Setiap kali Core 1 menulis ke `Thread1Counter`, Core 1 menandai seluruh Cache Line tersebut sebagai **INVALID** di Core 2!\n   - Core 2 terpaksa membuang L1 cachenya dan memuat ulang 64 byte dari L3 cache atau RAM, hanya untuk menulis ke `Thread2Counter`.\n   - Core 2 kemudian memvalidasi cache miliknya dan meng-invalidate cache Core 1!\n3. Terjadi **Cache Ping-Pong Contention**: Performa multi-threading anjlok drastis, sering kali berjalan **jauh lebih lambat daripada single-thread biasa!**\n\n---\n\n## Solusi: Isolasi Cache Line Padding\nUntuk mencegah False Sharing, pisahkan variabel yang sering dimutasi oleh thread berbeda agar berada pada Cache Line 64-byte terpisah menggunakan **StructLayout \u0026 Padding**:\n\n```csharp\nusing System.Runtime.InteropServices;\n\n[StructLayout(LayoutKind.Explicit, Size = 128)] // Minimal 64 byte isolasi\npublic struct PaddedCounter\n{\n    [FieldOffset(0)]\n    public long Value; // Menempati cache line sendiri\n}\n```",
+    "starterCode":  "using System;\nusing System.Diagnostics;\nusing System.Threading.Tasks;\n\n// PROGRAM: Pembuktian Fenomena False Sharing Multi-Threading\npublic class FalseSharingDemo\n{\n    public long Counter1;\n    public long Counter2; // Berada pada Cache Line 64-byte yang sama persis!\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var data = new FalseSharingDemo();\n        const int Iterations = 50_000_000;\n        \n        var sw = Stopwatch.StartNew();\n        \n        // Dua thread independen menulis ke dua variabel berdampingan\n        var t1 = Task.Run(() =\u003e {\n            for (int i = 0; i \u003c Iterations; i++) data.Counter1++;\n        });\n        \n        var t2 = Task.Run(() =\u003e {\n            for (int i = 0; i \u003c Iterations; i++) data.Counter2++;\n        });\n        \n        Task.WaitAll(t1, t2);\n        sw.Stop();\n        \n        Console.WriteLine($\"Eksekusi Selesai: {sw.ElapsedMilliseconds} ms\");\n        Console.WriteLine($\"Counter1: {data.Counter1:N0} | Counter2: {data.Counter2:N0}\");\n        // TODO: Coba pisahkan kedua variabel ke struct terpisah dengan padding dan amati waktu yang terpangkas!\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-06-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa yang dimaksud dengan fenomena \u0027False Sharing\u0027 pada pemrograman konkurensi multi-core?",
+                              "options":  [
+                                              "Dua thread berbagi kata sandi yang salah",
+                                              "Dua thread yang berjalan di core berbeda memodifikasi variabel independen yang berbeda, namun kedua variabel tersebut berada pada unit Cache Line 64-byte yang sama sehingga memicu invalidasi cache bolak-balik",
+                                              "Sistem operasi kehabisan alokasi virtual memory page",
+                                              "Compiler Roslyn membagikan referensi objek null ke thread pool"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "False Sharing terjadi ketika dua thread independen memodifikasi data terpisah yang berada dalam satu baris cache line hardware yang sama, menyebabkan degradasi performa akibat protokol cache coherence.",
+                              "optionExplanations":  [
+                                                         "Salah. Bukan tentang kredensial keamanan.",
+                                                         "Benar! Kontensi cache line pada variabel independen adalah esensi dari False Sharing.",
+                                                         "Salah. Tidak berhubungan dengan virtual memory paging.",
+                                                         "Salah. Tidak ada referensi null yang dibagikan compiler."
+                                                     ],
+                              "sectionRef":  "2. Fenomena Mematikan: False Sharing",
+                              "difficulty":  "Intermediate"
+                          },
+                          {
+                              "id":  "q-06-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Berapa banyak siklus clock CPU rata-rata yang terbuang akibat penalti \u0027Pipeline Flush\u0027 ketika Branch Predictor salah menebak arah percabangan if/else?",
+                              "options":  [
+                                              "0 siklus",
+                                              "1 siklus",
+                                              "Sekitar 15 hingga 20 siklus clock",
+                                              "100.000 siklus"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Pada prosesor modern, kedalaman pipeline berkisar antara 14 hingga 20 tahap. Kesalahan tebakan percabangan memaksa CPU mengosongkan seluruh instruksi spekulatif di pipeline.",
+                              "optionExplanations":  [
+                                                         "Salah. Penalti pembatalan pipeline tidak pernah nol.",
+                                                         "Salah. 1 siklus hanya cukup untuk instruksi register sederhana.",
+                                                         "Benar! Pembatalan pipeline (pipeline flush) memakan penalti ~15-20 siklus clock.",
+                                                         "Salah. 100.000 siklus adalah latensi akses disk atau network interrupt."
+                                                     ],
+                              "sectionRef":  "1. CPU Pipelining \u0026 Branch Prediction",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-00-02",
+                               "title":  "CPU Deep Dive",
+                               "levelName":  "LEVEL 00",
+                               "context":  "Mendalami struktur inti dan eksekusi instruksi di CPU."
+                           },
+                           {
+                               "lessonId":  "lesson-12-03",
+                               "title":  "Mekanisme Sinkronisasi Tingkat Rendah",
+                               "levelName":  "LEVEL 12",
+                               "context":  "Pencegahan kontensi thread pada multi-core backend."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Why is processing a sorted array faster than processing an unsorted array? - Stack Overflow",
+                           "url":  "https://stackoverflow.com/questions/11227809/why-is-processing-a-sorted-array-faster-than-processing-an-unsorted-array"
+                       },
+                       {
+                           "title":  "False Sharing - Intel Developer Zone",
+                           "url":  "https://www.intel.com/content/www/us/en/developer/articles/technical/avoiding-and-identifying-false-sharing-among-threads.html"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class BranchPredictorOptimizer\n{\n    public static long SumFilteredSorted(int[] data, int threshold)\n    {\n        if (data == null || data.Length == 0) return 0;\n\n        // Mengurutkan data menstabilkan pola percabangan (Branch Prediction Friendly)\n        Array.Sort(data);\n\n        long sum = 0;\n        for (int i = 0; i \u003c data.Length; i++)\n        {\n            if (data[i] \u003e= threshold)\n            {\n                sum += data[i];\n            }\n        }\n\n        return sum;\n    }\n\n    public static void Main()\n    {\n        int[] data = { 5, 1, 9, 3, 7, 2, 8, 4, 6 };\n        Console.WriteLine($\"Total \u003e= 5: {SumFilteredSorted(data, 5)}\");\n    }\n}"
+}

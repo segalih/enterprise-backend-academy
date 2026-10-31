@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-07-01",
+    "levelId":  "level-07",
+    "moduleId":  "mod-07-01",
+    "order":  1,
+    "title":  "Model OSI \u0026 TCP/IP: Enkapsulasi Paket, IP Addressing, dan Port Socket",
+    "slug":  "osi-tcp-ip-packet-encapsulation-sockets",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  40,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mempelajari perjalanan fisik data jaringan dari model 7 lapis OSI menuju implementasi praktis 4 lapis TCP/IP: enkapsulasi header (Frame, Packet, Segment, Payload), subnetting IPv4/IPv6, serta abstraksi Network Socket OS.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-01",
+                              "title":  "Anatomi Komputer: I/O \u0026 Bus",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami bagaimana kartu jaringan (NIC) mengirim data ke bus komputer."
+                          }
+                      ],
+    "introduces":  [
+                       "OSI 7 Layers vs TCP/IP 4 Layers",
+                       "Packet Encapsulation \u0026 Decapsulation",
+                       "MAC Address (L2 Data Link)",
+                       "IP Address \u0026 Subnet Mask (L3 Network)",
+                       "TCP/UDP Port Numbers (L4 Transport)",
+                       "Network Sockets (IP + Port)"
+                   ],
+    "learningObjectives":  [
+                               "Memetakan protokol web (HTTP, TLS, TCP, IP, Ethernet) ke dalam layer model TCP/IP.",
+                               "Menguraikan proses pembungkusan header (enkapsulasi) dari payload JSON aplikasi hingga bit kabel optik.",
+                               "Mendefinisikan network socket sebagai kombinasi unik IP address dan Port number."
+                           ],
+    "markdownContent":  "# Model OSI \u0026 TCP/IP: Enkapsulasi Paket, IP Addressing, dan Port Socket\n\n## Dari Teks JSON ke Gelombang Listrik Kabel Jaringan\nKetika backend C# Anda mengirimkan respons JSON:\n```csharp\nreturn Ok(new { status = \"success\" });\n```\nBagaimana teks tersebut dapat tiba di ponsel nasabah yang berjarak 1.000 kilometer?\nJawabannya adalah **Proses Enkapsulasi Berlapis (Encapsulation)** berdasarkan arsitektur **TCP/IP**:\n\n```mermaid\nflowchart TD\n    L4[\"4. Application Layer\u003cbr/\u003ePayload Data HTTP/2: {\u0027status\u0027:\u0027success\u0027}\"]\n    L3[\"3. Transport Layer\u003cbr/\u003eTCP Segment [TCP Header + HTTP Payload]\"]\n    L2[\"2. Network Layer\u003cbr/\u003eIP Packet [IP Header + TCP Segment]\"]\n    L1[\"1. Data Link \u0026 Physical Layer\u003cbr/\u003eEthernet Frame [MAC Header + IP Packet + CRC]\"]\n    Phys[\"Sinyal Fisik Biner (0 dan 1)\u003cbr/\u003eMeluncur di Kabel Serat Optik / Tembaga\"]\n\n    L4 --\u003e|Tambahkan Source/Dest Port \u0026 Seq Number| L3\n    L3 --\u003e|Tambahkan Source/Dest IP \u0026 TTL| L2\n    L2 --\u003e|Tambahkan Source/Dest MAC \u0026 Checksum| L1\n    L1 --\u003e Phys\n```\n\n---\n\n## Pemetaan 4 Lapis Protokol TCP/IP\n\n| Layer TCP/IP | Protokol Populer | Unit Data | Identitas Pengalamatan | Tanggung Jawab Utama |\n| :--- | :--- | :---: | :---: | :--- |\n| **4. Application** | HTTP/1.1, HTTP/2, gRPC, DNS | Message / Payload | URL, Domain Name | Logika bisnis aplikasi, format data (JSON, Protobuf) |\n| **3. Transport** | TCP, UDP, QUIC | Segment / Datagram | **Port Number** (0 - 65535) | Pengiriman data end-to-end antar-proses aplikasi |\n| **2. Network** | IPv4, IPv6, ICMP | Packet | **IP Address** (32-bit / 128-bit) | Perutean antar-jaringan komputer di seluruh dunia |\n| **1. Link / Hardware** | Ethernet, Wi-Fi 6, 5G | Frame | **MAC Address** (48-bit fisik) | Transmisi sinyal fisik antar dua perangkat yang berdampingan |\n\n---\n\n## Apa Sebenarnya Sebuah Network Socket?\nBanyak pemula bingung: *\"Jika server hanya memiliki 1 kartu jaringan dan 1 alamat IP fisik, bagaimana ia bisa melayani ribuan koneksi browser sekaligus?\"*\n\nJawabannya adalah **Abstraksi Socket Sistem Operasi**:\nSebuah koneksi jaringan unik diidentifikasi secara mutlak oleh **5-Tuple**:\n1. **Protocol**: (Contoh: TCP)\n2. **Source IP**: Alamat IP client nasabah\n3. **Source Port**: Port acak ephemeral yang dibuka oleh browser client (misal: `54321`)\n4. **Destination IP**: Alamat IP server backend (misal: `103.20.10.5`)\n5. **Destination Port**: Port standar layanan server (misal: `443` untuk HTTPS atau `5000`)\n\nSelama salah satu dari 5 nilai tersebut berbeda, sistem operasi dapat mengarahkan paket data ke socket file descriptor yang tepat tanpa pernah tertukar!",
+    "starterCode":  "using System;\nusing System.Net;\nusing System.Net.Sockets;\n\n// PROGRAM: Menginspeksi Resolusi Alamat IP \u0026 Network Endpoint di C#\nstring domain = \"localhost\";\nIPAddress[] ips = Dns.GetHostAddresses(domain);\n\nConsole.WriteLine($\"=== RESOLUSI DNS UNTUK: {domain} ===\");\nforeach (var ip in ips)\n{\n    Console.WriteLine($\"Alamat IP: {ip,-16} | Tipe Keluarga: {ip.AddressFamily}\");\n}\n\n// Membuat representasi IPEndPoint (Kombinasi IP + Port)\nvar endpoint = new IPEndPoint(IPAddress.Loopback, 5100);\nConsole.WriteLine($\"\\nTarget Socket Server: {endpoint.Address}:{endpoint.Port}\");\nConsole.WriteLine($\"Format String Socket: {endpoint}\");",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-07-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Lapisan (layer) protokol manakah dalam model TCP/IP yang bertanggung jawab atas penentuan nomor Port tujuan agar paket data diteruskan ke proses aplikasi yang tepat?",
+                              "options":  [
+                                              "Link Layer (Hardware)",
+                                              "Network Layer (IP)",
+                                              "Transport Layer (TCP/UDP)",
+                                              "Physical Layer"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Transport Layer (TCP dan UDP) mengelola Port Number untuk mengidentifikasi proses aplikasi mana yang memiliki paket data tersebut.",
+                              "optionExplanations":  [
+                                                         "Salah. Link layer mengelola pengalamatan fisik MAC Address.",
+                                                         "Salah. Network layer mengelola pengalamatan IP Address antar-host.",
+                                                         "Benar! Transport Layer bertanggung jawab atas port-to-port multiplexing.",
+                                                         "Salah. Physical layer hanya mentransmisikan sinyal listrik atau cahaya mentah."
+                                                     ],
+                              "sectionRef":  "Pemetaan 4 Lapis Protokol TCP/IP",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-07-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Kombinasi 5 elemen data unik apakah yang membentuk \u00275-Tuple\u0027 untuk membedakan setiap koneksi TCP yang aktif di sistem operasi?",
+                              "options":  [
+                                              "Nama User, Password, Domain, Browser, dan Cookie",
+                                              "Source IP, Source Port, Destination IP, Destination Port, dan Protokol",
+                                              "Nomor Rekening, Nominal, Tanggal, Bank, dan Status",
+                                              "CPU Core, RAM, Disk Size, Cache Line, dan Thread ID"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "5-Tuple terdiri dari Source IP, Source Port, Destination IP, Destination Port, dan Protocol (TCP/UDP), yang membedakan miliaran socket koneksi secara unik pada kernel OS.",
+                              "optionExplanations":  [
+                                                         "Salah. Itu adalah data autentikasi application layer.",
+                                                         "Benar! 5-Tuple adalah identitas baku koneksi transport layer di seluruh sistem operasi.",
+                                                         "Salah. Itu adalah atribut transaksi bisnis finansial.",
+                                                         "Salah. Itu adalah spesifikasi hardware komputer lokal."
+                                                     ],
+                              "sectionRef":  "Apa Sebenarnya Sebuah Network Socket?",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-07-02",
+                               "title":  "TCP Deep Dive: Handshake \u0026 Congestion",
+                               "levelName":  "LEVEL 07",
+                               "context":  "Bagaimana koneksi socket TCP dibentuk dan dikontrol."
+                           },
+                           {
+                               "lessonId":  "lesson-11-01",
+                               "title":  "Arsitektur ASP.NET Core: Kestrel Server",
+                               "levelName":  "LEVEL 11",
+                               "context":  "Mendengarkan socket TCP pada port Kestrel (misal 5100)."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "RFC 791 - Internet Protocol Specification",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc791"
+                       },
+                       {
+                           "title":  "Computer Networking: A Top-Down Approach (Kurose \u0026 Ross)",
+                           "url":  "https://www.pearson.com/en-us/subject-catalog/p/computer-networking-a-top-down-approach/P200000003310"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Net;\nusing System.Net.Sockets;\n\npublic class SocketEndpointValidator\n{\n    public static bool IsValidSocketEndpoint(string? endpointStr)\n    {\n        if (string.IsNullOrWhiteSpace(endpointStr)) return false;\n\n        string[] parts = endpointStr.Trim().Split(\u0027:\u0027);\n        if (parts.Length != 2) return false;\n\n        // Validasi IP\n        if (!IPAddress.TryParse(parts[0], out var ip)) return false;\n        if (ip.AddressFamily != AddressFamily.InterNetwork) return false;\n\n        // Validasi Port\n        if (!int.TryParse(parts[1], out int port)) return false;\n        if (port \u003c 1 || port \u003e 65535) return false;\n\n        return true;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(IsValidSocketEndpoint(\"127.0.0.1:5000\"));\n        Console.WriteLine(IsValidSocketEndpoint(\"999.1.1.1:80\"));\n        Console.WriteLine(IsValidSocketEndpoint(\"10.0.0.1:99999\"));\n    }\n}"
+}

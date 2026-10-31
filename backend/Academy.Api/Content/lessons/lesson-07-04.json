@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-07-04",
+    "levelId":  "level-07",
+    "moduleId":  "mod-07-02",
+    "order":  4,
+    "title":  "TLS 1.3 Handshake, Sertifikat Digital, PKI, dan Enkripsi End-to-End",
+    "slug":  "tls13-handshake-digital-certificates-pki",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  50,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membongkar keamanan lapisan transport: Public Key Infrastructure (PKI), rantai kepercayaan sertifikat X.509, proses negosiasi kunci Diffie-Hellman (ECDHE), dan efisiensi 1-RTT Handshake pada TLS 1.3.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-07-02",
+                              "title":  "TCP Deep Dive",
+                              "levelName":  "LEVEL 07",
+                              "context":  "Memahami koneksi TCP transport tempat TLS berjalan."
+                          }
+                      ],
+    "introduces":  [
+                       "Transport Layer Security (TLS 1.3 vs 1.2)",
+                       "Asymmetric Encryption (RSA, ECC)",
+                       "Symmetric Encryption (AES-GCM)",
+                       "Diffie-Hellman Ephemeral (ECDHE)",
+                       "Forward Secrecy",
+                       "X.509 Certificate Chain \u0026 Root CA"
+                   ],
+    "learningObjectives":  [
+                               "Menjelaskan perbedaan enkripsi asimetris (pertukaran kunci) vs enkripsi simetris (transfer payload).",
+                               "Menguraikan alur 1-RTT Handshake pada TLS 1.3 yang memangkas latensi keamanan.",
+                               "Menganalisis prinsip Forward Secrecy dalam melindungi data finansial masa lalu dari kebocoran private key."
+                           ],
+    "markdownContent":  "# TLS 1.3 Handshake, Sertifikat Digital, PKI, dan Enkripsi End-to-End\n\n## Mengapa HTTP Wajib Menggunakan TLS (HTTPS)?\nTanpa enkripsi, seluruh request HTTP yang dikirimkan melalui Wi-Fi publik atau router ISP dapat dibaca secara telanjang (*Eavesdropping*) dan diubah isinya (*Man-in-the-Middle Attack*).\n\n**Transport Layer Security (TLS)** menjamin 3 pilar keamanan:\n1. **Kerahasiaan (Confidentiality)**: Seluruh isi payload dienkripsi dengan sandi simetris berkecepatan tinggi (AES-256-GCM / ChaCha20).\n2. **Integritas (Integrity)**: Setiap paket dilengkapi kode verifikasi pesan (HMAC/AEAD) agar data tidak bisa dimanipulasi tanpa terdeteksi.\n3. **Autentikasi (Authentication)**: Memverifikasi bahwa server benar-benar entitas pemilik domain asli melalui sertifikat digital terverifikasi.\n\n---\n\n## 1. Hibrida Kriptografi: Asimetris + Simetris\nEnkripsi Asimetris (seperti RSA atau Kurva Elip ECC) sangat aman untuk verifikasi identitas, namun **sangat lambat dan boros CPU** untuk mengenkripsi streaming video atau jutaan transaksi data.\n\nOleh karena itu, TLS menggunakan **Pendekatan Hibrida**:\n- **Enkripsi Asimetris**: HANYA digunakan di awal selama Handshake untuk saling membuktikan identitas dan menyepakati satu kunci rahasia bersama (*Shared Secret*).\n- **Enkripsi Simetris (AES-GCM)**: Begitu kunci bersama disepakati, seluruh payload HTTP dienkripsi menggunakan kunci simetris yang **1000x lebih cepat** dan didukung akselerasi hardware CPU (AES-NI).\n\n---\n\n## 2. Lompatan TLS 1.3: 1-RTT Handshake \u0026 Keamanan Mutlak\nPada TLS 1.2 lawas, handshake membutuhkan **2 Roundtrip (2 RTT)** bolak-balik sebelum data aman bisa dikirim.\n**TLS 1.3 (RFC 8446)** merevolusi proses ini menjadi hanya **1 Roundtrip (1 RTT)**:\n\n```mermaid\nsequenceDiagram\n    autonumber\n    participant Client as HTTP Client (Frontend / Mobile)\n    participant Server as Kestrel Server (Backend API)\n\n    Note over Client,Server: HTTP Request Envelope\n    Client-\u003e\u003eServer: Start Line: POST /api/v1/transfers HTTP/1.1\n    Client-\u003e\u003eServer: Headers: Host, Authorization, Content-Type: application/json\n    Client-\u003e\u003eServer: CRLF (Baris Kosong Pembatas)\n    Client-\u003e\u003eServer: Body: {\"sourceAccount\": \"101\", \"amount\": 500000}\n\n    Note over Server: Server Process (Controller \u0026 DB)\n\n    Note over Client,Server: HTTP Response Envelope\n    Server-\u003e\u003eClient: Status Line: HTTP/1.1 200 OK\n    Server-\u003e\u003eClient: Headers: Content-Type: application/json, Content-Length\n    Server-\u003e\u003eClient: CRLF (Baris Kosong Pembatas)\n    Server-\u003e\u003eClient: Body: {\"transactionId\": \"TRX-998\", \"status\": \"Success\"}\n```\n\n---\n\n## 3. Forward Secrecy (Kerahasiaan Maju)\nTLS 1.3 secara resmi **menghapus algoritma pertukaran kunci RSA statis**. TLS 1.3 mewajibkan **ECDHE (Elliptic Curve Diffie-Hellman Ephemeral)**:\n- Pasangan kunci dibuat secara sementara (*ephemeral*) khusus untuk sesi koneksi saat ini, lalu dimusnahkan dari memori.\n- Jika 5 tahun kemudian server diretas dan private key server bocor ke publik, **penyerang tetap tidak akan pernah bisa mendekripsi rekaman lalu lintas jaringan masa lalu nasabah!**",
+    "starterCode":  "using System;\nusing System.Net.Http;\nusing System.Security.Authentication;\nusing System.Threading.Tasks;\n\n// PROGRAM: Mengonfigurasi Client dengan Proteksi Minimal TLS 1.3\nvar handler = new HttpClientHandler\n{\n    // Hanya mengizinkan TLS 1.2 dan TLS 1.3 (Protokol usang SSL 3.0 / TLS 1.0 ditolak mutlak!)\n    SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13\n};\n\nusing var client = new HttpClient(handler);\n\ntry\n{\n    Console.WriteLine(\"Menghubungkan ke endpoint aman via TLS 1.2 / TLS 1.3...\");\n    var response = await client.GetAsync(\"https://api.github.com\");\n    Console.WriteLine($\"Handshake Sukses! Status: {response.StatusCode}\");\n}\ncatch (Exception ex)\n{\n    Console.WriteLine($\"Koneksi gagal atau ditolak oleh protokol keamanan: {ex.Message}\");\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-07-04-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Berapa roundtrip (RTT) yang dibutuhkan oleh proses negosiasi handshake penuh pada protokol TLS 1.3 sebelum data terenkripsi pertama dapat dikirimkan?",
+                              "options":  [
+                                              "0 RTT",
+                                              "Tepat 1 RTT",
+                                              "2 RTT",
+                                              "4 RTT"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "TLS 1.3 menggabungkan pertukaran parameter kurva eliptis ke dalam pesan ClientHello pertama, memangkas durasi handshake penuh menjadi hanya 1 RTT.",
+                              "optionExplanations":  [
+                                                         "Salah. 0-RTT hanya berlaku untuk resumption koneksi yang pernah tersambung sebelumnya, bukan full handshake awal.",
+                                                         "Benar! 1 RTT adalah standar handshake penuh pada spesifikasi TLS 1.3.",
+                                                         "Salah. 2 RTT adalah durasi handshake pada TLS 1.2 lawas.",
+                                                         "Salah. 4 RTT terlalu lambat dan tidak pernah digunakan."
+                                                     ],
+                              "sectionRef":  "2. Lompatan TLS 1.3: 1-RTT Handshake \u0026 Keamanan Mutlak",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-07-04-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Mengapa TLS 1.3 menghapus dukungan pertukaran kunci berbasis RSA statis dan mewajibkan algoritma Ephemeral Diffie-Hellman (ECDHE)?",
+                              "options":  [
+                                              "Karena RSA tidak dapat berjalan di server Linux",
+                                              "Untuk menjamin \u0027Forward Secrecy\u0027: jika private key server bocor di masa depan, rekaman komunikasi masa lalu tetap tidak dapat didekripsi",
+                                              "Karena RSA dilarang oleh konsorsium W3C",
+                                              "Karena RSA membatasi ukuran file maksimal 1 KB"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Forward Secrecy menjamin bahwa setiap sesi memiliki kunci sementara independen. Kebocoran private key sertifikat server di masa depan tidak akan membahayakan data sesi sebelumnya.",
+                              "optionExplanations":  [
+                                                         "Salah. RSA dapat berjalan di seluruh sistem operasi.",
+                                                         "Benar! Forward Secrecy melindungi data historis dari kebocoran private key di masa mendatang.",
+                                                         "Salah. RSA adalah standar kriptografi yang diakui, namun memiliki kelemahan jika kunci statis bocor.",
+                                                         "Salah. Enkripsi simetris yang membungkus file tidak dibatasi 1 KB."
+                                                     ],
+                              "sectionRef":  "3. Forward Secrecy (Kerahasiaan Maju)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-07-05",
+                               "title":  "Reverse Proxy \u0026 Load Balancing",
+                               "levelName":  "LEVEL 07",
+                               "context":  "Penerapan TLS Termination di layer Reverse Proxy (Nginx/Envoy)."
+                           },
+                           {
+                               "lessonId":  "lesson-15-04",
+                               "title":  "Kriptografi Terapan: AES-256 \u0026 HMAC",
+                               "levelName":  "LEVEL 15",
+                               "context":  "Prinsip enkripsi simetris data at rest."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "RFC 8446 - The Transport Layer Security (TLS) Protocol Version 1.3",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc8446"
+                       },
+                       {
+                           "title":  "Mozilla SSL Configuration Generator",
+                           "url":  "https://ssl-config.mozilla.org/"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class TlsSecurityChecker\n{\n    public static bool IsSecureTlsProtocol(string? protocolName)\n    {\n        if (string.IsNullOrWhiteSpace(protocolName)) return false;\n\n        string clean = protocolName.Trim();\n        return string.Equals(clean, \"TLS 1.2\", StringComparison.OrdinalIgnoreCase) ||\n               string.Equals(clean, \"TLS 1.3\", StringComparison.OrdinalIgnoreCase);\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(IsSecureTlsProtocol(\"TLS 1.3\"));\n        Console.WriteLine(IsSecureTlsProtocol(\"TLS 1.0\"));\n        Console.WriteLine(IsSecureTlsProtocol(\"SSL 3.0\"));\n    }\n}"
+}

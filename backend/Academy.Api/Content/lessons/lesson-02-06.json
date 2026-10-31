@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-06",
+  "levelId": "level-02",
+  "moduleId": "mod-02-03",
+  "order": 6,
+  "title": "Struktur Kontrol: If/Else, Switch Expression, dan Pattern Matching Modern",
+  "slug": "control-flow-pattern-matching",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menguasai struktur kendali modern C#: dari if/else konvensional menuju Switch Expression, Property Pattern, Relational \u0026 Logical Patterns (and, or, not), dan Tuple Pattern Matching untuk logika bisnis enterprise.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-04",
+      "title": "Logika Boolean \u0026 Tabel Kebenaran",
+      "levelName": "LEVEL 01",
+      "context": "Memahami ekspresi kondisi kebenaran."
+    }
+  ],
+  "introduces": [
+    "Switch Statement vs Switch Expression",
+    "Property Pattern Matching",
+    "Relational Patterns (\u003C, \u003E=)",
+    "Logical Patterns (and, or, not)",
+    "Tuple / Positional Pattern",
+    "Guard Clauses (when)"
+  ],
+  "learningObjectives": [
+    "Menyederhanakan blok if/else bersarang menjadi Switch Expression yang deklaratif.",
+    "Menerapkan Property dan Relational Pattern Matching untuk mengevaluasi objek bisnis kompleks.",
+    "Mengurangi kompleksitas kognitif (Cyclomatic Complexity) pada modul backend."
+  ],
+  "markdownContent": "# Struktur Kontrol: If/Else, Switch Expression, dan Pattern Matching Modern\n\n## Evolusi Logika Percabangan di C#\nDalam sistem backend enterprise, alur kontrol yang rumit (seperti penentuan biaya ongkir, kalkulasi tarif pajak, atau verifikasi limit transaksi) sering kali menghasilkan piramida if-else yang sulit dirawat.\n\nC# modern (C# 8 hingga C# 12) menghadirkan revolusi melalui **Pattern Matching** dan **Switch Expression**.\n\n---\n\n## 1. Dari Switch Statement Klasik ke Switch Expression\nBandingkan kode penentuan diskon nasabah:\n\n### Cara Lama (Switch Statement Klasik - Bertele-tele):\n\u0060\u0060\u0060csharp\ndecimal diskon;\nswitch (membership)\n{\n    case MembershipType.Platinum:\n        diskon = 0.20m;\n        break;\n    case MembershipType.Gold:\n        diskon = 0.10m;\n        break;\n    default:\n        diskon = 0.0m;\n        break;\n}\n\u0060\u0060\u0060\n\n### Cara Modern C# (Switch Expression - Ringkas, Bernilai Ekspresi):\n\u0060\u0060\u0060csharp\ndecimal diskon = membership switch\n{\n    MembershipType.Platinum =\u003E 0.20m,\n    MembershipType.Gold     =\u003E 0.10m,\n    _                       =\u003E 0.0m   // Discard pattern sebagai default fallback\n};\n\u0060\u0060\u0060\n\n---\n\n## 2. Pola Tingkat Lanjut (Advanced Patterns)\n\n### A. Relational \u0026 Logical Patterns (C# 9)\nAnda dapat membandingkan angka secara langsung dengan operator relasional (\u0060\u003E\u0060, \u0060\u003C\u0060, \u0060\u003E=\u0060, \u0060\u003C=\u0060) dan logika (\u0060and\u0060, \u0060or\u0060, \u0060not\u0060):\n\n\u0060\u0060\u0060csharp\nstring KategoriRisiko(int skorKredit) =\u003E skorKredit switch\n{\n    \u003C 500              =\u003E \u0022Tinggi (Ditolak)\u0022,\n    \u003E= 500 and \u003C 700   =\u003E \u0022Sedang (Perlu Jaminan)\u0022,\n    \u003E= 700 and \u003C= 850  =\u003E \u0022Rendah (Disetujui)\u0022,\n    _                  =\u003E throw new ArgumentOutOfRangeException(nameof(skorKredit))\n};\n\u0060\u0060\u0060\n\n### B. Property Pattern Matching\nMengevaluasi properti di dalam objek tanpa perlu membongkar objeknya terlebih dahulu:\n\n\u0060\u0060\u0060csharp\ndecimal HitungOngkir(Order order) =\u003E order switch\n{\n    { TotalBelanja: \u003E= 1_000_000, Customer.IsVIP: true } =\u003E 0m,     // Gratis ongkir VIP\n    { BeratKg: \u003C= 1, Wilayah: \u0022Jabodetabek\u0022 }            =\u003E 10_000m,\n    { BeratKg: \u003E 1, Wilayah: \u0022Jabodetabek\u0022 }             =\u003E 10_000m \u002B ((order.BeratKg - 1) * 5_000m),\n    _                                                    =\u003E 35_000m  // Luar kota default\n};\n\u0060\u0060\u0060\n\n### C. Tuple Pattern (Mengevaluasi Beberapa Variabel Bersamaan)\n\u0060\u0060\u0060csharp\nstring AksesSistem(string role, bool isMfaActive) =\u003E (role, isMfaActive) switch\n{\n    (\u0022Admin\u0022, true)  =\u003E \u0022Full Access Diberikan\u0022,\n    (\u0022Admin\u0022, false) =\u003E \u0022Ditolak: Admin wajib mengaktifkan MFA!\u0022,\n    (\u0022Staff\u0022, _)     =\u003E \u0022Akses Terbatas\u0022,\n    _                =\u003E \u0022Akses Ditolak\u0022\n};\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Penerapan Pattern Matching Modern pada Evaluasi Transaksi Finansial\npublic record Transaction(string Type, decimal Amount, bool IsSuspicious);\n\npublic class FraudDetectionEngine\n{\n    public static string EvaluateTransaction(Transaction tx) =\u003E tx switch\n    {\n        // 1. Transaksi berapapun jika mencurigakan -\u003E BLOKIR SEGERA\n        { IsSuspicious: true } =\u003E \u0022BLOCKED: Terdeteksi Pola Fraud!\u0022,\n\n        // 2. Penarikan tunai di atas 50 juta -\u003E Butuh Verifikasi Tambahan\n        { Type: \u0022Withdrawal\u0022, Amount: \u003E 50_000_000m } =\u003E \u0022REVIEW: Butuh Otorisasi Kepala Cabang\u0022,\n\n        // 3. Transfer normal di bawah 100 juta -\u003E Otomatis Setuju\n        { Type: \u0022Transfer\u0022, Amount: \u003C= 100_000_000m } =\u003E \u0022APPROVED: Transaksi Diproses Otomatis\u0022,\n\n        // 4. Default fallback\n        _ =\u003E \u0022PENDING: Sedang Diverifikasi Sistem Antrian\u0022\n    };\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var tx1 = new Transaction(\u0022Transfer\u0022, 15_000_000m, false);\n        var tx2 = new Transaction(\u0022Withdrawal\u0022, 75_000_000m, false);\n        var tx3 = new Transaction(\u0022Transfer\u0022, 5_000_000m, true);\n        \n        Console.WriteLine($\u0022Tx 1: {FraudDetectionEngine.EvaluateTransaction(tx1)}\u0022);\n        Console.WriteLine($\u0022Tx 2: {FraudDetectionEngine.EvaluateTransaction(tx2)}\u0022);\n        Console.WriteLine($\u0022Tx 3: {FraudDetectionEngine.EvaluateTransaction(tx3)}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-02-06-1",
+      "type": "MultipleChoice",
+      "question": "Karakter apakah yang digunakan sebagai \u0027Discard Pattern\u0027 untuk mewakili case default/fallback pada Switch Expression di C#?",
+      "options": [
+        "default",
+        "_",
+        "*",
+        "null"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Karakter underscore \u0060_\u0060 adalah discard pattern yang mencocokkan nilai apa pun (setara dengan default: pada switch statement lama).",
+      "optionExplanations": [
+        "Salah. \u0060default\u0060 digunakan pada switch statement lama, bukan switch expression.",
+        "Benar! Simbol \u0060_\u0060 bertindak sebagai discard pattern penangkap semua nilai yang tidak cocok sebelumnya.",
+        "Salah. Asterisk bukan token pattern matching di C#.",
+        "Salah. null hanya mencocokkan referensi bernilai null."
+      ],
+      "sectionRef": "1. Dari Switch Statement Klasik ke Switch Expression",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-06-2",
+      "type": "MultipleChoice",
+      "question": "Fitur pattern matching manakah yang memungkinkan pengecekan properti di dalam suatu objek tanpa perlu menulis rantai if bertingkat (contoh: \u0060{ Status: \u0027Active\u0027, Age: \u003E= 18 }\u0060)?",
+      "options": [
+        "Type Pattern",
+        "Property Pattern",
+        "Constant Pattern",
+        "Var Pattern"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Property Pattern memungkinkan kita mencocokkan satu atau beberapa properti dari objek terhadap ekspresi konstan atau relasional menggunakan kurung kurawal \u0060{ ... }\u0060.",
+      "optionExplanations": [
+        "Salah. Type pattern hanya memeriksa apakah objek bertipe tertentu.",
+        "Benar! Property pattern mencocokkan nilai properti di dalam objek.",
+        "Salah. Constant pattern membandingkan langsung dengan nilai konstan (seperti 10 atau \u0027Admin\u0027).",
+        "Salah. Var pattern mendeklarasikan variabel penampung baru."
+      ],
+      "sectionRef": "B. Property Pattern Matching",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-06",
+    "Title": "Kalkulator Tarif Pajak Progresif C# Switch Expression",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca nilai Penghasilan Kena Pajak tahunan (decimal) dari stdin.\nGunakan C# relational pattern matching (switch expression) untuk menentukan persentase tarif pajak:\n- \u003C= 60000000: tarif 5%\n- \u003E 60000000 dan \u003C= 250000000: tarif 15%\n- \u003E 250000000 dan \u003C= 500000000: tarif 25%\n- \u003E 500000000: tarif 35%.\nCetak persentase tarif dalam format \u0027\u003CX\u003E%\u0027.",
+    "InputFormat": "Satu baris angka penghasilan bertipe decimal.",
+    "OutputFormat": "Satu baris string persentase (\u00275%\u0027, \u002715%\u0027, \u002725%\u0027, atau \u002735%\u0027).",
+    "Constraints": "Penghasilan \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "50000000",
+        "Output": "5%",
+        "Explanation": "Di bawah 60 juta tarif 5%."
+      },
+      {
+        "Input": "100000000",
+        "Output": "15%",
+        "Explanation": "Di antara 60 juta dan 250 juta tarif 15%."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (!decimal.TryParse(line, CultureInfo.InvariantCulture, out decimal income)) return;\n        // TODO: Gunakan switch expression relational pattern (\u003C=, \u003E, dll).\n        Console.WriteLine(\u00225%\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (!decimal.TryParse(line, CultureInfo.InvariantCulture, out decimal income)) return;\n\n        string rate = income switch\n        {\n            \u003C= 60_000_000m =\u003E \u00225%\u0022,\n            \u003C= 250_000_000m =\u003E \u002215%\u0022,\n            \u003C= 500_000_000m =\u003E \u002225%\u0022,\n            _ =\u003E \u002235%\u0022\n        };\n\n        Console.WriteLine(rate);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Tier 1)",
+        "Description": "Contoh 1 (Tier 1): input \u002750000000\u0027 -\u003E expected \u00275%\u0027",
+        "Input": "50000000",
+        "ExpectedOutput": "5%",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Tier 2)",
+        "Description": "Contoh 2 (Tier 2): input \u0027100000000\u0027 -\u003E expected \u002715%\u0027",
+        "Input": "100000000",
+        "ExpectedOutput": "15%",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Tier 3 Tepat Batas",
+        "Description": "Tier 3 Tepat Batas: input \u0027500000000\u0027 -\u003E expected \u002725%\u0027",
+        "Input": "500000000",
+        "ExpectedOutput": "25%",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Tier Tertinggi",
+        "Description": "Tier Tertinggi: input \u00271000000000\u0027 -\u003E expected \u002735%\u0027",
+        "Input": "1000000000",
+        "ExpectedOutput": "35%",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "C# 9\u002B mendukung relational pattern dalam switch expression, misal: \u0060\u003C= 60_000_000m =\u003E \u00225%\u0022\u0060.",
+      "Gunakan underscore digit separator untuk keterbacaan angka nominal besar."
+    ],
+    "Explanation": "Switch expression dengan relational pattern memberikan ekspresi logika kondisional yang jauh lebih bersih, deklaratif, dan aman dibanding rantai if-else konvensional."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-03-05",
+      "title": "Record \u0026 Value Immutability",
+      "levelName": "LEVEL 03",
+      "context": "Menggunakan pattern matching pada C# Records."
+    },
+    {
+      "lessonId": "lesson-13-03",
+      "title": "Tactical Domain-Driven Design",
+      "levelName": "LEVEL 13",
+      "context": "Penerapan pattern matching untuk memproses domain events."
+    }
+  ],
+  "references": [
+    {
+      "title": "Pattern matching overview - C# guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/functional/pattern-matching"
+    },
+    {
+      "title": "Switch expressions - C# reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/operators/switch-expression"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class TaxCalculator\n{\n    public static int GetTaxRatePercentage(decimal annualIncome) =\u003E annualIncome switch\n    {\n        \u003C= 0m =\u003E 0,\n        \u003C= 60_000_000m =\u003E 5,\n        \u003E 60_000_000m and \u003C= 250_000_000m =\u003E 15,\n        \u003E 250_000_000m and \u003C= 500_000_000m =\u003E 25,\n        _ =\u003E 30\n    };\n\n    public static void Main()\n    {\n        Console.WriteLine($\u002250 Juta : {GetTaxRatePercentage(50_000_000m)}%\u0022);\n        Console.WriteLine($\u0022100 Juta: {GetTaxRatePercentage(100_000_000m)}%\u0022);\n        Console.WriteLine($\u0022600 Juta: {GetTaxRatePercentage(600_000_000m)}%\u0022);\n    }\n}"
+}

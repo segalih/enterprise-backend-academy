@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-09",
+  "levelId": "level-02",
+  "moduleId": "mod-02-04",
+  "order": 9,
+  "title": "Robust Exception Handling: Try/Catch/Finally, Custom Exceptions \u0026 Filter",
+  "slug": "robust-exception-handling",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Merancang strategi penanganan error yang tangguh di backend: anatomi System.Exception, perbedaan re-throwing yang benar (\u0027throw\u0027 vs \u0027throw ex\u0027), Exception Filters (\u0027when\u0027), dan pembuatan Custom Domain Exceptions.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-02",
+      "title": "Anatomi Program C#",
+      "levelName": "LEVEL 02",
+      "context": "Memahami alur kontrol eksekusi method."
+    }
+  ],
+  "introduces": [
+    "Exception Object Model",
+    "Call Stack Unwinding",
+    "The \u0027throw;\u0027 vs \u0027throw ex;\u0027 Bug",
+    "Exception Filters (when)",
+    "Custom Domain Exceptions",
+    "Finally Block Guarantees"
+  ],
+  "learningObjectives": [
+    "Memahami alur kerja Stack Unwinding saat exception dilemparkan oleh runtime.",
+    "Menghindari bug hilangnya stack trace dengan menggunakan keyword \u0027throw\u0027 tunggal.",
+    "Menerapkan Exception Filters menggunakan klausa \u0027when\u0027 untuk logging selektif tanpa unwinding dini."
+  ],
+  "markdownContent": "# Robust Exception Handling: Try/Catch/Finally, Custom Exceptions \u0026 Filter\n\n## Apa Sebenarnya yang Terjadi Saat Exception Muncul?\nKetika sebuah exception terjadi (misalnya pembagian dengan nol atau timeout database):\n1. Runtime CoreCLR membuat instance objek baru yang merupakan turunan dari \u0060System.Exception\u0060.\n2. Runtime menghentikan eksekusi kode normal dan memulai proses **Call Stack Unwinding**:\n   - CLR mencari blok \u0060catch\u0060 terdekat pada method saat ini.\n   - Jika tidak ditemukan, method saat ini dibatalkan dan pencarian naik ke method pemanggil (*caller*).\n   - Proses ini terus naik hingga menemukan blok \u0060catch\u0060 yang cocok atau mencapai root thread (yang menyebabkan aplikasi *crash*).\n3. Sepanjang perjalanan unwinding, seluruh blok **\u0060finally\u0060** dijamin akan dieksekusi untuk membersihkan koneksi.\n\n---\n\n## Dosa Terbesar Pemula: \u0060throw ex\u0060 vs \u0060throw\u0060\nPerhatikan cuplikan kode penanganan error berikut:\n\n\u0060\u0060\u0060csharp\ntry\n{\n    ProsesKreditBank();\n}\ncatch (Exception ex)\n{\n    Logger.LogError(ex);\n    \n    // FATAL! INI MENGHANCURKAN STACK TRACE ASLI!\n    throw ex; \n}\n\u0060\u0060\u0060\n\n### Mengapa \u0060throw ex\u0060 Sangat Berbahaya?\n- **\u0060throw ex;\u0060**: Mereset jejak lokasi error! Bagi log monitoring, error seolah-olah terjadi di baris \u0060throw ex;\u0060 ini, dan lokasi asli error di dalam \u0060ProsesKreditBank()\u0060 hilang selamanya!\n- **\u0060throw;\u0060 (HANYA KATA THROW TANPA VARIABEL)**: Mempertahankan 100% stack trace asli dari titik awal terjadinya error hingga ke pemanggil teratas.\n\n---\n\n## Fitur Cerdas: Exception Filters (\u0060when\u0060)\nSejak C# 6, Anda dapat menyaring exception berdasarkan kondisi logis menggunakan keyword \u0060when\u0060:\n\n\u0060\u0060\u0060csharp\ntry\n{\n    await httpClient.SendAsync(request);\n}\ncatch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)\n{\n    // Hanya menangani error 404 Not Found!\n    return null;\n}\ncatch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.ServiceUnavailable)\n{\n    // Tangani error 503 dengan pola Retry\n    return await RetryOperationAsync();\n}\n\u0060\u0060\u0060\n\nKeunggulan terbesar \u0060when\u0060: **Stack Unwinding tidak akan terjadi jika kondisi \u0060when\u0060 bernilai false!** Ini menghemat jutaan siklus CPU dan mempertahankan kondisi memori asli di dump file saat analisis kegagalan produksi.\n\n---\n\n## Merancang Custom Domain Exception\nDi backend enterprise, jangan melempar \u0060System.Exception\u0060 generik. Buatlah exception berbasis domain bisnis:\n\n\u0060\u0060\u0060csharp\npublic class InsufficientBalanceException : Exception\n{\n    public decimal SaldoSaatIni { get; }\n    public decimal NominalDibutuhkan { get; }\n\n    public InsufficientBalanceException(decimal saldo, decimal butuh)\n        : base($\u0022Saldo nasabah tidak mencukupi. Saldo: Rp {saldo:N0}, Dibutuhkan: Rp {butuh:N0}\u0022)\n    {\n        SaldoSaatIni = saldo;\n        NominalDibutuhkan = butuh;\n    }\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Penanganan Exception dan Keyword \u0027throw\u0027\npublic class AccountService\n{\n    public static void TarikTunai(decimal saldo, decimal nominal)\n    {\n        if (nominal \u003C= 0)\n        {\n            throw new ArgumentOutOfRangeException(nameof(nominal), \u0022Nominal penarikan harus lebih besar dari 0.\u0022);\n        }\n\n        if (saldo \u003C nominal)\n        {\n            // Melempar exception domain spesifik\n            throw new InvalidOperationException($\u0022Saldo tidak cukup! Saldo: Rp {saldo:N0}, Penarikan: Rp {nominal:N0}\u0022);\n        }\n\n        Console.WriteLine($\u0022Penarikan berhasil: Rp {nominal:N0}\u0022);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        try\n        {\n            Console.WriteLine(\u0022Mencoba penarikan melebihi saldo...\u0022);\n            AccountService.TarikTunai(100_000m, 500_000m);\n        }\n        catch (InvalidOperationException ex) when (ex.Message.Contains(\u0022Saldo tidak cukup\u0022))\n        {\n            // Exception filter berhasil menangkap kondisi spesifik\n            Console.WriteLine($\u0022[TERTANGKAP DENGAN FILTER] {ex.Message}\u0022);\n        }\n        finally\n        {\n            // Selalu dieksekusi dalam kondisi apa pun\n            Console.WriteLine(\u0022[FINALLY] Audit logging siklus penarikan ditutup.\u0022);\n        }\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-02-09-1",
+      "type": "MultipleChoice",
+      "question": "Apa akibat negatif yang terjadi jika seorang developer menulis \u0060throw ex;\u0060 di dalam blok catch alih-alih hanya menulis \u0060throw;\u0060?",
+      "options": [
+        "Program akan mengalami memori bocor (memory leak)",
+        "Stack trace asli dari tempat terjadinya error akan terhapus dan di-reset ke baris \u0060throw ex;\u0060 tersebut",
+        "Compiler Roslyn akan menghasilkan error kompilasi",
+        "Blok finally tidak akan pernah dieksekusi"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060throw ex;\u0060 mereset stack trace ke lokasi baris catch tersebut, menghilangkan jejak baris kode asli tempat exception pertama kali muncul di dalam call stack.",
+      "optionExplanations": [
+        "Salah. Hal ini tidak menyebabkan kebocoran memori.",
+        "Benar! \u0060throw ex;\u0060 menghapus jejak asal error asli. Selalu gunakan \u0060throw;\u0060 tunggal untuk mempertahankan stack trace.",
+        "Salah. \u0060throw ex;\u0060 adalah sintaks C# yang legal namun merupakan anti-pattern berbahaya.",
+        "Salah. Blok finally tetap akan dieksekusi."
+      ],
+      "sectionRef": "Dosa Terbesar Pemula: throw ex vs throw",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-09-2",
+      "type": "MultipleChoice",
+      "question": "Keyword apakah yang digunakan di C# untuk menerapkan Exception Filters pada blok catch (misal: \u0060catch (HttpException ex) ... (ex.ErrorCode == 500)\u0060)?",
+      "options": [
+        "if",
+        "where",
+        "when",
+        "filter"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Keyword \u0060when\u0060 digunakan dalam blok catch untuk menentukan syarat predikat logika sebelum blok catch tersebut diaktifkan.",
+      "optionExplanations": [
+        "Salah. Keyword if tidak valid langsung di deklarasi catch.",
+        "Salah. Keyword where digunakan untuk generic type constraint atau LINQ.",
+        "Benar! \u0060catch (...) when (kondisi)\u0060 adalah sintaks resmi Exception Filter C#.",
+        "Salah. filter bukan keyword bahasa C#."
+      ],
+      "sectionRef": "Fitur Cerdas: Exception Filters (when)",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-09",
+    "Title": "Pemroses Transaksi Aman dengan Custom FinancialException",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Baca dua angka dari stdin: Saldo (decimal) dan Penarikan (decimal).\nJika Penarikan \u003E Saldo, lempar custom exception \u0060InsufficientFundsException\u0060 yang menyimpan properti \u0060Deficit\u0060 (Penarikan - Saldo).\nTangkap exception tersebut dan cetak \u0027GAGAL: Defisit \u003CDeficit\u003E\u0027.\nJika saldo mencukupi, cetak \u0027SUKSES: Sisa \u003CSaldo - Penarikan\u003E\u0027.",
+    "InputFormat": "Satu baris berisi dua angka Saldo dan Penarikan dipisahkan spasi.",
+    "OutputFormat": "Satu baris status \u0027SUKSES: Sisa \u003CX\u003E\u0027 atau \u0027GAGAL: Defisit \u003CY\u003E\u0027.",
+    "Constraints": "Saldo dan Penarikan \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "100000 30000",
+        "Output": "SUKSES: Sisa 70000",
+        "Explanation": "Saldo 100rb cukup untuk penarikan 30rb."
+      },
+      {
+        "Input": "50000 80000",
+        "Output": "GAGAL: Defisit 30000",
+        "Explanation": "Saldo kurang 30rb."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class InsufficientFundsException : Exception\n{\n    public decimal Deficit { get; }\n    public InsufficientFundsException(decimal deficit) : base(\u0022Saldo tidak mencukupi\u0022) { Deficit = deficit; }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Lempar dan tangkap InsufficientFundsException.\n        Console.WriteLine(\u0022SUKSES: Sisa 0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class InsufficientFundsException : Exception\n{\n    public decimal Deficit { get; }\n    public InsufficientFundsException(decimal deficit) : base(\u0022Saldo tidak mencukupi\u0022)\n    {\n        Deficit = deficit;\n    }\n}\n\npublic class Solution\n{\n    public static void Withdraw(decimal balance, decimal amount)\n    {\n        if (amount \u003E balance)\n        {\n            throw new InsufficientFundsException(amount - balance);\n        }\n        Console.WriteLine($\u0022SUKSES: Sisa {balance - amount}\u0022);\n    }\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 2) return;\n\n        decimal bal = decimal.Parse(p[0], CultureInfo.InvariantCulture);\n        decimal amt = decimal.Parse(p[1], CultureInfo.InvariantCulture);\n\n        try\n        {\n            Withdraw(bal, amt);\n        }\n        catch (InsufficientFundsException ex)\n        {\n            Console.WriteLine($\u0022GAGAL: Defisit {ex.Deficit}\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Sukses)",
+        "Description": "Contoh 1 (Sukses): input \u0027100000 30000\u0027 -\u003E expected \u0027SUKSES: Sisa 70000\u0027",
+        "Input": "100000 30000",
+        "ExpectedOutput": "SUKSES: Sisa 70000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Defisit)",
+        "Description": "Contoh 2 (Defisit): input \u002750000 80000\u0027 -\u003E expected \u0027GAGAL: Defisit 30000\u0027",
+        "Input": "50000 80000",
+        "ExpectedOutput": "GAGAL: Defisit 30000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Penarikan Pas Saldo",
+        "Description": "Penarikan Pas Saldo: input \u002750000 50000\u0027 -\u003E expected \u0027SUKSES: Sisa 0\u0027",
+        "Input": "50000 50000",
+        "ExpectedOutput": "SUKSES: Sisa 0",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Penarikan Nol",
+        "Description": "Penarikan Nol: input \u0027100000 0\u0027 -\u003E expected \u0027SUKSES: Sisa 100000\u0027",
+        "Input": "100000 0",
+        "ExpectedOutput": "SUKSES: Sisa 100000",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Buat class exception yang mewarisi System.Exception.",
+      "Tangkap InsufficientFundsException secara spesifik sebelum catch umum."
+    ],
+    "Explanation": "Custom exception domain memungkinkan penangkapan error terstruktur yang memuat metadata spesifik bisnis (seperti nominal defisit) untuk penanganan terisolasi."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-11-04",
+      "title": "Standar REST Enterprise: ProblemDetails",
+      "levelName": "LEVEL 11",
+      "context": "Mengonversi Domain Exception menjadi respons standar RFC 7807 ProblemDetails pada Web API."
+    },
+    {
+      "lessonId": "lesson-18-01",
+      "title": "Double-Entry Ledger Architecture",
+      "levelName": "LEVEL 18",
+      "context": "Integritas transaksi finansial di bawah penanganan error yang ketat."
+    }
+  ],
+  "references": [
+    {
+      "title": "Exceptions and Exception Handling - C# Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/exceptions/"
+    },
+    {
+      "title": "Exception Filters - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/when"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class PaymentProcessor\n{\n    public static string ProcessPaymentSafe(decimal saldo, decimal amount)\n    {\n        try\n        {\n            if (amount \u003C= 0)\n                throw new ArgumentException(\u0022Amount must be positive.\u0022);\n\n            if (saldo \u003C amount)\n                throw new InvalidOperationException(\u0022Insufficient balance.\u0022);\n\n            return \u0022[SUCCESS: Payment completed]\u0022;\n        }\n        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)\n        {\n            return $\u0022[ERROR: {ex.Message}]\u0022;\n        }\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(ProcessPaymentSafe(100000m, 50000m));\n        Console.WriteLine(ProcessPaymentSafe(100000m, 200000m));\n    }\n}"
+}

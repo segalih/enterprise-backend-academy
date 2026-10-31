@@ -1,0 +1,165 @@
+{
+  "id": "lesson-14-04",
+  "levelId": "level-14",
+  "moduleId": "mod-14-03",
+  "order": 4,
+  "title": "Resilience Engineering: Circuit Breaker, Bulkhead, Retry dengan Jitter, dan Fallback",
+  "slug": "resilience-circuit-breaker-polly",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 60,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membangun sistem backend tahan banting dengan Microsoft.Extensions.Resilience / Polly: Circuit Breaker state machine (Closed, Open, Half-Open), Exponential Backoff dengan Full Jitter, isolasi Bulkhead, dan strategi Fallback.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-14-01",
+      "reason": "Sistem Terdistribusi \u0026 Partial Failures"
+    },
+    {
+      "lessonId": "lesson-11-01",
+      "reason": "Kestrel \u0026 Middleware Pipeline"
+    }
+  ],
+  "introduces": [
+    "Cascading Failures in Microservices",
+    "Circuit Breaker state machine (Closed, Open, Half-Open)",
+    "Retry Storms \u0026 Exponential Backoff with Full Jitter",
+    "Bulkhead Isolation pattern (Resource fencing)",
+    "Fallback responses \u0026 Graceful Degradation",
+    "Polly \u0026 Microsoft.Extensions.Resilience integration"
+  ],
+  "learningObjectives": [
+    "Menganalisis fenomena \u0027Cascading Failure\u0027 di mana satu service lambat merobohkan seluruh ekosistem backend",
+    "Menerapkan Circuit Breaker untuk menghentikan pemanggilan ke downstream service yang sedang kolaps",
+    "Menjelaskan bahaya \u0027Retry Storms\u0027 dan mengatasinya menggunakan Exponential Backoff \u002B Jitter acak",
+    "Mengonfigurasi Bulkhead Isolation untuk membatasi konsumsi resource per-tenant atau per-fitur"
+  ],
+  "markdownContent": "# Resilience Engineering: Circuit Breaker, Bulkhead, Retry dengan Jitter, dan Fallback\n\nDalam sistem terdistribusi skala enterprise, service hilir (*downstream dependencies*) seperti payment gateway pihak ketiga, database eksternal, atau microservice lain pasti akan mengalami gangguan berkala.\n\nJika backend Anda bereaksi secara naif\u2014misalnya terus membombardir service yang sedang down dengan ribuan request retry per detik\u2014Anda akan menciptakan **Cascading Failure (Kegagalan Berantai)** dan **Retry Storm**: server Anda kehabisan thread pool, CPU melonjak 100%, dan seluruh ekosistem perusahaan ikut mati.\n\nRekayasa ketahanan sistem (**Resilience Engineering**) menyediakan strategi untuk menjaga kestabilan aplikasi di bawah tekanan gangguan.\n\n---\n\n## 1. Fenomena Retry Storm dan Mengapa Jitter Wajib Digunakan\n\nKetika database atau service eksternal mengalami penurunan performa, semua client yang gagal secara refleks melakukan retry.\nJika 10.000 client melakukan retry pada detik yang sama:\n\u0060\u0060\u0060mermaid\nsequenceDiagram\n    autonumber\n    participant C1 as Client 1\n    participant C2 as Client 2\n    participant CN as Client N\n    participant S as Downstream Server (Overloaded)\n\n    Note over C1,CN: Kegagalan terjadi serentak\n    C1-\u003E\u003ES: Request Gagal (503)\n    C2-\u003E\u003ES: Request Gagal (503)\n    CN-\u003E\u003ES: Request Gagal (503)\n    Note over C1,CN: Tanpa Jitter: Tunggu tepat 2.0s\n    par Thundering Herd Attack\n        C1-\u003E\u003ES: Retry Bersamaan (Detik 2.0)\n    and\n        C2-\u003E\u003ES: Retry Bersamaan (Detik 2.0)\n    and\n        CN-\u003E\u003ES: Retry Bersamaan (Detik 2.0)\n    end\n    Note over S: Korban Roboh Total!\n\u0060\u0060\u0060\nIni disebut **Thundering Herd / Retry Storm**. Beban lonjakan ini memastikan service yang sedang sakit tidak akan pernah bisa pulih!\n\n### Solusi: Exponential Backoff \u002B Full Jitter\nAlih-alih menunggu waktu konstan, tambahkan komponen acak (*jitter*):\n\u0060\u0060\u0060csharp\n// Rumus Full Jitter: Sleep = Random(0, Min(MaxBackoff, BaseDelay * 2^attempt))\nvar delay = TimeSpan.FromMilliseconds(Random.Shared.Next(0, (int)Math.Min(10000, 200 * Math.Pow(2, attempt))));\n\u0060\u0060\u0060\nJitter menyebarkan request retry secara merata sepanjang waktu, memberi ruang bagi service yang tertekan untuk memulihkan diri.\n\n---\n\n## 2. Circuit Breaker State Machine\n\nPola **Circuit Breaker** (terinspirasi dari sekring listrik rumah tangga) mencegah sistem memanggil service yang diketahui sedang rusak.\n\n\u0060\u0060\u0060mermaid\nstateDiagram-v2\n    [*] --\u003E Closed: Awal\n    Closed --\u003E Open: Tingkat kegagalan melebihi ambang batas (Fast Fail)\n    Open --\u003E HalfOpen: Durasi cooling-off selesai (misal 30 detik)\n    HalfOpen --\u003E Closed: Uji coba request berhasil berturut-turut\n    HalfOpen --\u003E Open: Uji coba request gagal\n\u0060\u0060\u0060\n\n1. **Closed**: Aliran normal. Jika kegagalan melebihi threshold (misal 50% gagal dalam 10 detik), sirkuit berpindah ke **Open**.\n2. **Open**: Sirkuit putus! Semua request langsung ditolak seketika (*Fast-Fail*) tanpa mengirim paket jaringan ke service yang sakit. Ini melindungi service downstream dan membebaskan thread server Anda.\n3. **Half-Open**: Setelah waktu istirahat (misal 30 detik), sirkuit mengizinkan segelintir request lewat untuk menguji apakah downstream service sudah sehat. Jika sukses, kembali ke **Closed**; jika masih gagal, kembali ke **Open**.\n\n---\n\n## 3. Bulkhead Isolation: Menyekat Kebocoran Resource\n\nPola **Bulkhead** diambil dari sekat-sekat kedap air pada lambung kapal laut: jika lambung kapal bocor di satu kompartemen, hanya kompartemen itu yang terisi air; kapal tetap mengapung.\n\nDi backend engineering:\n- Batasi jumlah koneksi / thread maksimal yang dialokasikan untuk memanggil satu service tertentu (misal: Service Rekomendasi maksimal 10 thread).\n- Jika Service Rekomendasi hang, hanya 10 thread yang terblokir. Sisa 90 thread di ThreadPool tetap dapat melayani transaksi pembayaran dan login pengguna!\n\n---\n\n## 4. Implementasi Modern dengan \u0060Microsoft.Extensions.Resilience\u0060 (.NET 8)\n\nDi .NET 8, Microsoft menyediakan paket terpadu \u0060Microsoft.Extensions.Http.Resilience\u0060 yang dibangun di atas Polly v8:\n\n\u0060\u0060\u0060csharp\nbuilder.Services.AddHttpClient\u003CPaymentClient\u003E()\n    .AddStandardResilienceHandler(options =\u003E\n    {\n        // 1. Rate Limiting\n        options.RateLimiter.PermitLimit = 100;\n        \n        // 2. Retry with Jitter\n        options.Retry.MaxRetryAttempts = 3;\n        options.Retry.BackoffType = DelayBackoffType.Exponential;\n        options.Retry.UseJitter = true;\n        \n        // 3. Circuit Breaker\n        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);\n        options.CircuitBreaker.FailureRatio = 0.5; // 50% gagal memicu Open\n        options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(15);\n        \n        // 4. Timeout\n        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(5);\n    });\n\u0060\u0060\u0060\n\n---\n\n## 5. Ringkasan \u0026 Aturan Ketahanan\n\n1. **Gagal Cepat Lebih Baik daripada Menggantung (Fast-Fail \u003E Hanging)**: Selalu tetapkan batas waktu (*timeout*) agresif. Menunggu 30 detik untuk request yang akhirnya gagal adalah pengalaman pengguna yang buruk dan memboroskan resource server.\n2. **Kombinasikan Circuit Breaker dengan Fallback**: Saat sirkuit berstatus Open, kembalikan respons default (*Graceful Degradation*), misalnya data rekomendasi default atau pesan antrean pemrosesan lambat.\n3. **Jangan Pernah Retry Tanpa Jitter**: Jitter adalah perlindungan terbaik server Anda dari badai request diri sendiri.",
+  "starterCode": "using System;\nusing System.Threading.Tasks;\n\n// Simulasi Mini Circuit Breaker State Machine\npublic enum CircuitState { Closed, Open, HalfOpen }\n\npublic class MiniCircuitBreaker\n{\n    public CircuitState State { get; private set; } = CircuitState.Closed;\n    private int _consecutiveFailures = 0;\n    private readonly int _failureThreshold = 3;\n\n    public async Task\u003Cstring\u003E ExecuteAsync(Func\u003CTask\u003Cstring\u003E\u003E action, Func\u003Cstring\u003E fallback)\n    {\n        // TODO:\n        // 1. Jika State == CircuitState.Open:\n        //    Cetak \u0022[CIRCUIT OPEN] Fast-fail! Menjalankan fallback langsung.\u0022\n        //    Kembalikan fallback().\n        // 2. Jika State == CircuitState.Closed:\n        //    Jalankan try-catch di sekitar action().\n        //    Jika sukses: reset _consecutiveFailures = 0, kembalikan hasil.\n        //    Jika gagal: naikkan _consecutiveFailures\u002B\u002B. \n        //    Jika _consecutiveFailures \u003E= _failureThreshold, ubah State = CircuitState.Open!\n        //    Kembalikan fallback().\n        \n        return fallback();\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var breaker = new MiniCircuitBreaker();\n        Func\u003CTask\u003Cstring\u003E\u003E brokenService = () =\u003E throw new Exception(\u0022503 Service Unavailable\u0022);\n        Func\u003Cstring\u003E fallback = () =\u003E \u0022Default Cached Response (Degraded)\u0022;\n\n        Console.WriteLine(\u0022--- Menjalankan 5 Panggilan Berturut-turut ---\u0022);\n        for (int i = 1; i \u003C= 5; i\u002B\u002B)\n        {\n            Console.WriteLine($\u0022\\nPanggilan ke-{i}:\u0022);\n            var result = await breaker.ExecuteAsync(brokenService, fallback);\n            Console.WriteLine($\u0022Hasil: {result} | Status Breaker: {breaker.State}\u0022);\n        }\n    }\n}",
+  "solutionCode": "using System;\nusing System.Threading.Tasks;\n\npublic enum CircuitState { Closed, Open, HalfOpen }\n\npublic class MiniCircuitBreaker\n{\n    public CircuitState State { get; private set; } = CircuitState.Closed;\n    private int _consecutiveFailures = 0;\n    private readonly int _failureThreshold = 3;\n\n    public async Task\u003Cstring\u003E ExecuteAsync(Func\u003CTask\u003Cstring\u003E\u003E action, Func\u003Cstring\u003E fallback)\n    {\n        if (State == CircuitState.Open)\n        {\n            Console.WriteLine(\u0022[CIRCUIT OPEN] Fast-fail! Menolak panggilan jaringan, langsung fallback.\u0022);\n            return fallback();\n        }\n\n        try\n        {\n            var res = await action();\n            _consecutiveFailures = 0;\n            return res;\n        }\n        catch\n        {\n            _consecutiveFailures\u002B\u002B;\n            Console.WriteLine($\u0022[FAILURE] Gagal ke-{_consecutiveFailures}/{_failureThreshold}\u0022);\n\n            if (_consecutiveFailures \u003E= _failureThreshold)\n            {\n                State = CircuitState.Open;\n                Console.WriteLine(\u0022[CIRCUIT BREAKER TRIPPED] Ambang batas terlampaui! State sekarang OPEN.\u0022);\n            }\n\n            return fallback();\n        }\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var breaker = new MiniCircuitBreaker();\n        Func\u003CTask\u003Cstring\u003E\u003E brokenService = () =\u003E throw new Exception(\u0022503 Service Unavailable\u0022);\n        Func\u003Cstring\u003E fallback = () =\u003E \u0022Default Cached Response (Degraded)\u0022;\n\n        Console.WriteLine(\u0022--- Menjalankan 5 Panggilan Berturut-turut ---\u0022);\n        for (int i = 1; i \u003C= 5; i\u002B\u002B)\n        {\n            Console.WriteLine($\u0022\\nPanggilan ke-{i}:\u0022);\n            var result = await breaker.ExecuteAsync(brokenService, fallback);\n            Console.WriteLine($\u0022Hasil: {result} | Status Breaker: {breaker.State}\u0022);\n        }\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-14-04-1",
+      "type": "single_choice",
+      "question": "Apa tujuan utama dari penambahan Jitter (variasi acak) pada algoritma Exponential Backoff saat melakukan retry request jaringan?",
+      "options": [
+        "Untuk mempercepat transmisi kabel fiber optik.",
+        "Mencegah terjadinya Retry Storm (Thundering Herd) di mana ribuan client melakukan retry secara serentak pada interval waktu yang persis sama, membombardir server yang sedang berusaha pulih.",
+        "Mengenkripsi payload data agar tidak terbaca hacker.",
+        "Jitter adalah bug compiler C# yang tidak sengaja menjadi fitur."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Tanpa jitter, seluruh client yang gagal akan menjadwalkan retry pada detik yang identik (misal serentak pada detik ke-2, ke-4, ke-8). Jitter mengacak jeda tunggu sehingga beban retry tersebar merata sepanjang waktu, memberi kesempatan bagi server hilir untuk memulihkan kapasitasnya.",
+      "optionExplanations": [
+        "Salah. Jitter adalah logika software aplikasi, bukan pengubah sifat fisik kabel.",
+        "Benar! Jitter memecah lonjakan retry tersinkronisasi menjadi distribusi yang merata.",
+        "Salah. Enkripsi ditangani oleh protokol TLS.",
+        "Salah. Jitter adalah pola matematika rekayasa terdistribusi yang sengaja dirancang oleh arsitek sistem."
+      ],
+      "sectionRef": "1. Fenomena Retry Storm dan Mengapa Jitter Wajib Digunakan",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-14-04-2",
+      "type": "single_choice",
+      "question": "Apa perilaku dari Circuit Breaker ketika berada dalam status \u0027Open\u0027?",
+      "options": [
+        "Meneruskan seluruh request ke server hilir dengan prioritas tertinggi.",
+        "Menolak request masuk secara instan (Fast-Fail) tanpa mengirimkan paket jaringan ke downstream dependency yang sedang bermasalah, dan langsung mengembalikan fallback.",
+        "Menghapus seluruh file log di server.",
+        "Memaksa server untuk restart otomatis."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Ketika sirkuit \u0027Open\u0027, pemanggilan ke downstream service dibatalkan seketika tanpa overhead jaringan. Hal ini melindungi server dari thread exhaustion dan memberi waktu bagi downstream service untuk sembuh tanpa dibebani lalu lintas request.",
+      "optionExplanations": [
+        "Salah. Sirkuit tertutup (Closed) yang meneruskan request normal.",
+        "Benar! Fast-fail melindungi resource internal dan downstream service dari overload berkepanjangan.",
+        "Salah. Circuit breaker tidak menghapus file log.",
+        "Salah. Tidak ada reboot server yang dilakukan."
+      ],
+      "sectionRef": "2. Circuit Breaker State Machine",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-14-04",
+    "Title": "Simulasi State Machine Circuit Breaker (Polly Pattern)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Simulasikan Circuit Breaker dengan 3 state: \u0027Closed\u0027, \u0027Open\u0027, dan \u0027HalfOpen\u0027.\nAturan:\n- Awal: \u0027Closed\u0027, counter gagal = 0.\n- Jika state \u0027Closed\u0027:\n  - \u0027FAIL\u0027: counter gagal bertambah 1. Jika counter gagal \u003E= 3, transisi ke \u0027Open\u0027.\n  - \u0027SUCCESS\u0027: reset counter gagal ke 0.\n- Jika state \u0027Open\u0027: seluruh panggilan otomatis ditolak dan menghasilkan \u0027FAST_FAIL\u0027. Jika menerima perintah \u0027RESET\u0027, transisi ke \u0027HalfOpen\u0027.\n- Jika state \u0027HalfOpen\u0027:\n  - \u0027SUCCESS\u0027: transisi ke \u0027Closed\u0027, counter gagal = 0.\n  - \u0027FAIL\u0027: langsung transisi kembali ke \u0027Open\u0027.\nBaca urutan event dari stdin dipisahkan koma: \u0027FAIL, FAIL, FAIL, CALL, RESET, SUCCESS\u0027.\nCetak status state akhir Circuit Breaker: \u0027CIRCUIT_STATE: \u003CState\u003E\u0027.",
+    "InputFormat": "Satu baris deretan event dipisahkan koma.",
+    "OutputFormat": "Satu baris: \u0027CIRCUIT_STATE: \u003CState\u003E\u0027.",
+    "Constraints": "Event: FAIL, SUCCESS, CALL, RESET.",
+    "Examples": [
+      {
+        "Input": "FAIL, FAIL, FAIL",
+        "Output": "CIRCUIT_STATE: Open",
+        "Explanation": "3 kali gagal berturut-turut membuka circuit breaker."
+      },
+      {
+        "Input": "FAIL, FAIL, FAIL, RESET, SUCCESS",
+        "Output": "CIRCUIT_STATE: Closed",
+        "Explanation": "Reset ke HalfOpen lalu Success menutup kembali circuit."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Simulasikan state machine Circuit Breaker.\n        Console.WriteLine(\u0022CIRCUIT_STATE: Closed\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022CIRCUIT_STATE: Closed\u0022); return; }\n\n        string state = \u0022Closed\u0022;\n        int failures = 0;\n\n        var events = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var ev in events)\n        {\n            string e = ev.Trim().ToUpperInvariant();\n            if (state == \u0022Closed\u0022)\n            {\n                if (e == \u0022FAIL\u0022)\n                {\n                    failures\u002B\u002B;\n                    if (failures \u003E= 3) state = \u0022Open\u0022;\n                }\n                else if (e == \u0022SUCCESS\u0022)\n                {\n                    failures = 0;\n                }\n            }\n            else if (state == \u0022Open\u0022)\n            {\n                if (e == \u0022RESET\u0022)\n                {\n                    state = \u0022HalfOpen\u0022;\n                }\n            }\n            else if (state == \u0022HalfOpen\u0022)\n            {\n                if (e == \u0022SUCCESS\u0022)\n                {\n                    state = \u0022Closed\u0022;\n                    failures = 0;\n                }\n                else if (e == \u0022FAIL\u0022)\n                {\n                    state = \u0022Open\u0022;\n                }\n            }\n        }\n\n        Console.WriteLine($\u0022CIRCUIT_STATE: {state}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Open)",
+        "Description": "Contoh 1 (Open): input \u0027FAIL, FAIL, FAIL\u0027 -\u003E expected \u0027CIRCUIT_STATE: Open\u0027",
+        "Input": "FAIL, FAIL, FAIL",
+        "ExpectedOutput": "CIRCUIT_STATE: Open",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Pulih ke Closed)",
+        "Description": "Contoh 2 (Pulih ke Closed): input \u0027FAIL, FAIL, FAIL, RESET, SUCCESS\u0027 -\u003E expected \u0027CIRCUIT_STATE: Closed\u0027",
+        "Input": "FAIL, FAIL, FAIL, RESET, SUCCESS",
+        "ExpectedOutput": "CIRCUIT_STATE: Closed",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Dua Kali Gagal Saja",
+        "Description": "Dua Kali Gagal Saja: input \u0027FAIL, FAIL, SUCCESS\u0027 -\u003E expected \u0027CIRCUIT_STATE: Closed\u0027",
+        "Input": "FAIL, FAIL, SUCCESS",
+        "ExpectedOutput": "CIRCUIT_STATE: Closed",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "HalfOpen Gagal Kembali Open",
+        "Description": "HalfOpen Gagal Kembali Open: input \u0027FAIL, FAIL, FAIL, RESET, FAIL\u0027 -\u003E expected \u0027CIRCUIT_STATE: Open\u0027",
+        "Input": "FAIL, FAIL, FAIL, RESET, FAIL",
+        "ExpectedOutput": "CIRCUIT_STATE: Open",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola Circuit Breaker mencegah aplikasi membanjiri downstream service yang sedang down dengan request yang pasti gagal.",
+      "Gunakan variabel string state dan switch/if kondisional per event."
+    ],
+    "Explanation": "Circuit Breaker pattern (seperti yang disediakan library Polly di .NET) memutus aliran trafik saat downstream mengalami gangguan berulang, melindungi ketersediaan seluruh sistem."
+  },
+  "relatedLessons": [
+    "lesson-14-01",
+    "lesson-14-03",
+    "lesson-11-01"
+  ],
+  "references": [
+    {
+      "title": "Release It!: Design and Deploy Production-Ready Software - Michael Nygard",
+      "url": "https://pragprog.com/titles/mnee2/release-it-second-edition/",
+      "type": "book"
+    },
+    {
+      "title": "Polly Documentation - App-vNext",
+      "url": "https://www.thepollyproject.org/",
+      "type": "documentation"
+    }
+  ]
+}

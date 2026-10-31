@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-00-02",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-01",
+    "order":  2,
+    "title":  "CPU Deep Dive: Cores, Threads, ALU, Control Unit \u0026 Registers",
+    "slug":  "cpu-deep-dive",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mempelajari struktur internal core CPU: Arithmetic Logic Unit (ALU), Control Unit, siklus instruksi Fetch-Decode-Execute, serta perbedaan antara hardware thread dan software thread.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-01",
+                              "title":  "Anatomi Komputer",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami bagaimana CPU menerima data melalui System Bus."
+                          }
+                      ],
+    "introduces":  [
+                       "ALU",
+                       "Control Unit",
+                       "Instruction Pointer (Program Counter)",
+                       "General Purpose Registers",
+                       "Hardware Hyper-Threading",
+                       "Clock Cycle"
+                   ],
+    "learningObjectives":  [
+                               "Menjelaskan peran ALU, Control Unit, dan Register dalam pemrosesan instruksi.",
+                               "Menguraikan alur kerja 3 tahap siklus instruksi: Fetch, Decode, dan Execute.",
+                               "Membedakan antara Physical Core, Hardware Thread (SMT), dan OS Managed Thread."
+                           ],
+    "markdownContent":  "# CPU Deep Dive: Cores, Threads, ALU, Control Unit \u0026 Registers\n\n## Anatomi Internal Sebuah CPU Core\nSebuah CPU server modern (seperti AMD EPYC atau Intel Xeon) terdiri dari banyak **Physical Cores**. Di dalam setiap inti prosesor, terdapat komponen mikro-arsitektur independen:\n\n```mermaid\nflowchart TD\n    subgraph Core[\"Sebuah Core Prosesor\"]\n        CU[\"Control Unit\u003cbr/\u003eâ€¢ Instruction Decoder\u003cbr/\u003eâ€¢ Branch Predictor\u003cbr/\u003eâ€¢ Pipeline Orchestrator\"]\n        ALU[\"Arithmetic Logic Unit (ALU)\u003cbr/\u003eâ€¢ Integer Adder/Sub\u003cbr/\u003eâ€¢ Bitwise AND/OR/XOR\u003cbr/\u003eâ€¢ Multiplier/Divider\"]\n        REG[\"Register File (SRAM)\u003cbr/\u003eâ€¢ RIP/PC (Instruction Pointer)\u003cbr/\u003eâ€¢ RSP (Stack Pointer)\u003cbr/\u003eâ€¢ RAX, RBX, RCX, RDX, R8-R15\u003cbr/\u003eâ€¢ RFLAGS (Flags)\"]\n        CU --\u003e|Instruksi Dekode| REG\n        REG --\u003e|Operan| ALU\n        ALU --\u003e|Hasil Komputasi| REG\n    end\n```\n\n1. **Arithmetic Logic Unit (ALU)**: Melakukan kalkulasi matematika (penjumlahan, pengurangan, perkalian) dan operasi logika bitwise (AND, OR, XOR, Shift).\n2. **Control Unit (CU)**: Pengarah lalu lintas sinyal mikro-instruksi. CU membaca instruksi binary dari memori, menerjemahkannya (*decode*), lalu menyalakan jalur gerbang logika yang tepat di ALU atau register.\n3. **Registers**: Memori tercepat di dalam komputer (kecepatan akses 1 siklus clock, \u003c 0.5 ns). Kapasitasnya sangat terbatas (umumnya 16-32 register general purpose 64-bit per core).\n\n---\n\n## Siklus Instruksi: Fetch, Decode, Execute\nSetiap detik, miliaran instruksi dieksekusi melalui siklus deterministik berulang:\n\n```mermaid\nflowchart TD\n    S1[\"1. FETCH: Baca instruksi biner dari L1 Instruction Cache (RIP)\"]\n    S2[\"2. DECODE: Control Unit menerjemahkan opcode biner menjadi micro-ops\"]\n    S3[\"3. EXECUTE: ALU mengeksekusi kalkulasi aritmatika / memori\"]\n    S4[\"4. WRITEBACK: Hasil ditulis ke Register tujuan / L1 Data Cache\"]\n\n    S1 --\u003e S2 --\u003e S3 --\u003e S4\n```\n\n---\n\n## Physical Cores vs Simultaneous Multithreading (SMT / Hyper-Threading)\nBanyak pemula backend bingung ketika melihat spesifikasi server: *\"8 Cores, 16 Threads\"*.\n- **Physical Core**: Satu unit hardware independen lengkap dengan ALU, floating point unit, decoder, dan L1/L2 cache sendiri.\n- **Hardware Thread (Hyper-Threading / SMT)**: Dalam 1 physical core, ALU sering kali menganggur saat menunggu data dari RAM (memori stall). SMT menambahkan **dua set register state (RIP, General Registers)** pada satu physical core yang sama. Ketika thread 1 terhenti menunggu data RAM, core dapat beralih mengeksekusi instruksi dari thread 2 dalam 0 siklus overhead!\n- **OS Thread / .NET CLR Thread**: Abstraksi perangkat lunak yang dijadwalkan oleh kernel OS ke salah satu Hardware Thread yang tersedia.",
+    "starterCode":  "using System;\nusing System.Diagnostics;\nusing System.Threading;\n\n// PROGRAM: Memeriksa Kapasitas Hardware Thread \u0026 Utilisasi Core\nConsole.WriteLine($\"=== INFORMASI CPU SERVER ===\");\nConsole.WriteLine($\"Logical Hardware Threads: {Environment.ProcessorCount}\");\nConsole.WriteLine($\"64-Bit Process: {Environment.Is64BitProcess}\");\nConsole.WriteLine($\"Current Managed Thread ID: {Environment.CurrentManagedThreadId}\");\n\n// Eksperimen pemanfaatan ALU: Kalkulasi intensif CPU\nvar sw = Stopwatch.StartNew();\nlong counter = 0;\nfor (int i = 0; i \u003c 50_000_000; i++)\n{\n    counter += (i ^ 3) * 7; // Menggunakan operasi ALU integer perkalian dan XOR\n}\nsw.Stop();\n\nConsole.WriteLine($\"Operasi ALU selesai dalam: {sw.ElapsedMilliseconds} ms (Checksum: {counter})\");\n// TODO: Amati beban CPU di Task Manager saat loop komputasi ini berjalan!",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-02-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Komponen manakah di dalam CPU yang bertugas menerjemahkan opcode biner instruksi mesin dan mengaktifkan jalur sinyal kontrol ke ALU?",
+                              "options":  [
+                                              "Arithmetic Logic Unit (ALU)",
+                                              "Control Unit (CU)",
+                                              "Translation Lookaside Buffer (TLB)",
+                                              "L3 Cache Controller"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Control Unit bertanggung jawab atas siklus Fetch dan Decode, menerjemahkan opcode biner menjadi sinyal mikro untuk unit eksekusi seperti ALU.",
+                              "optionExplanations":  [
+                                                         "Salah. ALU bertugas melakukan kalkulasi matematika dan logika, bukan mendekode instruksi.",
+                                                         "Benar! Control Unit mengatur alur instruksi dan menerjemahkan opcode biner.",
+                                                         "Salah. TLB adalah cache untuk penerjemahan alamat virtual memory ke fisik.",
+                                                         "Salah. L3 cache controller mengelola perpindahan data pada cache memori tingkat 3."
+                                                     ],
+                              "sectionRef":  "Anatomi Internal Sebuah CPU Core",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-02-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa perbedaan mendasar antara Physical Core dan Hardware Thread (Hyper-Threading / SMT)?",
+                              "options":  [
+                                              "Physical Core hanya bisa menjalankan instruksi 32-bit, sedangkan Hardware Thread 64-bit",
+                                              "Hardware Thread menggandakan unit eksekusi fisik ALU dan floating point",
+                                              "Hardware Thread menggandakan register state (konteks arsitektural) pada satu physical core yang sama untuk mengurangi idle time",
+                                              "Tidak ada perbedaan sama sekali, keduanya identik secara fisik"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Simultaneous Multithreading (SMT) menggandakan register file (architectural state) seperti Instruction Pointer dan General Purpose Registers sehingga 1 physical core dapat mengeksekusi dua instruksi thread bergantian saat terjadi memory stall.",
+                              "optionExplanations":  [
+                                                         "Salah. Keduanya mendukung instruksi arsitektur yang sama (misal x86-64).",
+                                                         "Salah. SMT tidak menggandakan unit eksekusi fisik ALU, melainkan berbagi ALU yang sama.",
+                                                         "Benar! Hyper-Threading menggandakan set register sehingga core fisik yang sama bisa beralih thread secara instan.",
+                                                         "Salah. Physical core memiliki sirkuit komputasi lengkap mandiri, sedangkan logical thread berbagi ALU yang ada."
+                                                     ],
+                              "sectionRef":  "Physical Cores vs Simultaneous Multithreading (SMT / Hyper-Threading)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-00-03",
+                               "title":  "Hierarki Memori",
+                               "levelName":  "LEVEL 00",
+                               "context":  "Perpindahan data dari register ke cache L1/L2/L3."
+                           },
+                           {
+                               "lessonId":  "lesson-01-01",
+                               "title":  "Eksekusi Kode: Source Code ke Machine Code",
+                               "levelName":  "LEVEL 01",
+                               "context":  "Bagaimana compiler C# menerjemahkan kode ke opcode register ini."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Intel 64 and IA-32 Architectures Software Developer Manuals",
+                           "url":  "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+                       },
+                       {
+                           "title":  "Modern Processor Design - Shen \u0026 Lipasti",
+                           "url":  "https://www.waveland.com/titles/Shen-Lipasti.html"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class CpuSimulator\n{\n    public static int ExecuteInstructions(string[] instructions)\n    {\n        int r1 = 0;\n        int r2 = 0;\n\n        foreach (var inst in instructions)\n        {\n            if (string.IsNullOrWhiteSpace(inst)) continue;\n            var parts = inst.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n            string op = parts[0].ToUpperInvariant();\n\n            if (op == \"ADD\" \u0026\u0026 parts.Length \u003e 1 \u0026\u0026 int.TryParse(parts[1], out int valAdd))\n            {\n                r1 += valAdd;\n            }\n            else if (op == \"SUB\" \u0026\u0026 parts.Length \u003e 1 \u0026\u0026 int.TryParse(parts[1], out int valSub))\n            {\n                r1 -= valSub;\n            }\n            else if (op == \"SWAP\")\n            {\n                int temp = r1;\n                r1 = r2;\n                r2 = temp;\n            }\n        }\n\n        return r1;\n    }\n\n    public static void Main()\n    {\n        string[] program = { \"ADD 10\", \"SWAP\", \"ADD 5\", \"SUB 2\" };\n        Console.WriteLine($\"Hasil R1: {ExecuteInstructions(program)}\");\n    }\n}"
+}

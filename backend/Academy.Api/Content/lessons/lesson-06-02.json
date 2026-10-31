@@ -1,0 +1,175 @@
+{
+  "id": "lesson-06-02",
+  "levelId": "level-06",
+  "moduleId": "mod-06-01",
+  "order": 2,
+  "title": "Proses vs Thread: Context Switching Overhead, Thread Stack, dan IPC",
+  "slug": "process-vs-thread-context-switch-ipc",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menganalisis perbedaan mendasar antara Proses OS (isolasi memori penuh) dan Thread (berbagi memori heap), biaya CPU saat Context Switching, alokasi Thread Stack 1 MB, serta mekanisme Inter-Process Communication (IPC).",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-07",
+      "title": "Sistem Operasi \u0026 Kernel",
+      "levelName": "LEVEL 00",
+      "context": "Memahami mode User dan Kernel OS."
+    },
+    {
+      "lessonId": "lesson-00-08",
+      "title": "Virtual Memory \u0026 Paging",
+      "levelName": "LEVEL 00",
+      "context": "Memahami isolasi ruang alamat virtual per proses."
+    }
+  ],
+  "introduces": [
+    "OS Process vs OS Thread",
+    "Process Control Block (PCB) vs TCB",
+    "Context Switch Latency \u0026 TLB Flush",
+    "Thread Stack Allocation (1 MB)",
+    "Thread Pool vs Dedicated Threads",
+    "Inter-Process Communication (IPC: Pipes, Sockets)"
+  ],
+  "learningObjectives": [
+    "Membedakan batas keamanan dan ruang memori antara Proses dan Thread.",
+    "Menganalisis biaya CPU saat Thread Context Switch (register swapping dan cache thrashing).",
+    "Menjelaskan mengapa membuat thread secara manual (new Thread()) adalah anti-pattern dibandingkan ThreadPool."
+  ],
+  "markdownContent": "# Proses vs Thread: Context Switching Overhead, Thread Stack, dan IPC\n\n## Perbedaan Mutlak: Proses vs Thread\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    subgraph Proc[\u0022OS Process (PID: 4012) - Virtual Address Space Pribadi\u0022]\n        Heap[\u0022Managed Heap Bersama\u003Cbr/\u003E\u2022 Objek C# \u0026 Singleton Data\u003Cbr/\u003E\u2022 Static Variables\u0022]\n        subgraph T1[\u0022Thread 1\u0022]\n            S1[\u0022Thread Stack (1 MB)\u003Cbr/\u003EContext Register \u0026 Call Frame\u0022]\n        end\n        subgraph T2[\u0022Thread 2\u0022]\n            S2[\u0022Thread Stack (1 MB)\u003Cbr/\u003EContext Register \u0026 Call Frame\u0022]\n        end\n        T1 \u003C--\u003E|Akses Memori Bersama| Heap\n        T2 \u003C--\u003E|Akses Memori Bersama| Heap\n    end\n\u0060\u0060\u0060\n\n1. **Proses (Process)**:\n   - Unit isolasi keamanan dan alokasi sumber daya independen oleh OS.\n   - Memiliki ruang alamat memori virtual (\u0060Virtual Address Space\u0060), file handle, dan hak akses keamanan sendiri.\n   - Kerusakan (*crash*) pada Proses 1 tidak akan mempengaruhi Proses 2.\n2. **Thread**:\n   - Unit penjadwalan eksekusi terkecil di CPU.\n   - **Seluruh thread di dalam satu proses BERBAGI memori Heap yang sama!**\n   - Keuntungan: Komunikasi sangat cepat (tinggal membaca objek di Heap yang sama).\n   - Bahaya: Kesalahan konkurensi (seperti race condition) di satu thread dapat merusak memori seluruh proses.\n\n---\n\n## Biaya Tersembunyi: Context Switching\nKetika CPU beralih dari mengeksekusi Thread A ke Thread B:\n1. **Direct Cost**: Kernel OS menangguhkan Thread A, menyimpan seluruh register CPU fisik (RAX, RBX, RIP, RSP, RFLAGS) ke dalam Thread Control Block (TCB) di RAM, lalu memuat register milik Thread B.\n2. **Indirect Cost (Bencana Cache / TLB Invalidation)**:\n   - Jika berpindah **antar proses berbeda**, CPU harus mengganti Page Table register (\u0060CR3\u0060), yang memaksa seluruh isi **TLB (Translation Lookaside Buffer)** dibuang bersih!\n   - Cache L1 dan L2 prosesor kini berisi data milik thread lama (*Cache Cold*), sehingga thread baru mengalami ribuan cache miss beruntun.\n   - Biaya latensi: **1.000 hingga 10.000 nanodetik per context switch!**\n\n---\n\n## Bahaya Anti-Pattern: \u0060new Thread()\u0060 Berlebih\nDi C#, membuat thread manual secara sembarangan:\n\u0060\u0060\u0060csharp\nfor (int i = 0; i \u003C 5000; i\u002B\u002B)\n{\n    new Thread(() =\u003E HandleRequest()).Start(); // BENCANA SERVER CRASH!\n}\n\u0060\u0060\u0060\n1. **Konsumsi Memori Stack**: Setiap thread OS mengalokasikan **1 MB virtual memory stack** secara default. 5.000 thread berarti **5 GB RAM habis hanya untuk menampung stack kosong!**\n2. **Thread Starvation \u0026 Context Thrashing**: CPU menghabiskan 90% waktunya hanya untuk memindahkan register antar 5.000 thread (*context switching*) alih-alih mengeksekusi logika bisnis nyata.\n\n### Solusi Enterprise: CLR ThreadPool \u0026 Async/Await\nGunakan **CLR ThreadPool** (dikelola otomatis oleh \u0060Task.Run\u0060 dan \u0060async/await\u0060) yang mempertahankan sejumlah kecil worker threads (sesuai jumlah core CPU fisik) dan menggunakan antrian kerja cerdas (*work-stealing queue*).",
+  "starterCode": "using System;\nusing System.Diagnostics;\nusing System.Threading;\n\n// PROGRAM: Mengamati ThreadPool vs Manual Dedicated Thread\nConsole.WriteLine($\u0022=== METRIK THREAD SISTEM ===\u0022);\nConsole.WriteLine($\u0022Hardware Cores : {Environment.ProcessorCount}\u0022);\n\nThreadPool.GetAvailableThreads(out int workerThreads, out int completionPortThreads);\nConsole.WriteLine($\u0022ThreadPool Worker Threads Tersedia: {workerThreads}\u0022);\n\n// Menjalankan tugas ringan via ThreadPool (Efisien, tanpa alokasi thread OS baru)\nvar sw = Stopwatch.StartNew();\nThreadPool.QueueUserWorkItem(_ =\u003E {\n    Console.WriteLine($\u0022[WORKER POOL] Thread ID: {Environment.CurrentManagedThreadId} | Waktu Eksekusi: {sw.ElapsedMilliseconds} ms\u0022);\n});\n\nThread.Sleep(50); // Menunggu sejenak agar threadpool selesai dieksekusi",
+  "quizQuestions": [
+    {
+      "id": "q-06-02-1",
+      "type": "MultipleChoice",
+      "question": "Berapa ukuran default ruang memori Call Stack yang dialokasikan oleh sistem operasi untuk setiap Dedicated Thread yang dibuat di C# (64-bit)?",
+      "options": [
+        "64 Byte",
+        "4 Kilobyte",
+        "1 Megabyte",
+        "100 Megabyte"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Pada arsitektur 64-bit Windows dan Linux, setiap OS Thread secara default memesan ruang memori virtual sebesar 1 Megabyte untuk Call Stack-nya.",
+      "optionExplanations": [
+        "Salah. 64 byte adalah ukuran CPU Cache Line.",
+        "Salah. 4 KB adalah ukuran satu halaman virtual memory (Page).",
+        "Benar! 1 MB adalah alokasi baku memori stack per dedicated thread di sistem 64-bit.",
+        "Salah. 100 MB terlalu boros untuk stack satu thread."
+      ],
+      "sectionRef": "Bahaya Anti-Pattern: new Thread() Berlebih",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-06-02-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa Context Switching antar Proses OS berbeda jauh lebih mahal daripada Context Switching antar Thread di dalam proses yang sama?",
+      "options": [
+        "Karena pergantian proses mewajibkan pembersihan cache translasi halaman memori (TLB Flush) dan penukaran register ruang alamat (Page Table), sedangkan antar-thread berbagi ruang memori yang sama",
+        "Karena proses hanya berjalan di hard drive sedangkan thread di RAM",
+        "Karena pergantian proses membutuhkan izin akses administrator",
+        "Karena compiler C# menolak pergantian proses"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Pergantian antar-proses menuntut pergantian seluruh Page Table (CR3 register) yang memicu TLB flush dan hilangnya lokalitas cache CPU, sedangkan antar-thread berbagi ruang alamat memori yang sama.",
+      "optionExplanations": [
+        "Benar! TLB flush dan pergantian ruang alamat memori virtual menimbulkan penalti latensi hardware yang sangat masif.",
+        "Salah. Kedua entitas berjalan di memori RAM dan dieksekusi CPU.",
+        "Salah. OS scheduler mengelola context switch secara otomatis tanpa prompt user.",
+        "Salah. Context switch ditangani oleh kernel OS, bukan compiler."
+      ],
+      "sectionRef": "Biaya Tersembunyi: Context Switching",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-06-02",
+    "Title": "Kalkulator Estimasi Kebutuhan Memori Thread Stack",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Pada arsitektur 64-bit OS, setiap native thread di .NET secara default dialokasikan stack memory sebesar 1 MB (1024 KB).\nBaca dua angka dari stdin: JumlahThread (int) dan AlokasiHeapMb (int).\nHitung total estimasi kebutuhan memori proses (dalam Megabytes / MB) dengan rumus:\nTotalMemori = (JumlahThread * 1 MB) \u002B AlokasiHeapMb.\nCetak dalam format: \u0027TOTAL_MEMORI: \u003CTotal\u003E MB\u0027.",
+    "InputFormat": "Satu baris memuat JumlahThread dan AlokasiHeapMb dipisahkan spasi.",
+    "OutputFormat": "Satu baris: \u0027TOTAL_MEMORI: \u003CTotal\u003E MB\u0027.",
+    "Constraints": "JumlahThread \u003E= 1, AlokasiHeapMb \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "100 500",
+        "Output": "TOTAL_MEMORI: 600 MB",
+        "Explanation": "100 thread * 1 MB = 100 MB stack \u002B 500 MB heap = 600 MB."
+      },
+      {
+        "Input": "2000 1024",
+        "Output": "TOTAL_MEMORI: 3024 MB",
+        "Explanation": "2000 MB stack \u002B 1024 MB heap = 3024 MB."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Hitung memori stack 1 MB per thread \u002B memori heap.\n        Console.WriteLine(\u0022TOTAL_MEMORI: 0 MB\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 2) return;\n\n        long threads = long.Parse(p[0]);\n        long heapMb = long.Parse(p[1]);\n\n        long total = (threads * 1) \u002B heapMb;\n        Console.WriteLine($\u0022TOTAL_MEMORI: {total} MB\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (100 Thread)",
+        "Description": "Contoh 1 (100 Thread): input \u0027100 500\u0027 -\u003E expected \u0027TOTAL_MEMORI: 600 MB\u0027",
+        "Input": "100 500",
+        "ExpectedOutput": "TOTAL_MEMORI: 600 MB",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (2000 Thread)",
+        "Description": "Contoh 2 (2000 Thread): input \u00272000 1024\u0027 -\u003E expected \u0027TOTAL_MEMORI: 3024 MB\u0027",
+        "Input": "2000 1024",
+        "ExpectedOutput": "TOTAL_MEMORI: 3024 MB",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Satu Thread",
+        "Description": "Satu Thread: input \u00271 100\u0027 -\u003E expected \u0027TOTAL_MEMORI: 101 MB\u0027",
+        "Input": "1 100",
+        "ExpectedOutput": "TOTAL_MEMORI: 101 MB",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Skala Besar",
+        "Description": "Skala Besar: input \u002710000 8192\u0027 -\u003E expected \u0027TOTAL_MEMORI: 18192 MB\u0027",
+        "Input": "10000 8192",
+        "ExpectedOutput": "TOTAL_MEMORI: 18192 MB",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Setiap thread OS memiliki overhead stack fisik 1 MB di lingkungan 64-bit.",
+      "Inilah alasan arsitektur asinkron (async/await) jauh lebih hemat memori dibanding alokasi thread per request."
+    ],
+    "Explanation": "Membuat ribuan thread fisik memboroskan memori virtual stack dan memicu context-switching overhead, mendorong pemanfaatan ThreadPool dan Task async."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-06-03",
+      "title": "Sinkronisasi Rendah: Race Conditions \u0026 Deadlocks",
+      "levelName": "LEVEL 06",
+      "context": "Bahaya tabrakan akses memori antar-thread."
+    },
+    {
+      "lessonId": "lesson-12-01",
+      "title": "Internal Async/Await State Machine",
+      "levelName": "LEVEL 12",
+      "context": "Bagaimana async/await membebaskan thread OS saat menunggu I/O."
+    }
+  ],
+  "references": [
+    {
+      "title": "The Managed Thread Pool - .NET Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/threading/the-managed-thread-pool"
+    },
+    {
+      "title": "Windows Internals (Russinovich et al.) - Processes and Threads",
+      "url": "https://learn.microsoft.com/en-us/sysinternals/resources/windows-internals"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class ThreadMemoryCalculator\n{\n    public static long CalculateThreadStackMemoryMb(int activeThreadCount, int stackSizeKb = 1024)\n    {\n        if (activeThreadCount \u003C= 0 || stackSizeKb \u003C= 0) return 0;\n\n        long totalKb = (long)activeThreadCount * stackSizeKb;\n        return totalKb / 1024;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u00221000 Thread: {CalculateThreadStackMemoryMb(1000)} MB\u0022);\n        Console.WriteLine($\u00225000 Thread: {CalculateThreadStackMemoryMb(5000)} MB\u0022);\n    }\n}"
+}

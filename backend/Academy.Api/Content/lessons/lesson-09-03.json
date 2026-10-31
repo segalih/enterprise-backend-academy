@@ -1,0 +1,178 @@
+{
+  "id": "lesson-09-03",
+  "levelId": "level-09",
+  "moduleId": "mod-09-02",
+  "order": 3,
+  "title": "Transaksi ACID \u0026 Isolation Levels: Dirty Read, Lost Update, Phantom Read, dan MVCC",
+  "slug": "acid-transactions-isolation-levels-mvcc",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "deadlock",
+  "simulatorContext": "Amati simulasi deadlock transaksional pada simulator: Transaksi T1 mengunci baris Rekening A (Exclusive Lock) dan meminta Rekening B, sementara Transaksi T2 memegang Rekening B dan meminta Rekening A, memicu Deadlock Detection di database engine.",
+  "description": "Mendalami 4 pilar transaksi basis data (Atomicity, Consistency, Isolation, Durability), 4 tingkat isolasi transaksi ANSI SQL, anomali konkurensi (Dirty Read, Non-Repeatable Read, Phantom Read), dan arsitektur Multi-Version Concurrency Control (MVCC).",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-06-03",
+      "title": "Sinkronisasi Rendah: Race Conditions \u0026 Deadlocks",
+      "levelName": "LEVEL 06",
+      "context": "Memahami konsep locking dan kontensi konkurensi."
+    }
+  ],
+  "introduces": [
+    "ACID Principles",
+    "Write-Ahead Logging (WAL)",
+    "Dirty Read (Read Uncommitted)",
+    "Non-Repeatable Read (Read Committed)",
+    "Phantom Read (Repeatable Read)",
+    "Serializable (Strict Locking)",
+    "Multi-Version Concurrency Control (MVCC / Snapshot Isolation)"
+  ],
+  "learningObjectives": [
+    "Membedakan 4 tingkat isolasi ANSI SQL beserta anomali konkurensi yang dicegahnya.",
+    "Menjelaskan bagaimana Write-Ahead Logging (WAL) menjamin prinsip Durability saat server mati mendadak.",
+    "Menganalisis cara kerja Multi-Version Concurrency Control (MVCC) dalam menghilangkan blokir antara pembaca dan penulis."
+  ],
+  "markdownContent": "# Transaksi ACID \u0026 Isolation Levels: Dirty Read, Lost Update, Phantom Read, dan MVCC\n\n## 4 Pilar Sakral Transaksi Finansial (ACID)\nSebuah transaksi database bukanlah sekadar kumpulan perintah SQL biasa. Transaksi adalah **satuan unit kerja logis tunggal yang tidak dapat dibagi** yang mematuhi 4 pilar mutlak:\n\n1. **Atomicity (Semua atau Tidak Sama Sekali)**:\n   - Jika transfer uang melibatkan 2 operasi: Potong Saldo A dan Tambah Saldo B. Jika langkah kedua gagal akibat listrik padam, **seluruh langkah pertama otomatis dibatalkan (ROLLBACK)** seolah-olah tidak pernah terjadi!\n2. **Consistency (Integritas Data Terjaga)**:\n   - Database hanya boleh berpindah dari satu kondisi valid ke kondisi valid berikutnya sesuai aturan invariant (saldo tidak boleh negatif, foreign key valid).\n3. **Isolation (Keterisolasian Transaksi Konkuren)**:\n   - Eksekusi transaksi yang berjalan bersamaan tidak boleh saling mengganggu atau melihat status setengah jadi dari transaksi lain.\n4. **Durability (Ketahanan Permanen)**:\n   - Begitu transaksi dinyatakan \u0060COMMIT\u0060, perubahan data dijamin tersimpan permanen di media persisten, bahkan jika server langsung mati total 1 mikrodetik kemudian! (Dijamin oleh **Write-Ahead Logging / WAL**).\n\n---\n\n## 4 Tingkat Isolasi ANSI SQL vs Anomali Konkurensi\n\n| Isolation Level | Dirty Read | Non-Repeatable Read | Phantom Read | Mekanisme di Balik Layar |\n| :--- | :---: | :---: | :---: | :--- |\n| **Read Uncommitted** | **BISA TERJADI** | **BISA TERJADI** | **BISA TERJADI** | Tidak ada lock sama sekali (Sangat bahaya!) |\n| **Read Committed** (Default RDBMS) | Dicegah | **BISA TERJADI** | **BISA TERJADI** | Baris yang dibaca hanya yang sudah di-commit |\n| **Repeatable Read** | Dicegah | Dicegah | **BISA TERJADI** | Memegang Shared Lock hingga transaksi selesai |\n| **Serializable** | Dicegah | Dicegah | Dicegah | Range Lock penuh / strict sekuensial (Paling lambat)|\n\n### Definisi Tiga Anomali Bencana:\n- **Dirty Read**: Transaksi A membaca saldo yang baru diubah oleh Transaksi B, padahal Transaksi B kemudian melakukan ROLLBACK (Data yang dibaca Transaksi A adalah data palsu/fiktif!).\n- **Non-Repeatable Read**: Transaksi A membaca baris X bernilai 100. Transaksi B mengubah baris X menjadi 200 lalu commit. Transaksi A membaca ulang baris X dan mendapatkan nilai 200 yang berbeda!\n- **Phantom Read**: Transaksi A menjalankan \u0060SELECT COUNT(*) WHERE Saldo \u003E 1000\u0060 (menghasilkan 5 baris). Transaksi B memasukkan baris baru (\u0060INSERT\u0060) dengan saldo 2000. Transaksi A menjalankan kueri yang sama dan menemukan 6 baris mendadak muncul seperti hantu (*phantom*)!\n\n---\n\n## Solusi Modern: Multi-Version Concurrency Control (MVCC)\nPada database klasik berbasis penguncian murni:\n\u003E *\u0022Pembaca memblokir Penulis, dan Penulis memblokir Pembaca.\u0022* (Sistem menjadi sangat lambat!).\n\nDatabase modern (PostgreSQL, SQL Server Snapshot Isolation, MySQL InnoDB) menerapkan **MVCC**:\n- **Readers do not block Writers, and Writers do not block Readers!**\n- Setiap kali baris diubah, database tidak menimpa data lama di tempat. Database menyimpan **versi lama di snapshot tempdb/undo log** dengan timestamp transaksi.\n- Transaksi membaca versi data yang valid pada saat transaksinya dimulai, tanpa pernah terkunci oleh transaksi lain yang sedang menulis!",
+  "starterCode": "using System;\nusing System.Data;\n\n// PROGRAM: Mengatur Isolation Level pada Transaksi ADO.NET / EF Core\npublic class BankingTransactionSimulator\n{\n    public static void ExecuteTransfer(string accountFrom, string accountTo, decimal amount, IsolationLevel level)\n    {\n        Console.WriteLine($\u0022Memulai transaksi transfer dengan Isolation Level: {level}...\u0022);\n        \n        // Simulasi aturan transaksi\n        if (level == IsolationLevel.ReadUncommitted)\n        {\n            Console.WriteLine(\u0022PERINGATAN: Berisiko membaca Dirty Read data belum ter-commit!\u0022);\n        }\n        else if (level == IsolationLevel.Snapshot || level == IsolationLevel.ReadCommitted)\n        {\n            Console.WriteLine(\u0022AMAN: Menggunakan proteksi pembacaan data ter-commit (MVCC/Read Committed).\u0022);\n        }\n\n        Console.WriteLine($\u0022[COMMIT] Saldo Rp {amount:N0} berhasil ditransfer.\u0022);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        BankingTransactionSimulator.ExecuteTransfer(\u0022ACC-1\u0022, \u0022ACC-2\u0022, 250_000m, IsolationLevel.ReadCommitted);\n        BankingTransactionSimulator.ExecuteTransfer(\u0022ACC-1\u0022, \u0022ACC-2\u0022, 100_000m, IsolationLevel.Snapshot);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-09-03-1",
+      "type": "MultipleChoice",
+      "question": "Anomali apakah yang terjadi ketika Transaksi A membaca baris data yang sedang dimodifikasi oleh Transaksi B, namun Transaksi B kemudian membatalkan perubahannya (ROLLBACK)?",
+      "options": [
+        "Phantom Read",
+        "Dirty Read",
+        "Non-Repeatable Read",
+        "Lost Update"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dirty Read adalah kondisi di mana suatu transaksi membaca perubahan data yang belum di-commit oleh transaksi lain yang kemudian berakhir dengan rollback.",
+      "optionExplanations": [
+        "Salah. Phantom Read terjadi saat ada baris baru yang di-insert oleh transaksi lain.",
+        "Benar! Dirty Read membaca data uncommitted yang rawan dibatalkan.",
+        "Salah. Non-Repeatable Read terjadi setelah data lain berhasil di-commit.",
+        "Salah. Lost Update adalah kondisi penimpaan perubahan data secara bersamaan."
+      ],
+      "sectionRef": "Definisi Tiga Anomali Bencana",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-09-03-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana cara kerja teknologi MVCC (Multi-Version Concurrency Control) pada database modern seperti PostgreSQL dan SQL Server Snapshot Isolation?",
+      "options": [
+        "Dengan menonaktifkan seluruh transaksi dan hanya mengizinkan 1 pengguna dalam satu waktu",
+        "Dengan menyimpan versi historis baris data (snapshots) sehingga operasi pembacaan (SELECT) tidak pernah memblokir penulisan (UPDATE), dan sebaliknya",
+        "Dengan menghapus file log database setiap 5 menit",
+        "Dengan membatasi maksimal 10 baris per tabel"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "MVCC mengisolasi pembacaan data menggunakan versi snapshot data berdasarkan timestamp, memastikan \u0027Readers do not block Writers and Writers do not block Readers\u0027.",
+      "optionExplanations": [
+        "Salah. Itu adalah perilaku serialisasi single-user primitif.",
+        "Benar! Snapshot versioning memungkinkan konkurensi tinggi tanpa saling memblokir.",
+        "Salah. Log database (WAL/Undo) sangat krusial untuk durabilitas.",
+        "Salah. MVCC tidak membatasi jumlah data."
+      ],
+      "sectionRef": "Solusi Modern: Multi-Version Concurrency Control (MVCC)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-09-03",
+    "Title": "Pemvalidasi Kompatibilitas Tingkat Isolasi Transaksi ACID",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Diberikan nama tingkat isolasi transaksi RDBMS dari stdin (\u0027ReadUncommitted\u0027, \u0027ReadCommitted\u0027, \u0027RepeatableRead\u0027, \u0027Serializable\u0027).\nTentukan anomali konkurensi paling parah yang masih MUNGKIN terjadi pada tingkat isolasi tersebut:\n- ReadUncommitted: \u0027DIRTY_READ\u0027\n- ReadCommitted: \u0027NON_REPEATABLE_READ\u0027\n- RepeatableRead: \u0027PHANTOM_READ\u0027\n- Serializable: \u0027NONE (ANOMALY_FREE)\u0027\nJika input tidak valid, cetak \u0027INVALID_ISOLATION_LEVEL\u0027.",
+    "InputFormat": "Satu baris nama tingkat isolasi transaksi.",
+    "OutputFormat": "Satu baris nama anomali atau status aman.",
+    "Constraints": "Case-insensitive.",
+    "Examples": [
+      {
+        "Input": "ReadCommitted",
+        "Output": "NON_REPEATABLE_READ",
+        "Explanation": "ReadCommitted mencegah Dirty Read tetapi masih memungkinkan Non-Repeatable Read."
+      },
+      {
+        "Input": "Serializable",
+        "Output": "NONE (ANOMALY_FREE)",
+        "Explanation": "Serializable menjamin kebebasan mutlak dari semua anomali."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? level = Console.ReadLine();\n        // TODO: Evaluasi anomali transaksi ACID per tingkat isolasi.\n        Console.WriteLine(\u0022NONE (ANOMALY_FREE)\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? level = Console.ReadLine()?.Trim().ToLowerInvariant();\n\n        string result = level switch\n        {\n            \u0022readuncommitted\u0022 =\u003E \u0022DIRTY_READ\u0022,\n            \u0022readcommitted\u0022 =\u003E \u0022NON_REPEATABLE_READ\u0022,\n            \u0022repeatableread\u0022 =\u003E \u0022PHANTOM_READ\u0022,\n            \u0022serializable\u0022 =\u003E \u0022NONE (ANOMALY_FREE)\u0022,\n            _ =\u003E \u0022INVALID_ISOLATION_LEVEL\u0022\n        };\n\n        Console.WriteLine(result);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (ReadCommitted)",
+        "Description": "Contoh 1 (ReadCommitted): input \u0027ReadCommitted\u0027 -\u003E expected \u0027NON_REPEATABLE_READ\u0027",
+        "Input": "ReadCommitted",
+        "ExpectedOutput": "NON_REPEATABLE_READ",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Serializable)",
+        "Description": "Contoh 2 (Serializable): input \u0027Serializable\u0027 -\u003E expected \u0027NONE (ANOMALY_FREE)\u0027",
+        "Input": "Serializable",
+        "ExpectedOutput": "NONE (ANOMALY_FREE)",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "ReadUncommitted",
+        "Description": "ReadUncommitted: input \u0027readuncommitted\u0027 -\u003E expected \u0027DIRTY_READ\u0027",
+        "Input": "readuncommitted",
+        "ExpectedOutput": "DIRTY_READ",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "RepeatableRead",
+        "Description": "RepeatableRead: input \u0027RepeatableRead\u0027 -\u003E expected \u0027PHANTOM_READ\u0027",
+        "Input": "RepeatableRead",
+        "ExpectedOutput": "PHANTOM_READ",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Invalid Level",
+        "Description": "Invalid Level: input \u0027SnapshotSuper\u0027 -\u003E expected \u0027INVALID_ISOLATION_LEVEL\u0027",
+        "Input": "SnapshotSuper",
+        "ExpectedOutput": "INVALID_ISOLATION_LEVEL",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Standar ANSI SQL mendefinisikan 4 level isolasi transaksi.",
+      "Gunakan switch expression untuk pemetaan langsung."
+    ],
+    "Explanation": "Tingkat isolasi transaksi mengatur trade-off antara throughput konkurensi data dan pencegahan anomali konkurensi (Dirty Read, Non-Repeatable Read, Phantom Read)."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-09-02",
+      "title": "Database Storage \u0026 Indexing",
+      "levelName": "LEVEL 09",
+      "context": "Bagaimana lock row dan lock range diterapkan pada simpul B\u002B Tree."
+    },
+    {
+      "lessonId": "lesson-18-01",
+      "title": "Double-Entry Ledger Architecture",
+      "levelName": "LEVEL 18",
+      "context": "Penerapan transaksi ACID dengan tingkat isolasi Snapshot pada buku besar finansial."
+    }
+  ],
+  "references": [
+    {
+      "title": "A Critique of ANSI SQL Isolation Levels - Berenson et al.",
+      "url": "https://www.microsoft.com/en-us/research/publication/a-critique-of-ansi-sql-isolation-levels/"
+    },
+    {
+      "title": "Transaction Isolation Levels in the Database Engine",
+      "url": "https://learn.microsoft.com/en-us/sql/connect/jdbc/understanding-isolation-levels"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class IsolationAnomalyChecker\n{\n    public static bool IsAnomalyPrevented(string isolationLevel, string anomalyType)\n    {\n        if (string.IsNullOrWhiteSpace(isolationLevel) || string.IsNullOrWhiteSpace(anomalyType))\n            return false;\n\n        string iso = isolationLevel.Trim().ToUpperInvariant();\n        string anomaly = anomalyType.Trim().ToUpperInvariant();\n\n        return anomaly switch\n        {\n            \u0022DIRTYREAD\u0022 =\u003E iso is \u0022READCOMMITTED\u0022 or \u0022REPEATABLEREAD\u0022 or \u0022SERIALIZABLE\u0022 or \u0022SNAPSHOT\u0022,\n            \u0022NONREPEATABLEREAD\u0022 =\u003E iso is \u0022REPEATABLEREAD\u0022 or \u0022SERIALIZABLE\u0022 or \u0022SNAPSHOT\u0022,\n            \u0022PHANTOMREAD\u0022 =\u003E iso is \u0022SERIALIZABLE\u0022 or \u0022SNAPSHOT\u0022,\n            _ =\u003E false\n        };\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(IsAnomalyPrevented(\u0022ReadCommitted\u0022, \u0022DirtyRead\u0022));\n        Console.WriteLine(IsAnomalyPrevented(\u0022ReadCommitted\u0022, \u0022NonRepeatableRead\u0022));\n        Console.WriteLine(IsAnomalyPrevented(\u0022Serializable\u0022, \u0022PhantomRead\u0022));\n    }\n}"
+}

@@ -1,0 +1,104 @@
+{
+    "id":  "lesson-16-03",
+    "levelId":  "level-16",
+    "moduleId":  "mod-16-02",
+    "order":  3,
+    "title":  "Docker Multi-Stage Build untuk .NET: Minimal Image Size, Non-Root User, dan Container Security",
+    "slug":  "docker-multistage-dotnet-security",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendesain container Docker kelas produksi untuk aplikasi .NET 8: Multi-Stage Build, Chiseled Ubuntu/Alpine minimal images, keamanan Non-Root user, dan optimasi layer caching.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-07",
+                              "reason":  "OS Kernel vs User Mode \u0026 Filesystem Permissions"
+                          },
+                          {
+                              "lessonId":  "lesson-02-01",
+                              "reason":  ".NET SDK vs Runtime CLI"
+                          }
+                      ],
+    "introduces":  [
+                       "Docker Multi-Stage Build architecture",
+                       "SDK image (Build) vs Runtime image (Serve)",
+                       "Layer Caching optimization (dotnet restore vs copy source)",
+                       "Container Security: Root vs Non-Root user (UID 1000/app)",
+                       "Chiseled Ubuntu \u0026 Distroless images (Zero shell, zero package manager)",
+                       "Memory \u0026 CPU limits in containerized runtimes"
+                   ],
+    "learningObjectives":  [
+                               "Merancang Dockerfile multi-stage yang memisahkan build environment (SDK berukuran 800MB) dari runtime image akhir (hanya 100MB)",
+                               "Mengoptimalkan urutan instruksi Dockerfile agar memanfaatkan Docker Layer Cache secara maksimal saat `dotnet restore`",
+                               "Menerapkan pengguna non-root (`USER app` / UID 1654) untuk mencegah eskalasi hak akses container breakout ke host kernel",
+                               "Memanfaatkan image \u0027Chiseled Ubuntu\u0027 (.NET 8) untuk menghilangkan shell (`/bin/sh`) dan package manager dari container produksi"
+                           ],
+    "markdownContent":  "# Docker Multi-Stage Build untuk .NET: Minimal Image Size, Non-Root User, dan Container Security\n\nDalam ekosistem cloud-native modern, kontainerisasi dengan Docker adalah standar mutlak pengemasan dan penyebaran aplikasi. Namun, banyak developer membuat kontainer Docker dengan cara yang salah:\n- Menyertakan .NET SDK lengkap di image produksi (membuat ukuran image membengkak menjadi 1+ GB).\n- Menjalankan aplikasi sebagai pengguna **`root`** (bencana keamanan jika terjadi eksploitasi Remote Code Execution).\n- Tidak memanfaatkan *layer caching*, sehingga build pipeline CI/CD memakan waktu 15 menit untuk setiap commit kecil.\n\nMateri ini membedah teknik rekayasa **Docker Multi-Stage Build** berstandar enterprise untuk menghasilkan image .NET yang super cepat, ramping, dan aman.\n\n---\n\n## 1. Arsitektur Multi-Stage Build\n\nPrinsip utama Multi-Stage Build adalah **hanya menyertakan artefak kompilasi biner akhir** di dalam image yang dideploy ke produksi.\n\n```mermaid\nflowchart TD\n    subgraph Stage1[\"Stage 1: Build \u0026 Publish (SDK ~850 MB)\"]\n        SDK[\"mcr.microsoft.com/dotnet/sdk:8.0\u003cbr/\u003eâ€¢ Roslyn Compiler \u0026 MSBuild\u003cbr/\u003eâ€¢ NuGet CLI \u0026 Tools\"]\n        SDK --\u003e Pub[\"dotnet publish -c Release\u003cbr/\u003eOutput: /app/publish\"]\n    end\n    Pub --\u003e|COPY --from=build /app/publish .| Jammy\n    subgraph Stage2[\"Stage 2: Final Runtime (~110 MB)\"]\n        Jammy[\"mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled\u003cbr/\u003eâ€¢ Tanpa Compiler / Paket SDK\u003cbr/\u003eâ€¢ Tanpa Shell (sh/bash)\u003cbr/\u003eâ€¢ User Non-Root (UID 1654)\u003cbr/\u003eâ€¢ Minimal Attack Surface\"]\n        Jammy --\u003e Run[\"ENTRYPOINT [\u0027dotnet\u0027, \u0027MyApi.dll\u0027]\"]\n    end\n```\n\nUkuran image terpangkas dari **1.000 MB menjadi hanya 110 MB**! Waktu download image di Kubernetes node cluster menjadi 10x lebih cepat.\n\n---\n\n## 2. Optimasi Docker Layer Caching\n\nDocker mengeksekusi instruksi baris demi baris dan mencache setiap layer. Jika ada file yang berubah, seluruh layer setelahnya akan di-build ulang dari awal.\n\n### Pola Buruk:\n```dockerfile\n# ANTI-PATTERN: Menyalin seluruh source code sebelum restore!\nCOPY . .\nRUN dotnet restore # Layer cache selalu basi setiap kali developer mengubah 1 huruf komentar!\nRUN dotnet publish -c Release -o /app/publish\n```\n\n### Pola Optimal Enterprise:\n```dockerfile\n# 1. Salin HANYA file csproj terlebih dahulu!\nCOPY [\"MyApi/MyApi.csproj\", \"MyApi/\"]\nCOPY [\"Domain/Domain.csproj\", \"Domain/\"]\n\n# 2. Restore NuGet dependencies\n# Layer ini AKAN DICACHE selamanya selama file csproj tidak berubah!\nRUN dotnet restore \"MyApi/MyApi.csproj\"\n\n# 3. Baru salin seluruh source code sisanya dan publish\nCOPY . .\nWORKDIR \"/src/MyApi\"\nRUN dotnet publish \"MyApi.csproj\" -c Release -o /app/publish /p:UseAppHost=false\n```\n\n---\n\n## 3. Container Security: Menghilangkan Root User \u0026 Chiseled Images\n\n### Bahaya Menjalankan Container sebagai `root`:\nJika hacker berhasil menemukan celah RCE (Remote Code Execution) pada aplikasi Anda dan container berjalan sebagai root:\n- Hacker memiliki hak root di dalam namespace container tersebut.\n- Jika ada celah pada kernel OS host (misal *Container Breakout*), hacker dapat melompat keluar dan menguasai seluruh server fisik host!\n\n### Solusi di .NET 8: Non-Root User Default\nMulai .NET 8, Microsoft menyertakan user non-root bawaan bernama **`app`** (UID 1654):\n```dockerfile\n# Jalankan sebagai non-root user!\nUSER $APP_UID\n```\n\n### Chiseled Ubuntu Images:\nImage **Chiseled** dari Canonical \u0026 Microsoft adalah revolusi keamanan container:\n- Tidak memiliki shell (`/bin/bash`, `/bin/sh`).\n- Tidak memiliki package manager (`apt`, `dpkg`).\n- Jika hacker berhasil menyusupkan script eksploitasi, hacker **tidak bisa menjalankan perintah shell apapun** karena tidak ada interpreter shell di dalam container!\n\n---\n\n## 4. Dockerfile Lengkap Standar Produksi (.NET 8)\n\n```dockerfile\n# Stage 1: Build environment\nFROM mcr.microsoft.com/dotnet/sdk:8.0 AS build\nWORKDIR /src\n\n# Cache dependencies\nCOPY [\"Academy.Api/Academy.Api.csproj\", \"Academy.Api/\"]\nRUN dotnet restore \"Academy.Api/Academy.Api.csproj\"\n\n# Build source code\nCOPY . .\nWORKDIR \"/src/Academy.Api\"\nRUN dotnet publish \"Academy.Api.csproj\" -c Release -o /app/publish /p:UseAppHost=false\n\n# Stage 2: Production runtime environment (Chiseled Non-Root)\nFROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled AS final\nWORKDIR /app\nEXPOSE 8080\n\nCOPY --from=build /app/publish .\n\n# Terapkan Non-Root User UID 1654\nUSER $APP_UID\n\nENTRYPOINT [\"dotnet\", \"Academy.Api.dll\"]\n```\n\n---\n\n## 5. Ringkasan \u0026 Aturan Kontainerisasi\n\n1. **Selalu Gunakan Multi-Stage Build**: Jangan pernah membiarkan .NET SDK tersisa di image produksi.\n2. **Pisahkan Restore dari Source Code**: Salin `*.csproj` terlebih dahulu agar dependensi NuGet tersimpan di Docker layer cache.\n3. **Wajib Non-Root di Produksi**: Gunakan `USER $APP_UID` atau runtime chiseled untuk memitigasi serangan container breakout.",
+    "starterCode":  "using System;\n\n// Simulasi Mini Layer Caching Analisis Docker\npublic class DockerBuildStep\n{\n    public string Instruction { get; set; } = \"\";\n    public bool DependsOnSourceCode { get; set; }\n}\n\npublic class DockerfileAuditor\n{\n    public static bool IsOptimizedForCaching(DockerBuildStep[] steps)\n    {\n        // TODO:\n        // Dockerfile yang teroptimasi harus mengeksekusi \u0027dotnet restore\u0027 \n        // SEBELUM instruksi \u0027COPY . .\u0027 (yang bergantung pada seluruh source code).\n        // Kembalikan TRUE jika \u0027dotnet restore\u0027 mendahului \u0027COPY . .\u0027.\n        \n        return false;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var badDockerfile = new DockerBuildStep[]\n        {\n            new() { Instruction = \"COPY . .\", DependsOnSourceCode = true },\n            new() { Instruction = \"RUN dotnet restore\", DependsOnSourceCode = false },\n            new() { Instruction = \"RUN dotnet publish\", DependsOnSourceCode = true }\n        };\n\n        var goodDockerfile = new DockerBuildStep[]\n        {\n            new() { Instruction = \"COPY *.csproj .\", DependsOnSourceCode = false },\n            new() { Instruction = \"RUN dotnet restore\", DependsOnSourceCode = false },\n            new() { Instruction = \"COPY . .\", DependsOnSourceCode = true },\n            new() { Instruction = \"RUN dotnet publish\", DependsOnSourceCode = true }\n        };\n\n        Console.WriteLine($\"Dockerfile Buruk Teroptimasi? : {DockerfileAuditor.IsOptimizedForCaching(badDockerfile)} (Ekspektasi: False)\");\n        Console.WriteLine($\"Dockerfile Bagus Teroptimasi? : {DockerfileAuditor.IsOptimizedForCaching(goodDockerfile)} (Ekspektasi: True)\");\n    }\n}",
+    "solutionCode":  "using System;\n\npublic class DockerBuildStep\n{\n    public string Instruction { get; set; } = \"\";\n    public bool DependsOnSourceCode { get; set; }\n}\n\npublic class DockerfileAuditor\n{\n    public static bool IsOptimizedForCaching(DockerBuildStep[] steps)\n    {\n        int restoreIndex = -1;\n        int copyAllIndex = -1;\n\n        for (int i = 0; i \u003c steps.Length; i++)\n        {\n            if (steps[i].Instruction.Contains(\"dotnet restore\")) restoreIndex = i;\n            if (steps[i].Instruction.Contains(\"COPY . .\")) copyAllIndex = i;\n        }\n\n        if (restoreIndex != -1 \u0026\u0026 copyAllIndex != -1)\n        {\n            return restoreIndex \u003c copyAllIndex;\n        }\n\n        return false;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var badDockerfile = new DockerBuildStep[]\n        {\n            new() { Instruction = \"COPY . .\", DependsOnSourceCode = true },\n            new() { Instruction = \"RUN dotnet restore\", DependsOnSourceCode = false },\n            new() { Instruction = \"RUN dotnet publish\", DependsOnSourceCode = true }\n        };\n\n        var goodDockerfile = new DockerBuildStep[]\n        {\n            new() { Instruction = \"COPY *.csproj .\", DependsOnSourceCode = false },\n            new() { Instruction = \"RUN dotnet restore\", DependsOnSourceCode = false },\n            new() { Instruction = \"COPY . .\", DependsOnSourceCode = true },\n            new() { Instruction = \"RUN dotnet publish\", DependsOnSourceCode = true }\n        };\n\n        Console.WriteLine($\"Dockerfile Buruk Teroptimasi? : {DockerfileAuditor.IsOptimizedForCaching(badDockerfile)} (Ekspektasi: False)\");\n        Console.WriteLine($\"Dockerfile Bagus Teroptimasi? : {DockerfileAuditor.IsOptimizedForCaching(goodDockerfile)} (Ekspektasi: True)\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-16-03-1",
+                              "type":  "single_choice",
+                              "question":  "Mengapa menyalin file *.csproj terlebih dahulu sebelum mengeksekusi \u0027RUN dotnet restore\u0027 sangat penting dalam optimasi Dockerfile?",
+                              "options":  [
+                                              "Karena file *.csproj ditulis dalam format biner yang disukai Docker.",
+                                              "Agar layer dependensi NuGet di-cache oleh Docker; sehingga jika developer hanya mengubah kode di file .cs tanpa menambah library baru, Docker tidak perlu mengunduh ulang paket NuGet dari internet.",
+                                              "Karena Docker menolak membaca file .cs jika tidak ada file csproj.",
+                                              "Agar ukuran harddisk komputer developer berkurang."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Docker menggunakan layer cache berbasis hash isi file. Jika file csproj tidak berubah, Docker menggunakan layer cache yang sudah ada untuk dotnet restore, memangkas durasi build dari menit menjadi beberapa detik.",
+                              "optionExplanations":  [
+                                                         "Salah. File *.csproj adalah file XML teks biasa.",
+                                                         "Benar! Menjaga integritas layer cache dependency mempercepat waktu build CI/CD secara dramatis.",
+                                                         "Salah. C# compiler yang membaca .cs, bukan engine Docker.",
+                                                         "Salah. Ini adalah optimasi layer cache build, bukan pembersihan harddisk."
+                                                     ],
+                              "sectionRef":  "2. Optimasi Docker Layer Caching",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-16-03-2",
+                              "type":  "single_choice",
+                              "question":  "Apa keuntungan keamanan utama dari penggunaan image \u0027Chiseled Ubuntu\u0027 (.NET 8) di lingkungan produksi?",
+                              "options":  [
+                                              "Image chiseled otomatis memberikan bonus kuota cloud gratis.",
+                                              "Image chiseled tidak memiliki shell interpreter (/bin/sh atau /bin/bash) dan tidak memiliki package manager (apt), sehingga penyerang yang menemukan celah RCE tidak dapat mengeksekusi script shell sembarangan.",
+                                              "Image chiseled mengubah bahasa C# menjadi Python.",
+                                              "Image chiseled tidak memerlukan sistem operasi sama sekali."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Prinsip minimal attack surface: dengan meniadakan shell (/bin/sh) dan package manager, vektor serangan hacker untuk mengunduh malware eksternal atau menjalankan utility OS lumpuh total.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak ada kuota cloud gratis.",
+                                                         "Benar! Menghilangkan shell dan package manager memangkas attack surface kontainer secara drastis.",
+                                                         "Salah. Runtime tetap menjalankan bytecode C# IL .NET.",
+                                                         "Salah. Container tetap berbagi kernel Linux dengan host."
+                                                     ],
+                              "sectionRef":  "3. Container Security: Menghilangkan Root User \u0026 Chiseled Images",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-00-07",
+                           "lesson-02-01",
+                           "lesson-16-04"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Announcing .NET Chiseled Containers - Microsoft DevBlogs",
+                           "url":  "https://devblogs.microsoft.com/dotnet/announcing-dotnet-chiseled-containers/",
+                           "type":  "article"
+                       },
+                       {
+                           "title":  "Dockerize an ASP.NET Core application - Docker Documentation",
+                           "url":  "https://docs.docker.com/language/dotnet/build-images/",
+                           "type":  "documentation"
+                       }
+                   ]
+}

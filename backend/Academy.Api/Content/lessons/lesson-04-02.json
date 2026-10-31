@@ -1,0 +1,168 @@
+{
+  "id": "lesson-04-02",
+  "levelId": "level-04",
+  "moduleId": "mod-04-01",
+  "order": 2,
+  "title": "IEnumerable vs IQueryable: Perbedaan Runtime Execution dan Expression Trees",
+  "slug": "ienumerable-vs-iqueryable-expression-trees",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menganalisis perbedaan krusial antara IEnumerable (In-Memory Filtering) dan IQueryable (Remote Database Querying), bagaimana Expression Trees diterjemahkan menjadi SQL mentah, dan bahaya query pagination palsu di memori server.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-04-01",
+      "title": "LINQ Deep Dive",
+      "levelName": "LEVEL 04",
+      "context": "Memahami cara kerja interface IEnumerable."
+    }
+  ],
+  "introduces": [
+    "IEnumerable\u003CT\u003E (In-Memory Delegate Execution)",
+    "IQueryable\u003CT\u003E (Expression Tree Remote Query)",
+    "Expression\u003CFunc\u003CT, bool\u003E\u003E vs Func\u003CT, bool\u003E",
+    "Expression Tree Visitor",
+    "Client Evaluation Disaster"
+  ],
+  "learningObjectives": [
+    "Membedakan parameter Func\u003CT, bool\u003E (kode mesin) dengan Expression\u003CFunc\u003CT, bool\u003E\u003E (data struktur pohon ekspresi).",
+    "Menjelaskan bagaimana ORM (EF Core) menerjemahkan IQueryable menjadi query SQL native.",
+    "Mencegah bencana penarikan seluruh data tabel ke RAM server akibat kesalahan casting IEnumerable."
+  ],
+  "markdownContent": "# IEnumerable vs IQueryable: Perbedaan Runtime Execution dan Expression Trees\n\n## Bencana 5 Juta Baris: Kesalahan Sepele Berdampak Fatal\nPerhatikan dua potongan kode pengambilan data nasabah perbankan berikut:\n\n### Versi A: Menggunakan \u0060IQueryable\u003CT\u003E\u0060 (Benar)\n\u0060\u0060\u0060csharp\nIQueryable\u003CNasabah\u003E query = dbContext.Nasabahs;\nvar hasil = query.Where(n =\u003E n.Kota == \u0022Jakarta\u0022).Take(10).ToList();\n\u0060\u0060\u0060\n**SQL yang Dikirim ke Database Server:**\n\u0060\u0060\u0060sql\nSELECT TOP(10) [Id], [Nama], [Kota] FROM [Nasabahs] WHERE [Kota] = \u0027Jakarta\u0027\n\u0060\u0060\u0060\n*(Database hanya mengembalikan 10 baris data melalui kabel jaringan. Waktu: 2 milidetik!)*\n\n---\n\n### Versi B: Menggunakan \u0060IEnumerable\u003CT\u003E\u0060 (BENCANA SERVER CRASH!)\n\u0060\u0060\u0060csharp\nIEnumerable\u003CNasabah\u003E query = dbContext.Nasabahs; // HANYA BERUBAH DARI IQUERYABLE KE IENUMERABLE!\nvar hasil = query.Where(n =\u003E n.Kota == \u0022Jakarta\u0022).Take(10).ToList();\n\u0060\u0060\u0060\n**SQL yang Dikirim ke Database Server:**\n\u0060\u0060\u0060sql\nSELECT [Id], [Nama], [Kota], ... FROM [Nasabahs]\n\u0060\u0060\u0060\n*(DATABASE MENGAMBIL SELURUH 5 JUTA BARIS DATA (10 GB) DARI DISK, MENGIRIMNYA MELINTASI JARINGAN KE SERVER C#, LALU C# MEMFILTER KOTA DI RAM APLIKASI SEBELUM MENGAMBIL 10 DATA!). Server backend langsung Out-Of-Memory (OOM) dan mati seketika!*\n\n---\n\n## Mengapa Perbedaan Ini Bisa Terjadi?\n\n| Aspek | \u0060IEnumerable\u003CT\u003E\u0060 | \u0060IQueryable\u003CT\u003E\u0060 |\n| :--- | :--- | :--- |\n| **Namespace** | \u0060System.Collections.Generic\u0060 | \u0060System.Linq\u0060 |\n| **Parameter Filter** | Menerima **\u0060Func\u003CT, bool\u003E\u0060** (Kompilasi IL Opcode) | Menerima **\u0060Expression\u003CFunc\u003CT, bool\u003E\u003E\u0060** (Expression Tree) |\n| **Lokasi Eksekusi** | **In-Memory di RAM C#** (Client-side) | **Remote di Database Engine** (Server-side SQL) |\n| **Kemampuan Inspeksi**| Tertutup (Black Box) | Terbuka untuk dianalisis oleh Query Provider |\n\n---\n\n## Rahasia Expression Trees: Kode Sebagai Data\nKetika Anda menulis \u0060Func\u003Cint, bool\u003E f = x =\u003E x \u003E 5;\u0060:\nCompiler menghasilkan instruksi mesin biner yang langsung dieksekusi oleh CPU.\n\nTetapi ketika Anda menulis **\u0060Expression\u003CFunc\u003Cint, bool\u003E\u003E exp = x =\u003E x \u003E 5;\u0060**:\nCompiler tidak menghasilkan kode mesin! Compiler membangun **Struktur Pohon Objek (Expression Tree)** di memori:\n\n\u0060\u0060\u0060text\n                 [ BinaryExpression: GreaterThan (\u003E) ]\n                             /               \\\n            [ ParameterExpression: x ]    [ ConstantExpression: 5 ]\n\u0060\u0060\u0060\nORM seperti Entity Framework Core membaca pohon ekspresi ini saat runtime, menguraikan nama kolom dan operatornya, lalu menyusun string query SQL: \u0060\u0022WHERE [x] \u003E 5\u0022\u0060!",
+  "starterCode": "using System;\nusing System.Linq.Expressions;\n\n// PROGRAM: Menginspeksi Expression Tree secara Dinamis\n// 1. Delegate Biasa (Black Box: Tidak bisa dibongkar rumusnya)\nFunc\u003Cint, bool\u003E funcBiasa = n =\u003E n \u003E 100;\nConsole.WriteLine($\u0022Eksekusi Func Biasa: {funcBiasa(150)}\u0022);\n\n// 2. Expression Tree (Data Struktur Terbuka: Dapat dibongkar rumusnya)\nExpression\u003CFunc\u003Cint, bool\u003E\u003E pohonEkspresi = n =\u003E n \u003E 100;\n\nConsole.WriteLine(\u0022\\n=== MEMBONGKAR ANATOMI EXPRESSION TREE ===\u0022);\nConsole.WriteLine($\u0022Tipe Node Root : {pohonEkspresi.NodeType}\u0022); // Lambda\nConsole.WriteLine($\u0022Tipe Kembalian : {pohonEkspresi.ReturnType}\u0022);\n\nif (pohonEkspresi.Body is BinaryExpression binary)\n{\n    Console.WriteLine($\u0022Operator Biner : {binary.NodeType}\u0022); // GreaterThan\n    Console.WriteLine($\u0022Sisi Kiri      : {binary.Left}\u0022);     // n\n    Console.WriteLine($\u0022Sisi Kanan     : {binary.Right}\u0022);    // 100\n    \n    // Inilah cara EF Core menerjemahkan ekspresi C# menjadi SQL \u0027WHERE n \u003E 100\u0027!\n}",
+  "quizQuestions": [
+    {
+      "id": "q-04-02-1",
+      "type": "MultipleChoice",
+      "question": "Apa perbedaan fundamental antara tipe parameter yang diterima oleh LINQ Where pada \u0060IQueryable\u003CT\u003E\u0060 dibandingkan \u0060IEnumerable\u003CT\u003E\u0060?",
+      "options": [
+        "IQueryable menerima string teks SQL mentah, sedangkan IEnumerable menerima array",
+        "IQueryable menerima \u0060Expression\u003CFunc\u003CT, bool\u003E\u003E\u0060 yang dapat diurai menjadi SQL oleh database provider, sedangkan IEnumerable menerima \u0060Func\u003CT, bool\u003E\u0060 yang dieksekusi di memori lokal C#",
+        "Tidak ada perbedaan sama sekali, keduanya identik",
+        "IEnumerable hanya mendukung tipe data numerik"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "IQueryable membungkus lambda dalam Expression Tree sehingga provider (seperti EF Core) dapat membedah AST ekspresi tersebut menjadi query SQL remote.",
+      "optionExplanations": [
+        "Salah. IQueryable menerima lambda expression C# strongly-typed, bukan string SQL.",
+        "Benar! Expression Tree pada IQueryable memungkinkan translasi kode ke query server database.",
+        "Salah. Perbedaan ini menentukan lokasi eksekusi (in-memory vs database server).",
+        "Salah. IEnumerable mendukung semua tipe generik T."
+      ],
+      "sectionRef": "Mengapa Perbedaan Ini Bisa Terjadi?",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-04-02-2",
+      "type": "MultipleChoice",
+      "question": "Apa bahaya performa terbesar jika Anda secara tidak sengaja meng-cast query database EF Core menjadi \u0060IEnumerable\u003CT\u003E\u0060 sebelum menambahkan klausa \u0060.Where()\u0060 dan \u0060.Take()\u0060?",
+      "options": [
+        "Database akan otomatis memblokir koneksi port",
+        "Seluruh baris tabel database akan ditarik melintasi jaringan ke memori RAM server aplikasi C#, menyebabkan latensi ekstrem dan risiko OutOfMemoryException",
+        "Kompiler Roslyn akan menghasilkan syntax error",
+        "Query SQL akan dieksekusi dua kali lebih cepat"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Casting ke IEnumerable memaksa eksekusi filter dan limit dilakukan di sisi client (RAM server aplikasi), sehingga database dipaksa mengirim seluruh isi tabel.",
+      "optionExplanations": [
+        "Salah. Database tetap melayani query SELECT seluruh tabel secara normal.",
+        "Benar! Terjadi full-table pull ke RAM aplikasi lokal (Client Evaluation disaster).",
+        "Salah. Kode valid secara sintaksis dan akan lolos kompilasi.",
+        "Salah. Performa justru akan anjlok drastis."
+      ],
+      "sectionRef": "Versi B: Menggunakan IEnumerable\u003CT\u003E (BENCANA SERVER CRASH!)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-04-02",
+    "Title": "Evaluator Kueri In-Memory Simulating LINQ Predicate",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Baca data produk dari stdin berformat \u0027Nama:Harga\u0027 dipisahkan koma.\nDi baris kedua, baca batas ambang harga minimum (int).\nFilter dan cetak nama produk yang harganya \u003E= ambang batas dalam urutan alfabetis terpisah koma dan spasi.\nJika tidak ada yang memenuhi, cetak \u0027EMPTY\u0027.",
+    "InputFormat": "Dua baris stdin: baris 1 daftar produk, baris 2 harga minimum.",
+    "OutputFormat": "Satu baris daftar nama produk urut alfabetis atau \u0027EMPTY\u0027.",
+    "Constraints": "Harga bilangan bulat positif.",
+    "Examples": [
+      {
+        "Input": "Laptop:15000, Mouse:200, Keyboard:800, Monitor:3000\n1000",
+        "Output": "Laptop, Monitor",
+        "Explanation": "Produk dengan harga \u003E= 1000 diurutkan alfabetis."
+      },
+      {
+        "Input": "Mouse:200, Keyboard:800\n5000",
+        "Output": "EMPTY",
+        "Explanation": "Tidak ada produk di atas 5000."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Gunakan LINQ Where dan OrderBy untuk memfilter dan mengurutkan produk.\n        Console.WriteLine(\u0022EMPTY\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || !int.TryParse(l2, out int minPrice))\n        {\n            Console.WriteLine(\u0022EMPTY\u0022);\n            return;\n        }\n\n        var items = l1.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries)\n            .Select(x =\u003E x.Trim().Split(\u0027:\u0027))\n            .Where(parts =\u003E parts.Length == 2 \u0026\u0026 int.TryParse(parts[1], out _))\n            .Select(parts =\u003E new { Name = parts[0], Price = int.Parse(parts[1]) });\n\n        var filtered = items\n            .Where(p =\u003E p.Price \u003E= minPrice)\n            .OrderBy(p =\u003E p.Name, StringComparer.OrdinalIgnoreCase)\n            .Select(p =\u003E p.Name)\n            .ToList();\n\n        Console.WriteLine(filtered.Count \u003E 0 ? string.Join(\u0022, \u0022, filtered) : \u0022EMPTY\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Laptop \u0026 Monitor)",
+        "Description": "Contoh 1 (Laptop \u0026 Monitor): input \u0027Laptop:15000, Mouse:200, Keyboard:800, Monitor:3000\n1000\u0027 -\u003E expected \u0027Laptop, Monitor\u0027",
+        "Input": "Laptop:15000, Mouse:200, Keyboard:800, Monitor:3000\n1000",
+        "ExpectedOutput": "Laptop, Monitor",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Tidak Ada)",
+        "Description": "Contoh 2 (Tidak Ada): input \u0027Mouse:200, Keyboard:800\n5000\u0027 -\u003E expected \u0027EMPTY\u0027",
+        "Input": "Mouse:200, Keyboard:800\n5000",
+        "ExpectedOutput": "EMPTY",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Semua Lolos",
+        "Description": "Semua Lolos: input \u0027A:100, B:200, C:300\n50\u0027 -\u003E expected \u0027A, B, C\u0027",
+        "Input": "A:100, B:200, C:300\n50",
+        "ExpectedOutput": "A, B, C",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Satu Produk Sama Persis",
+        "Description": "Satu Produk Sama Persis: input \u0027Keyboard:800\n800\u0027 -\u003E expected \u0027Keyboard\u0027",
+        "Input": "Keyboard:800\n800",
+        "ExpectedOutput": "Keyboard",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan LINQ \u0060.Where(p =\u003E p.Price \u003E= minPrice)\u0060.",
+      "Gunakan \u0060.OrderBy(p =\u003E p.Name)\u0060 untuk pengurutan deterministik."
+    ],
+    "Explanation": "Eksekusi LINQ in-memory (IEnumerable) mengevaluasi query pipeline secara deferred dan terstruktur tanpa memuat overhead memori besar."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-10-03",
+      "title": "EF Core Architecture: DbContext Lifecycle",
+      "levelName": "LEVEL 10",
+      "context": "Bagaimana EF Core Change Tracker dan Query Provider mengeksekusi Expression Tree."
+    },
+    {
+      "lessonId": "lesson-09-04",
+      "title": "Query Optimization Enterprise",
+      "levelName": "LEVEL 09",
+      "context": "Memastikan kueri LINQ diterjemahkan menjadi SQL yang SARGable."
+    }
+  ],
+  "references": [
+    {
+      "title": "Expression Trees (C#) - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/expression-trees/"
+    },
+    {
+      "title": "IQueryable vs IEnumerable in .NET",
+      "url": "https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Linq.Expressions;\n\npublic class DynamicExpressionBuilder\n{\n    public static Expression\u003CFunc\u003Cint, bool\u003E\u003E CreateGreaterThanExpression(int threshold)\n    {\n        var param = Expression.Parameter(typeof(int), \u0022x\u0022);\n        var constant = Expression.Constant(threshold, typeof(int));\n        var body = Expression.GreaterThan(param, constant);\n\n        return Expression.Lambda\u003CFunc\u003Cint, bool\u003E\u003E(body, param);\n    }\n\n    public static void Main()\n    {\n        var expr = CreateGreaterThanExpression(50);\n        var compiled = expr.Compile();\n\n        Console.WriteLine($\u002275 \u003E 50: {compiled(75)}\u0022);\n        Console.WriteLine($\u002225 \u003E 50: {compiled(25)}\u0022);\n    }\n}"
+}

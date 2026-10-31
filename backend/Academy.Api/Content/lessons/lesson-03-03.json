@@ -1,0 +1,168 @@
+{
+  "id": "lesson-03-03",
+  "levelId": "level-03",
+  "moduleId": "mod-03-02",
+  "order": 3,
+  "title": "Polimorfisme Dinamis: Virtual, Override, Sealed, dan VTable Resolution",
+  "slug": "dynamic-polymorphism-vtable-sealed",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar cara kerja runtime polimorfisme C#: bagaimana CoreCLR menyelesaikan method virtual menggunakan Virtual Method Table (VTable), biaya dereferensi pointer, dan optimasi devirtualization menggunakan keyword \u0027sealed\u0027.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-03-01",
+      "title": "Kelas \u0026 Enkapsulasi",
+      "levelName": "LEVEL 03",
+      "context": "Memahami struktur class dan method."
+    }
+  ],
+  "introduces": [
+    "Dynamic Polymorphism",
+    "Virtual Method Table (VTable)",
+    "Method Slot Dispatch",
+    "Keyword \u0027sealed\u0027 \u0026 Devirtualization",
+    "Shadowing (new) vs Overriding (override)"
+  ],
+  "learningObjectives": [
+    "Membedakan mekanisme kompilasi method non-virtual (Direct Call) vs virtual method (Indirect VTable Lookup).",
+    "Menjelaskan bagaimana keyword \u0027sealed\u0027 membantu JIT Compiler melakukan devirtualization dan inlining.",
+    "Menghindari jebakan method hiding yang tidak disengaja akibat keyword \u0027new\u0027."
+  ],
+  "markdownContent": "# Polimorfisme Dinamis: Virtual, Override, Sealed, dan VTable Resolution\n\n## Apa Itu Polimorfisme Dinamis?\nPolimorfisme memungkinkan pemanggil memperlakukan objek dari berbagai tipe turunan melalui satu antarmuka atau base class yang seragam:\n\n\u0060\u0060\u0060csharp\nPaymentGateway gateway = GetSelectedGateway();\ngateway.ProcessPayment(50000m); // Bisa berupa BcaGateway, MandiriGateway, atau StripeGateway!\n\u0060\u0060\u0060\nPertanyaan teknis tingkat dalam: **Bagaimana CPU dan CLR tahu method konkret mana yang harus dijalankan saat program dieksekusi?**\n\n---\n\n## Mekanisme Internal: Virtual Method Table (VTable)\nKetika sebuah kelas memiliki method yang ditandai \u0060virtual\u0060:\n\n\u0060\u0060\u0060text\n[INSTANCE OBJEK DI HEAP]\n\u002B---------------------------------------\u002B\n| SyncBlockIndex (8 Byte)               |\n| TypeMethodTable Pointer (8 Byte) ----\u003E [ METHOD TABLE DI METADATA CLR ]\n| Field Data                            |  - VTable Slot 0: Object.ToString()\n\u002B---------------------------------------\u002B  - VTable Slot 1: Object.GetHashCode()\n                                           - VTable Slot 2: PaymentGateway.ProcessPayment()\n                                                (Menunjuk langsung ke alamat instruksi native CPU)\n\u0060\u0060\u0060\n\n1. **Direct Call (Non-Virtual)**: JIT compiler menyematkan alamat instruksi method secara langsung ke dalam machine code (\u0060call 0x7FFE...\u0060). Kecepatan maksimal, 0 overhead.\n2. **Virtual Call (VTable Lookup)**: CPU harus melakukan **2 kali dereferensi memori**:\n   - Ambil pointer MethodTable dari header objek.\n   - Baca alamat fungsi pada slot VTable ke-N.\n   - Lompat ke alamat tersebut (\u0060call [rax\u002B0x20]\u0060).\n\n---\n\n## Kekuatan Rahasia Keyword \u0060sealed\u0060 (Devirtualization)\nJika VTable lookup memiliki biaya dereferensi dan menghalangi optimasi CPU (Branch Predictor \u0026 Inlining), bagaimana cara mengoptimalkannya?\n\nGunakan keyword **\u0060sealed\u0060**:\n\u0060\u0060\u0060csharp\npublic sealed class BcaPaymentGateway : PaymentGateway\n{\n    public override void ProcessPayment(decimal amount) { ... }\n}\n\u0060\u0060\u0060\n\n### Dampak Magis \u0060sealed\u0060 pada JIT Compiler:\nKetika RyuJIT melihat sebuah class ditandai \u0060sealed\u0060, runtime tahu pasti: **tidak akan ada class lain di dunia yang bisa mewarisi class ini!**\n- JIT secara cerdas melakukan **Devirtualization**: mengubah pemanggilan virtual tidak langsung menjadi pemanggilan langsung (direct call).\n- Method berukuran kecil dapat di-**inline** (ditempel langsung ke pemanggil tanpa overhead call stack).\n- *Best practice enterprise: Jadikan class bertanda \u0060sealed\u0060 secara default, kecuali jika sengaja dirancang untuk diwarisi!*",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\npublic abstract class TaxCalculator\n{\n    public abstract decimal CalculateTax(decimal amount);\n}\n\npublic sealed class StandardVatTax : TaxCalculator\n{\n    public override decimal CalculateTax(decimal amount) =\u003E amount * 0.11m;\n}\n\npublic sealed class LuxuryTax : TaxCalculator\n{\n    public override decimal CalculateTax(decimal amount) =\u003E amount * 0.35m;\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Simulasi Polimorfisme\n        TaxCalculator[] taxes = { new StandardVatTax(), new LuxuryTax() };\n\n        decimal transaksi = 1_000_000m;\n        foreach (var t in taxes)\n        {\n            Console.WriteLine($\u0022Kalkulator: {t.GetType().Name} -\u003E Pajak: Rp {t.CalculateTax(transaksi):N0}\u0022);\n        }\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-03-03-1",
+      "type": "MultipleChoice",
+      "question": "Mekanisme struktur data internal apakah yang digunakan oleh .NET CoreCLR untuk menentukan implementasi method mana yang dipanggil pada pemanggilan fungsi virtual saat runtime?",
+      "options": [
+        "B-Tree Index",
+        "Virtual Method Table (VTable)",
+        "Hash Bucket Array",
+        "Binary Search Tree"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "CoreCLR menggunakan Virtual Method Table (VTable) yang berisi daftar slot pointer alamat fungsi native untuk menyelesaikan pemanggilan fungsi virtual secara dinamis.",
+      "optionExplanations": [
+        "Salah. B-Tree digunakan untuk indexing database.",
+        "Benar! VTable (Virtual Method Table) menyimpan slot pointer fungsi untuk dispatching polimorfik.",
+        "Salah. Hash bucket digunakan untuk Dictionary dan HashSet.",
+        "Salah. Binary search tree bukan mekanisme dispatch method CLR."
+      ],
+      "sectionRef": "Mekanisme Internal: Virtual Method Table (VTable)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-03-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa menandai class C# dengan keyword \u0060sealed\u0060 dapat meningkatkan performa komputasi pada .NET JIT Compiler?",
+      "options": [
+        "Karena keyword sealed menghapus seluruh memori heap",
+        "Karena JIT compiler dapat melakukan Devirtualization dan Method Inlining dengan kepastian bahwa tidak ada subclass lain yang meng-override method tersebut",
+        "Karena sealed otomatis mengubah class menjadi struct",
+        "Karena sealed memaksa program berjalan dalam mode paralel"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Keyword \u0060sealed\u0060 memberi jaminan bahwa hierarki pewarisan telah berakhir, memungkinkan RyuJIT mengganti indirect VTable call menjadi direct call dan melakukan aggressive inlining.",
+      "optionExplanations": [
+        "Salah. Sealed tidak menghapus memori heap.",
+        "Benar! Devirtualization dan inlining dimungkinkan karena ketiadaan subclass lebih lanjut.",
+        "Salah. Class sealed tetap merupakan class (Reference Type).",
+        "Salah. Sealed tidak berkaitan dengan paralelisasi thread."
+      ],
+      "sectionRef": "Kekuatan Rahasia Keyword sealed (Devirtualization)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-03",
+    "Title": "Kalkulator Potongan Biaya Transaksi Polimorfik",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat kelas dasar abstrak \u0060Account\u0060 dengan method virtual/abstract \u0060decimal CalculateFee(decimal amount)\u0060.\nAturan tier:\n- \u0060StandardAccount\u0060: Biaya tetap 5000.\n- \u0060GoldAccount\u0060: Biaya 1% dari nominal (amount * 0.01).\n- \u0060PlatinumAccount\u0060: Biaya bebas (0).\nBaca satu baris dari stdin: \u0027\u003CTIER\u003E \u003CAMOUNT\u003E\u0027.\nHitung dan cetak biaya transaksi dengan pemanggilan polimorfik.",
+    "InputFormat": "Satu baris: \u0027\u003CTIER\u003E \u003CAMOUNT\u003E\u0027 (misal: \u0027Gold 1000000\u0027).",
+    "OutputFormat": "Satu baris angka biaya bertipe decimal.",
+    "Constraints": "Tier: \u0027Standard\u0027, \u0027Gold\u0027, \u0027Platinum\u0027. Amount \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "Standard 500000",
+        "Output": "5000",
+        "Explanation": "StandardAccount selalu berbiaya 5000."
+      },
+      {
+        "Input": "Gold 1000000",
+        "Output": "10000",
+        "Explanation": "GoldAccount berbiaya 1% = 10000."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic abstract class Account\n{\n    public abstract decimal CalculateFee(decimal amount);\n}\n// TODO: Buat subclass StandardAccount, GoldAccount, PlatinumAccount.\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        Console.WriteLine(0);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic abstract class Account\n{\n    public abstract decimal CalculateFee(decimal amount);\n}\n\npublic class StandardAccount : Account\n{\n    public override decimal CalculateFee(decimal amount) =\u003E 5000m;\n}\n\npublic class GoldAccount : Account\n{\n    public override decimal CalculateFee(decimal amount) =\u003E amount * 0.01m;\n}\n\npublic class PlatinumAccount : Account\n{\n    public override decimal CalculateFee(decimal amount) =\u003E 0m;\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 2) return;\n\n        string tier = p[0];\n        decimal amount = decimal.Parse(p[1], CultureInfo.InvariantCulture);\n\n        Account account = tier.ToLowerInvariant() switch\n        {\n            \u0022gold\u0022 =\u003E new GoldAccount(),\n            \u0022platinum\u0022 =\u003E new PlatinumAccount(),\n            _ =\u003E new StandardAccount()\n        };\n\n        decimal fee = account.CalculateFee(amount);\n        Console.WriteLine((long)fee);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Standard)",
+        "Description": "Contoh 1 (Standard): input \u0027Standard 500000\u0027 -\u003E expected \u00275000\u0027",
+        "Input": "Standard 500000",
+        "ExpectedOutput": "5000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Gold)",
+        "Description": "Contoh 2 (Gold): input \u0027Gold 1000000\u0027 -\u003E expected \u002710000\u0027",
+        "Input": "Gold 1000000",
+        "ExpectedOutput": "10000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Platinum Bebas Biaya",
+        "Description": "Platinum Bebas Biaya: input \u0027Platinum 5000000\u0027 -\u003E expected \u00270\u0027",
+        "Input": "Platinum 5000000",
+        "ExpectedOutput": "0",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Gold Nominal Kecil",
+        "Description": "Gold Nominal Kecil: input \u0027Gold 50000\u0027 -\u003E expected \u0027500\u0027",
+        "Input": "Gold 50000",
+        "ExpectedOutput": "500",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan kata kunci abstract pada kelas Account dan override pada kelas turunan.",
+      "Eksekusi method CalculateFee terjadi melalui vtable dispatching sesuai tipe instansiasi aktual runtime."
+    ],
+    "Explanation": "Polimorfisme dinamis di CLR mendispatch pemanggilan method melalui pointer Virtual Method Table (vtable), memungkinkan eksekusi algoritma berbeda tanpa percabangan if/else di level pemanggil."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-03-04",
+      "title": "Interfaces \u0026 Kontrak Abstraksi",
+      "levelName": "LEVEL 03",
+      "context": "Perbedaan dispatching VTable class vs Interface Dispatch (ITable)."
+    },
+    {
+      "lessonId": "lesson-08-01",
+      "title": "CoreCLR Internals \u0026 RyuJIT",
+      "levelName": "LEVEL 08",
+      "context": "Bagaimana Dynamic PGO melakukan monomorphic devirtualization."
+    }
+  ],
+  "references": [
+    {
+      "title": "Virtual and Override Keywords - C# Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/override"
+    },
+    {
+      "title": "Performance impact of virtual calls and sealed classes",
+      "url": "https://www.strathweb.com/2021/04/the-cost-of-virtual-calls-and-the-benefits-of-sealed-in-net/"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic abstract class FeeCalculator\n{\n    public abstract decimal CalculateFee(decimal transactionAmount);\n}\n\npublic sealed class FixedFeeCalculator : FeeCalculator\n{\n    private const decimal FlatFee = 5000m;\n\n    public override decimal CalculateFee(decimal transactionAmount)\n    {\n        if (transactionAmount \u003C= 0) return 0m;\n        return FlatFee;\n    }\n}\n\npublic sealed class PercentageFeeCalculator : FeeCalculator\n{\n    private readonly decimal _percentage;\n\n    public PercentageFeeCalculator(decimal percentage)\n    {\n        _percentage = percentage;\n    }\n\n    public override decimal CalculateFee(decimal transactionAmount)\n    {\n        if (transactionAmount \u003C= 0) return 0m;\n        return transactionAmount * (_percentage / 100m);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        FeeCalculator f1 = new FixedFeeCalculator();\n        FeeCalculator f2 = new PercentageFeeCalculator(2.5m);\n\n        Console.WriteLine($\u0022Fixed: Rp {f1.CalculateFee(100000m):N0}\u0022);\n        Console.WriteLine($\u0022Percent: Rp {f2.CalculateFee(100000m):N0}\u0022);\n    }\n}"
+}

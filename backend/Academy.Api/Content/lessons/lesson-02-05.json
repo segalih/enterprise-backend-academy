@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-05",
+  "levelId": "level-02",
+  "moduleId": "mod-02-02",
+  "order": 5,
+  "title": "Boxing, Unboxing, Type Casting, dan Dampak Performance",
+  "slug": "boxing-unboxing-type-casting-performance",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "stack-heap",
+  "simulatorContext": "Perhatikan bagaimana proses Boxing menyalin nilai 4-byte dari Stack ke dalam kotak pembungkus baru di Managed Heap lengkap dengan Type Method Table.",
+  "description": "Menganalisis mekanisme internal Boxing dan Unboxing di CoreCLR, biaya komputasi alokasi heap tersembunyi, perbedaan upcasting vs downcasting, serta pencegahan alokasi menggunakan C# Generics.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami letak fisik Stack dan Heap."
+    }
+  ],
+  "introduces": [
+    "Boxing (Stack ke Heap)",
+    "Unboxing (Heap ke Stack)",
+    "InvalidCastException",
+    "Object MethodTable Header",
+    "Generics vs Non-Generic Collections (ArrayList)",
+    "Pattern Matching \u0027is\u0027 Type Test"
+  ],
+  "learningObjectives": [
+    "Menjelaskan alur internal IL opcode box dan unbox.any pada CoreCLR.",
+    "Mengukur penalti performa CPU dan memori dari proses Boxing berulang.",
+    "Menggantikan koleksi non-generic (seperti ArrayList) dengan Generic Collections (List\u003CT\u003E) untuk mengeliminasi boxing."
+  ],
+  "markdownContent": "# Boxing, Unboxing, Type Casting, dan Dampak Performance\n\n## Apa Itu Boxing dan Unboxing?\nDi C#, semua tipe (baik Value Type maupun Reference Type) merupakan turunan dari basis universal \u0060System.Object\u0060.\nNamun, apa yang terjadi ketika sebuah Value Type (yang bertempat di Stack) harus disimpan ke dalam variabel bertipe \u0060object\u0060 atau sebuah interface?\n\n\u0060\u0060\u0060mermaid\nsequenceDiagram\n    autonumber\n    actor Stack as Call Stack Frame\n    participant CLR as CLR Runtime\n    participant Heap as Managed Heap\n\n    rect rgb(20, 50, 80)\n        Note over Stack,Heap: Fase 1: Boxing (Stack -\u003E Heap)\n        Stack-\u003E\u003ECLR: Alokasikan boxing untuk int val = 42\n        CLR-\u003E\u003EHeap: Alokasi 24 byte (SyncBlock 8B \u002B MethodTablePtr 8B \u002B Data 4B \u002B Padding 4B)\n        CLR-\u003E\u003EHeap: Salin nilai primitif 42 ke badan objek Heap\n        CLR--\u003E\u003EStack: Kembalikan pointer referensi objek ke Stack\n    end\n    rect rgb(80, 50, 20)\n        Note over Stack,Heap: Fase 2: Unboxing (Heap -\u003E Stack)\n        Stack-\u003E\u003ECLR: Unboxing (int)boxedObj\n        CLR-\u003E\u003EHeap: Verifikasi kecocokan tipe MethodTable (Type Safety Check)\n        CLR--\u003E\u003EStack: Salin nilai mentah 42 kembali ke slot memori Stack\n    end\n\u0060\u0060\u0060\n\n\u0060\u0060\u0060csharp\nint angka = 42;          // 4 byte di Stack\nobject kotak = angka;    // BOXING: Objek baru 24 byte dialokasikan di Managed Heap!\nint hasil = (int)kotak;  // UNBOXING: Nilai disalin kembali ke Stack\n\u0060\u0060\u0060\n\n---\n\n## Biaya Performa Tersembunyi di Skala Enterprise\nBanyak developer tidak menyadari bahwa boxing terjadi secara tersembunyi:\n\n1. **Non-Generic Collections Lawas (\u0060ArrayList\u0060 / \u0060Hashtable\u0060)**:\n   \u0060\u0060\u0060csharp\n   // SANGAT BURUK! ArrayList menyimpan tipe object\n   var list = new System.Collections.ArrayList();\n   for (int i = 0; i \u003C 1_000_000; i\u002B\u002B)\n   {\n       list.Add(i); // 1 JUTA ALOKASI OBJEK BARU DI HEAP KARENA BOXING!\n   }\n   \u0060\u0060\u0060\n2. **String Interpolation \u0026 String.Format pada Enum / Struct**:\n   \u0060\u0060\u0060csharp\n   // String.Format tradisional menerima parameter params object[]\n   Console.WriteLine(string.Format(\u0022Saldo: {0}\u0022, 50000)); // Boxing integer 50000!\n   \u0060\u0060\u0060\n3. **Memanggil Interface pada Struct**:\n   Jika struct mengimplementasikan interface \u0060IComparable\u0060, casting struct ke interface tersebut akan memicu boxing!\n\n---\n\n## Solusi: Keajaiban C# Generics (\u0060List\u003CT\u003E\u0060)\nSejak C# 2.0, Microsoft menghadirkan **Generics**. Dengan \u0060List\u003Cint\u003E\u0060:\n- JIT compiler membuat spesialisasi kode mesin native khusus untuk tipe \u0060int\u0060.\n- Nilai disimpan langsung dalam array blok primitif berurutan tanpa pembungkusan heap.\n- **Hasil: 10x lebih cepat dan Zero Garbage Collection allocation!**",
+  "starterCode": "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.Diagnostics;\n\n// PROGRAM: Membandingkan Kecepatan \u0026 Alokasi Memori: Boxing vs Generics\nconst int Iterations = 2_000_000;\n\n// 1. Menggunakan ArrayList (Memicu 2 Juta Kali Boxing di Heap)\nGC.Collect();\nlong memBefore1 = GC.GetTotalMemory(true);\nvar sw1 = Stopwatch.StartNew();\n\nArrayList arrayList = new ArrayList();\nfor (int i = 0; i \u003C Iterations; i\u002B\u002B)\n{\n    arrayList.Add(i); // BOXING!\n}\nsw1.Stop();\nlong memAfter1 = GC.GetTotalMemory(false);\n\nConsole.WriteLine($\u0022[ArrayList (Boxing)] Waktu: {sw1.ElapsedMilliseconds} ms | Memori Terpakai: {(memAfter1 - memBefore1) / (1024 * 1024)} MB\u0022);\n\n// 2. Menggunakan List\u003Cint\u003E (Zero Boxing, Type-Safe)\nGC.Collect();\nlong memBefore2 = GC.GetTotalMemory(true);\nvar sw2 = Stopwatch.StartNew();\n\nList\u003Cint\u003E genericList = new List\u003Cint\u003E(Iterations);\nfor (int i = 0; i \u003C Iterations; i\u002B\u002B)\n{\n    genericList.Add(i); // ZERO BOXING!\n}\nsw2.Stop();\nlong memAfter2 = GC.GetTotalMemory(false);\n\nConsole.WriteLine($\u0022[List\u003Cint\u003E (Generics)] Waktu: {sw2.ElapsedMilliseconds} ms | Memori Terpakai: {(memAfter2 - memBefore2) / (1024 * 1024)} MB\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-02-05-1",
+      "type": "MultipleChoice",
+      "question": "Apa konsekuensi internal yang terjadi saat operasi Boxing dieksekusi oleh .NET CoreCLR?",
+      "options": [
+        "Nilai dihapus permanen dari register prosesor",
+        "Alokasi memori baru dibuat di Managed Heap lengkap dengan Object Header, dan nilai disalin ke heap tersebut",
+        "Stack memory otomatis bertambah 1 Megabyte",
+        "Program beralih ke Kernel Mode Ring 0"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Boxing membungkus value type ke dalam instance objek di Managed Heap dengan overhead TypeHandle dan SyncBlockIndex.",
+      "optionExplanations": [
+        "Salah. Nilai tidak dihapus dari register.",
+        "Benar! Boxing membuat objek baru di Managed Heap dan menyalin isi bit value type ke dalamnya.",
+        "Salah. Boxing terjadi di Managed Heap, bukan memperluas Stack frame.",
+        "Salah. Boxing adalah operasi runtime user mode biasa."
+      ],
+      "sectionRef": "Apa Itu Boxing dan Unboxing?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-05-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa koleksi generik \u0060List\u003Cint\u003E\u0060 jauh lebih efisien dalam hal waktu dan memori dibandingkan \u0060ArrayList\u0060 lawas?",
+      "options": [
+        "Karena \u0060List\u003Cint\u003E\u0060 menyimpan data langsung dalam bentuk array tipe primitif tanpa pembungkusan heap (Zero Boxing)",
+        "Karena \u0060List\u003Cint\u003E\u0060 tidak menggunakan memori RAM sama sekali",
+        "Karena \u0060List\u003Cint\u003E\u0060 dijalankan oleh GPU",
+        "Karena \u0060List\u003Cint\u003E\u0060 otomatis mengompres data dengan gzip"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Generics mengeliminasi konversi ke System.Object, sehingga struct disimpan langsung sebagai nilai primitif tanpa overhead boxing di Heap.",
+      "optionExplanations": [
+        "Benar! Generics memproses nilai primitif secara langsung tanpa alokasi pembungkus heap.",
+        "Salah. Data tetap berada di memori RAM.",
+        "Salah. Eksekusi dilakukan oleh CPU.",
+        "Salah. Generics tidak menggunakan kompresi gzip."
+      ],
+      "sectionRef": "Solusi: Keajaiban C# Generics (List\u003CT\u003E)",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-05",
+    "Title": "Ekstraktor Nilai Aman Objek Ter-Boxing",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Diberikan sebuah string input dari stdin. Simulasikan penerimaan objek generik ter-boxing (tipe \u0060object\u0060).\nUji tipe nilai tersebut:\n- Jika string dapat di-parse sebagai int 32-bit: simulasikan boxing ke \u0060object\u0060, unbox kembali ke int, lalu cetak \u0027INT: \u003Cnilai*2\u003E\u0027\n- Jika dapat di-parse sebagai boolean: simulasikan boxing ke \u0060object\u0060, unbox, lalu cetak \u0027BOOL: \u003CNOT nilai\u003E\u0027\n- Jika bukan keduanya: cetak \u0027UNKNOWN\u0027.",
+    "InputFormat": "Satu baris string berisi teks atau angka.",
+    "OutputFormat": "Satu baris hasil unboxing yang telah diproses.",
+    "Constraints": "Input 1 baris.",
+    "Examples": [
+      {
+        "Input": "42",
+        "Output": "INT: 84",
+        "Explanation": "42 di-unbox ke int lalu dikalikan 2."
+      },
+      {
+        "Input": "true",
+        "Output": "BOOL: False",
+        "Explanation": "true di-unbox ke bool lalu dibalik menjadi False."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? input = Console.ReadLine();\n        // TODO: Simulasikan boxing dan unboxing yang aman dari runtime invalid cast.\n        Console.WriteLine(\u0022UNKNOWN\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? input = Console.ReadLine()?.Trim();\n        if (string.IsNullOrEmpty(input)) { Console.WriteLine(\u0022UNKNOWN\u0022); return; }\n\n        object boxed;\n        if (int.TryParse(input, out int iVal))\n        {\n            boxed = iVal; // boxing\n        }\n        else if (bool.TryParse(input, out bool bVal))\n        {\n            boxed = bVal; // boxing\n        }\n        else\n        {\n            Console.WriteLine(\u0022UNKNOWN\u0022);\n            return;\n        }\n\n        // Safe unboxing pattern matching\n        if (boxed is int unboxedInt)\n        {\n            Console.WriteLine($\u0022INT: {unboxedInt * 2}\u0022);\n        }\n        else if (boxed is bool unboxedBool)\n        {\n            Console.WriteLine($\u0022BOOL: {!unboxedBool}\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022UNKNOWN\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Angka Int)",
+        "Description": "Contoh 1 (Angka Int): input \u002742\u0027 -\u003E expected \u0027INT: 84\u0027",
+        "Input": "42",
+        "ExpectedOutput": "INT: 84",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Boolean True)",
+        "Description": "Contoh 2 (Boolean True): input \u0027true\u0027 -\u003E expected \u0027BOOL: False\u0027",
+        "Input": "true",
+        "ExpectedOutput": "BOOL: False",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Boolean False",
+        "Description": "Boolean False: input \u0027False\u0027 -\u003E expected \u0027BOOL: True\u0027",
+        "Input": "False",
+        "ExpectedOutput": "BOOL: True",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Teks Sembarang",
+        "Description": "Teks Sembarang: input \u0027HaloDunia\u0027 -\u003E expected \u0027UNKNOWN\u0027",
+        "Input": "HaloDunia",
+        "ExpectedOutput": "UNKNOWN",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Boxing terjadi saat value type dimasukkan ke variabel bertipe object.",
+      "Gunakan pattern matching \u0060boxed is int val\u0060 untuk unboxing aman tanpa memicu InvalidCastException."
+    ],
+    "Explanation": "Unboxing langsung dengan explicit cast \u0060(int)boxed\u0060 akan melempar InvalidCastException jika tipe underlying tidak cocok persis. Pattern matching memastikan keamanan tipe saat unboxing."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-06",
+      "title": "Pattern Matching Modern di C#",
+      "levelName": "LEVEL 02",
+      "context": "Pemanfaatan ekspresi pattern matching untuk inspeksi tipe polimorfik."
+    },
+    {
+      "lessonId": "lesson-03-06",
+      "title": "Mastering C# Generics",
+      "levelName": "LEVEL 03",
+      "context": "Merancang class dan method generik dengan type constraints."
+    }
+  ],
+  "references": [
+    {
+      "title": "Boxing and Unboxing - C# Programming Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/types/boxing-and-unboxing"
+    },
+    {
+      "title": "Performance considerations of boxing in .NET",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/base-types/common-type-system"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class SafeUnboxer\n{\n    public static int ExtractInteger(object? boxedValue, int fallbackDefault)\n    {\n        if (boxedValue is int directInt)\n        {\n            return directInt;\n        }\n\n        if (boxedValue is string str \u0026\u0026 int.TryParse(str, out int parsed))\n        {\n            return parsed;\n        }\n\n        return fallbackDefault;\n    }\n\n    public static void Main()\n    {\n        object objInt = 42;\n        object objStr = \u0022100\u0022;\n        object objBad = DateTime.Now;\n\n        Console.WriteLine(ExtractInteger(objInt, -1));\n        Console.WriteLine(ExtractInteger(objStr, -1));\n        Console.WriteLine(ExtractInteger(objBad, -1));\n    }\n}"
+}

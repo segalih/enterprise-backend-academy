@@ -1,0 +1,175 @@
+{
+  "id": "lesson-05-03",
+  "levelId": "level-05",
+  "moduleId": "mod-05-02",
+  "order": 3,
+  "title": "B-Tree \u0026 B\u002B Tree: Struktur Data Fundamental Database Indexing dan Disk I/O",
+  "slug": "btree-bplus-tree-database-indexing",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "btree",
+  "simulatorContext": "Eksplorasi simulator B-Tree di bawah untuk mengamati proses insersi kunci angka secara bertahap, pemecahan simpul (node splitting) saat simpul mencapai kapasitas maksimum, dan bagaimana pohon tetap seimbang (self-balancing).",
+  "description": "Mempelajari struktur data paling penting dalam mesin basis data (PostgreSQL, SQL Server, MySQL InnoDB): mengapa Binary Search Tree gagal pada disk storage, arsitektur self-balancing B-Tree \u0026 B\u002B Tree, dan optimalisasi blok I/O 4 KB / 8 KB.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-03",
+      "title": "Hierarki Memori \u0026 Disk Storage",
+      "levelName": "LEVEL 00",
+      "context": "Memahami gap latensi besar antara RAM dan Disk I/O."
+    },
+    {
+      "lessonId": "lesson-05-01",
+      "title": "Analisis Kompleksitas Big O",
+      "levelName": "LEVEL 05",
+      "context": "Memahami kompleksitas pencarian logaritmik O(log N)."
+    }
+  ],
+  "introduces": [
+    "Binary Search Tree (BST) Limitations",
+    "B-Tree vs B\u002B Tree",
+    "High Fan-out (Percabangan Lebar)",
+    "Database Storage Page (8 KB)",
+    "Internal Nodes vs Leaf Nodes",
+    "Range Queries via Leaf Linked List"
+  ],
+  "learningObjectives": [
+    "Menjelaskan mengapa pohon biner (BST) tidak cocok untuk penyimpanan disk sekunder.",
+    "Menguraikan perbedaan arsitektural antara B-Tree standar dan B\u002B Tree.",
+    "Menghubungkan ukuran simpul B-Tree dengan ukuran blok I/O fisik disk penyimpanan."
+  ],
+  "markdownContent": "# B-Tree \u0026 B\u002B Tree: Struktur Data Fundamental Database Indexing dan Disk I/O\n\n## Mengapa Binary Search Tree (BST) Gagal Total pada Database?\nDi buku algoritma dasar, Binary Search Tree (BST) tampak ideal dengan pencarian \u0060O(log\u2082 N)\u0060.\nNamun, mengapa **tidak ada satu pun mesin basis data di dunia (SQL Server, PostgreSQL, MySQL, SQLite)** yang menggunakan BST untuk indeks tabel mereka?\n\n### Masalah Fisik: Latensi Disk I/O\n- Pada BST biasa, setiap simpul (*node*) hanya memiliki **maksimal 2 anak**.\n- Untuk menyimpan 100.000.000 baris data, pohon biner membutuhkan **kedalaman (depth) setidaknya 27 hingga 30 level**!\n- Mengambil satu data berarti CPU harus melompat sejauh 30 level pointer di disk storage.\n- Karena membaca blok disk NVMe/SSD membutuhkan waktu ~20 mikrodetik per lompatan, 30 lompatan berarti **waktu respons 600 mikrodetik (sangat lambat untuk database enterprise!)**.\n\n---\n\n## Solusi Jenius: B-Tree dengan High Fan-Out (Cabang Lebar)\nDiciptakan oleh Rudolf Bayer dan Edward McCreight pada tahun 1970, **B-Tree** memecahkan masalah ini dengan konsep **High Fan-Out**:\n- Setiap simpul tidak hanya menyimpan 1 nilai, melainkan **ratusan kunci dalam satu blok memori**.\n- Setiap simpul memiliki ratusan anak (*fan-out* tinggi, misal 500 sampai 1.000 anak per simpul).\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Root[\u0022Root Node: Kunci [ 20 | 50 ]\u0022]\n    Root --\u003E|Nilai \u003C 20| N1[\u0022Node Kiri: [ 5 | 10 | 15 ]\u0022]\n    Root --\u003E|20 \u003C= Nilai \u003C 50| N2[\u0022Node Tengah: [ 25 | 30 | 40 ]\u0022]\n    Root --\u003E|Nilai \u003E= 50| N3[\u0022Node Kanan: [ 60 | 75 | 90 ]\u0022]\n\u0060\u0060\u0060\n\n### Keunggulan Fenomenal B-Tree:\nDengan fan-out 500:\n- Level 1 (Root): 1 simpul \u2192 menampung 500 entri.\n- Level 2: 500 simpul \u2192 menampung 250.000 entri.\n- Level 3: 250.000 simpul \u2192 menampung **125.000.000 entri data!**\n**Hanya butuh 3 kali pembacaan disk I/O untuk menemukan 1 baris di antara 125 juta data!** Dan simpul root level 1 selalu di-cache di RAM fisik server, sehingga I/O disk nyata hanya 2 kali!\n\n---\n\n## Perbedaan Mutlak: B-Tree vs B\u002B Tree\n\nMesin database modern (seperti InnoDB MySQL dan SQL Server B-Tree Index) sebenarnya menggunakan varian yang disebut **B\u002B Tree**:\n\n| Karakteristik | B-Tree Klasik | B\u002B Tree Modern (Standar Database) |\n| :--- | :--- | :--- |\n| **Lokasi Data Record** | Tersebar di semua simpul (Root, Internal, dan Leaf) | **HANYA disimpan di Leaf Nodes (Simpul Daun)** |\n| **Kapasitas Kunci Internal**| Lebih sedikit (karena bercampur dengan pointer data) | Jauh lebih banyak (hanya menyimpan kunci navigasi routing)|\n| **Kueri Rentang (Range Query)**| Lambat (harus in-order traversal naik turun pohon)| **SANGAT CEPAT (Leaf nodes dihubungkan oleh Double Linked List)**|\n\nPada B\u002B Tree, ketika Anda mengeksekusi kueri rentang seperti:\n\u0060\u0060\u0060sql\nSELECT * FROM Transaksi WHERE Tanggal BETWEEN \u00272026-01-01\u0027 AND \u00272026-01-31\u0027\n\u0060\u0060\u0060\nMesin database hanya perlu melakukan navigasi pohon 1 kali ke tanggal awal di leaf node, lalu **cukup menelusuri linked list mendatar antar-halaman daun berikutnya tanpa pernah naik lagi ke root!**",
+  "starterCode": "using System;\nusing System.Collections.Generic;\n\n// PROGRAM: Simulasi Navigasi B-Tree Simpul Sederhana\npublic class BTreeNode\n{\n    public List\u003Cint\u003E Keys { get; } = new();\n    public List\u003CBTreeNode\u003E Children { get; } = new();\n    public bool IsLeaf =\u003E Children.Count == 0;\n\n    public int SearchKey(int targetKey)\n    {\n        // Binary search internal di dalam satu halaman simpul (In-Memory)\n        int idx = Keys.BinarySearch(targetKey);\n        return idx;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Simulasi pembuatan Root simpul B-Tree berkapasitas banyak kunci\n        var root = new BTreeNode();\n        root.Keys.AddRange(new[] { 10, 50, 100, 250, 500 });\n        \n        Console.WriteLine($\u0022=== SIMULASI NODE B-TREE ===\u0022);\n        Console.WriteLine($\u0022Kapasitas Kunci di Node Root: {root.Keys.Count}\u0022);\n        \n        int target = 100;\n        int pos = root.SearchKey(target);\n        Console.WriteLine($\u0022Pencarian Kunci {target}: Ditemukan di indeks posisi {pos} pada node ini.\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-05-03-1",
+      "type": "MultipleChoice",
+      "question": "Mengapa B-Tree dan B\u002B Tree jauh lebih unggul dibandingkan Binary Search Tree (BST) untuk struktur indeks penyimpanan database di disk?",
+      "options": [
+        "Karena B-Tree memiliki Fan-out (percabangan) yang sangat lebar sehingga kedalaman pohon (tree depth) sangat dangkal, meminimalkan frekuensi pembacaan disk I/O yang lambat",
+        "Karena B-Tree tidak memerlukan alokasi memori sama sekali",
+        "Karena B-Tree hanya bisa dijalankan pada sistem operasi Windows",
+        "Karena B-Tree otomatis mengenkripsi data tabel"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Dengan cabang yang sangat lebar (fan-out ratusan per simpul), kedalaman B-Tree hanya berkisar 3-4 tingkat untuk ratusan juta data, memangkas operasi disk I/O.",
+      "optionExplanations": [
+        "Benar! Kedalaman pohon yang dangkal meminimalkan operasi pembacaan blok disk I/O fisik.",
+        "Salah. B-Tree tetap membutuhkan alokasi blok penyimpanan.",
+        "Salah. B-Tree bersifat universal dan didukung di seluruh sistem operasi.",
+        "Salah. Enkripsi adalah fitur terpisah di layer filesystem atau engine TDE."
+      ],
+      "sectionRef": "Solusi Jenius: B-Tree dengan High Fan-Out (Cabang Lebar)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-05-03-2",
+      "type": "MultipleChoice",
+      "question": "Fitur struktural apakah pada B\u002B Tree yang membuat eksekusi kueri rentang (Range Query: WHERE ID BETWEEN A AND B) berjalan sangat cepat?",
+      "options": [
+        "Data dihapus dari root setiap kali kueri selesai",
+        "Seluruh simpul daun (Leaf Nodes) dihubungkan satu sama lain menggunakan Doubly Linked List berurutan",
+        "Setiap simpul diacak posisinya dengan algoritma hashing",
+        "B\u002B Tree membatasi maksimal 2 data per tabel"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Pada B\u002B Tree, seluruh leaf node saling terhubung melalui linked list horizontal, sehingga pembacaan rentang data dapat dilakukan secara sekuensial cepat tanpa perlu melintasi kembali simpul induk di atasnya.",
+      "optionExplanations": [
+        "Salah. Data di root tetap ada untuk navigasi kueri lain.",
+        "Benar! Rantai linked list pada simpul daun memungkinkan pemindaian rentang sekuensial instan.",
+        "Salah. Simpul B\u002B Tree selalu terurut rapi, tidak diacak.",
+        "Salah. B\u002B Tree mampu menampung miliaran baris data."
+      ],
+      "sectionRef": "Perbedaan Mutlak: B-Tree vs B\u002B Tree",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-05-03",
+    "Title": "Pencari Slot Kunci Navigasi Simpul B-Tree (Binary Search)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Sebuah node internal B-Tree menyimpan daftar kunci terurut (sorted keys). Diberikan daftar kunci dari baris pertama (dipisahkan spasi) dan kunci target pencarian di baris kedua.\nGunakan algoritma Binary Search untuk menentukan slot navigasi:\n- Jika target ada di simpul, cetak \u0027EXACT_MATCH: Index=\u003Cidx\u003E\u0027\n- Jika target tidak ada, cetak \u0027CHILD_SLOT: Index=\u003Cidx\u003E\u0027 di mana idx adalah posisi cabang anak yang harus ditelusuri (0 \u003C= idx \u003C= N).",
+    "InputFormat": "Dua baris: baris 1 daftar kunci terurut, baris 2 target pencarian.",
+    "OutputFormat": "Satu baris status slot B-Tree.",
+    "Constraints": "Kunci integer unik terurut menaik.",
+    "Examples": [
+      {
+        "Input": "10 20 30 40 50\n20",
+        "Output": "EXACT_MATCH: Index=1",
+        "Explanation": "Kunci 20 ditemukan tepat di indeks 1 simpul."
+      },
+      {
+        "Input": "10 20 30 40 50\n25",
+        "Output": "CHILD_SLOT: Index=2",
+        "Explanation": "Kunci 25 berada di antara 20 dan 30, navigasi ke anak indeks 2."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Gunakan Array.BinarySearch untuk navigasi simpul B-Tree.\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || !int.TryParse(l2, out int target)) return;\n\n        var keys = l1.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries)\n            .Select(int.Parse)\n            .ToArray();\n\n        int result = Array.BinarySearch(keys, target);\n        if (result \u003E= 0)\n        {\n            Console.WriteLine($\u0022EXACT_MATCH: Index={result}\u0022);\n        }\n        else\n        {\n            int slot = ~result;\n            Console.WriteLine($\u0022CHILD_SLOT: Index={slot}\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Match)",
+        "Description": "Contoh 1 (Match): input \u002710 20 30 40 50\n20\u0027 -\u003E expected \u0027EXACT_MATCH: Index=1\u0027",
+        "Input": "10 20 30 40 50\n20",
+        "ExpectedOutput": "EXACT_MATCH: Index=1",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Child Slot)",
+        "Description": "Contoh 2 (Child Slot): input \u002710 20 30 40 50\n25\u0027 -\u003E expected \u0027CHILD_SLOT: Index=2\u0027",
+        "Input": "10 20 30 40 50\n25",
+        "ExpectedOutput": "CHILD_SLOT: Index=2",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Slot Paling Depan",
+        "Description": "Slot Paling Depan: input \u002710 20 30 40 50\n5\u0027 -\u003E expected \u0027CHILD_SLOT: Index=0\u0027",
+        "Input": "10 20 30 40 50\n5",
+        "ExpectedOutput": "CHILD_SLOT: Index=0",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Slot Paling Belakang",
+        "Description": "Slot Paling Belakang: input \u002710 20 30 40 50\n60\u0027 -\u003E expected \u0027CHILD_SLOT: Index=5\u0027",
+        "Input": "10 20 30 40 50\n60",
+        "ExpectedOutput": "CHILD_SLOT: Index=5",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Array.BinarySearch mengembalikan indeks negatif bernilai bitwise complement (~index) jika target tidak ditemukan.",
+      "Gunakan operator bitwise NOT \u0060~result\u0060 untuk mendapatkan slot penyisipan/pointer anak."
+    ],
+    "Explanation": "Mesin penyimpanan database (seperti SQL Server atau SQLite) menggunakan Binary Search di dalam page memory B-Tree untuk secara instan menemukan pointer node anak disk selanjutnya."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-09-02",
+      "title": "Database Storage \u0026 Indexing: Clustered vs Covering",
+      "levelName": "LEVEL 09",
+      "context": "Bagaimana SQL Server dan PostgreSQL mengimplementasikan B\u002B Tree pada disk file fisik."
+    },
+    {
+      "lessonId": "lesson-09-04",
+      "title": "Query Optimization Enterprise",
+      "levelName": "LEVEL 09",
+      "context": "Analisis Index Seek vs Index Scan berdasarkan navigasi pohon B\u002B Tree."
+    }
+  ],
+  "references": [
+    {
+      "title": "Organization and Maintenance of Large Ordered Indexes - R. Bayer \u0026 E. McCreight",
+      "url": "https://dl.acm.org/doi/10.1145/1734663.1734671"
+    },
+    {
+      "title": "How B-Trees work in databases - Use The Index, Luke!",
+      "url": "https://use-the-index-luke.com/sql/anatomy"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class BTreeNavigator\n{\n    public static int FindChildSlotIndex(int[] nodeKeys, int targetKey)\n    {\n        if (nodeKeys == null || nodeKeys.Length == 0) return 0;\n\n        for (int i = 0; i \u003C nodeKeys.Length; i\u002B\u002B)\n        {\n            if (targetKey \u003C nodeKeys[i])\n            {\n                return i;\n            }\n        }\n\n        return nodeKeys.Length;\n    }\n\n    public static void Main()\n    {\n        int[] keys = { 10, 20, 30 };\n        Console.WriteLine($\u0022Target 5  -\u003E Slot: {FindChildSlotIndex(keys, 5)}\u0022);\n        Console.WriteLine($\u0022Target 15 -\u003E Slot: {FindChildSlotIndex(keys, 15)}\u0022);\n        Console.WriteLine($\u0022Target 35 -\u003E Slot: {FindChildSlotIndex(keys, 35)}\u0022);\n    }\n}"
+}

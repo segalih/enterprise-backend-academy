@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-16-02",
+    "levelId":  "level-16",
+    "moduleId":  "mod-16-01",
+    "order":  2,
+    "title":  "Integration Testing ASP.NET Core: WebApplicationFactory dan Database Kontainer",
+    "slug":  "integration-testing-webapplicationfactory",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menguji seluruh siklus hidup request ASP.NET Core secara nyata: Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory), in-memory TestServer, isolasi Testcontainers untuk PostgreSQL/SQL Server, dan database seeding.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-11-01",
+                              "reason":  "ASP.NET Core Middleware \u0026 Kestrel Lifecycle"
+                          },
+                          {
+                              "lessonId":  "lesson-16-01",
+                              "reason":  "xUnit Testing Fundamentals"
+                          }
+                      ],
+    "introduces":  [
+                       "Integration testing vs Unit testing",
+                       "WebApplicationFactory\u003cTProgram\u003e architecture",
+                       "In-memory TestServer (Zero network port binding)",
+                       "Testcontainers for .NET (Real disposable Docker databases)",
+                       "Respawn library for ultra-fast database state reset"
+                   ],
+    "learningObjectives":  [
+                               "Membangun integration test suite menggunakan `WebApplicationFactory\u003cProgram\u003e` yang memuat seluruh dependency injection dan middleware pipeline",
+                               "Menjelaskan keuntungan `TestServer` yang mengeksekusi request HTTP langsung di memori tanpa membuka port TCP fisik",
+                               "Mengganti dependensi eksternal (seperti authentication handler atau payment gateway) di dalam factory kustom",
+                               "Menggunakan Testcontainers untuk menjalankan database PostgreSQL/SQL Server nyata di dalam kontainer Docker sementara selama proses pengujian"
+                           ],
+    "markdownContent":  "# Integration Testing ASP.NET Core: WebApplicationFactory dan Database Kontainer\n\nJika unit test memverifikasi logika satu fungsi secara terisolasi dengan mock, **Integration Test** memverifikasi bahwa seluruh komponen sistem bekerja sama secara harmonis di dunia nyata:\n- Apakah middleware routing membaca URL dengan benar?\n- Apakah model binding dan data annotations menolak payload JSON yang cacat?\n- Apakah SQL query EF Core benar-benar valid dan dapat dieksekusi oleh database engine tanpa syntax error?\n- Apakah transaksi database di-commit dan di-rollback sesuai harapan?\n\nASP.NET Core menyediakan pustaka resmi **`Microsoft.AspNetCore.Mvc.Testing`** yang memungkinkan kita menjalankan seluruh aplikasi web di dalam memori untuk pengujian integrasi berkecepatan tinggi.\n\n---\n\n## 1. Arsitektur `WebApplicationFactory\u003cProgram\u003e`\n\n`WebApplicationFactory` menginstansiasi host aplikasi ASP.NET Core Anda secara utuh di dalam proses pengujian menggunakan **`TestServer`**:\n\n```mermaid\nflowchart TD\n    Runner[\"Integration Test Runner (xUnit)\"] --\u003e|HttpClient.PostAsJsonAsync| Server\n    subgraph Server[\"In-Memory TestServer (WebApplicationFactory)\"]\n        MW[\"Middleware Pipeline\u003cbr/\u003e(ExceptionHandler -\u003e Auth -\u003e Routing)\"]\n        EP[\"Minimal API / Controller Endpoint\"]\n        DI[\"Real DbContext \u0026 Service DI\"]\n        MW --\u003e EP --\u003e DI\n    end\n    DI --\u003e|Real Socket Connection| TC[\"Testcontainers\u003cbr/\u003e(Disposable PostgreSQL / SQL Server)\"]\n```\n\n### Keunggulan TestServer:\n1. **Tidak Membuka Port TCP**: Tidak ada konflik port (seperti error *Address already in use* saat menjalankan pengujian paralel).\n2. **Kecepatan Ekstrem**: Request HTTP dialirkan langsung melalui memory stream, memangkas latensi network stack OS.\n3. **Konfigurasi Fleksibel**: Anda dapat meng-override pendaftaran DI container khusus untuk lingkungan tes.\n\n---\n\n## 2. Membuat Custom Factory \u0026 Mengganti Dependensi\n\n```csharp\npublic class CustomApiFactory : WebApplicationFactory\u003cProgram\u003e\n{\n    protected override void ConfigureWebHost(IWebHostBuilder builder)\n    {\n        builder.ConfigureServices(services =\u003e\n        {\n            // 1. Hapus DbContext asli yang mengarah ke database produksi\n            var descriptor = services.SingleOrDefault(d =\u003e d.ServiceType == typeof(DbContextOptions\u003cAppDbContext\u003e));\n            if (descriptor != null) services.Remove(descriptor);\n\n            // 2. Ganti dengan koneksi ke database Testcontainers\n            services.AddDbContext\u003cAppDbContext\u003e(options =\u003e\n            {\n                options.UseNpgsql(\"Host=localhost;Database=test_db;Username=test;Password=test\");\n            });\n\n            // 3. Mock external payment gateway pihak ketiga\n            var mockPayment = Substitute.For\u003cIPaymentGateway\u003e();\n            mockPayment.ChargeAsync(Arg.Any\u003cdecimal\u003e()).Returns(Task.FromResult(true));\n            services.AddSingleton(mockPayment);\n        });\n    }\n}\n```\n\n---\n\n## 3. Real Database Testing dengan Testcontainers\n\nSalah satu kesalahan terbesar dalam pengujian integrasi adalah menggunakan **EF Core InMemory Database**.\nInMemory database **BUKAN database relasional**:\n- InMemory tidak memvalidasi constraint foreign key!\n- InMemory tidak mendukung raw SQL query!\n- InMemory tidak memiliki transaksi dan locking!\n- Query yang sukses di InMemory seringkali meledak dengan runtime error di SQL Server/PostgreSQL produksi!\n\n### Solusi Standar Industri: Testcontainers for .NET\nPustaka **Testcontainers** secara otomatis memutar kontainer Docker resmi (seperti PostgreSQL atau SQL Server) saat pengujian dimulai, dan menghancurkannya saat pengujian selesai:\n\n```csharp\npublic class IntegrationTestFixture : IAsyncLifetime\n{\n    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()\n        .WithImage(\"postgres:16-alpine\")\n        .Build();\n\n    public async Task InitializeAsync()\n    {\n        // Jalankan kontainer database sebelum tes pertama dieksekusi\n        await _dbContainer.StartAsync();\n    }\n\n    public async Task DisposeAsync()\n    {\n        // Bersihkan kontainer setelah seluruh tes selesai\n        await _dbContainer.StopAsync();\n    }\n}\n```\n\n---\n\n## 4. Reset State Database dengan Respawn\n\nJika Test 1 memasukkan data pengguna dengan email `alice@corp.com`, Test 2 yang mencoba mendaftarkan `alice@corp.com` akan gagal karena pelanggaran *Unique Constraint* di database.\n\nDaripada menghapus dan membuat ulang skema database di setiap tes (yang memakan waktu detik), gunakan pustaka **Respawn**:\n- Respawn mendeteksi seluruh tabel foreign key dan menjalankan query `TRUNCATE TABLE` cerdas hanya dalam hitungan **milidetik** di antara eksekusi method tes.\n\n---\n\n## 5. Ringkasan \u0026 Aturan Integration Test\n\n1. **Gunakan WebApplicationFactory**: Ini adalah cara paling setia menguji pipeline middleware dan dependency injection seperti di produksi.\n2. **Tolak InMemory Database untuk Integration Tests**: Selalu gunakan database engine nyata via Testcontainers agar perilaku transaksi, SQL generation, dan constraints teruji 100%.\n3. **Uji Status Code dan ProblemDetails**: Pastikan tes memverifikasi skenario gagal (400 Bad Request, 401 Unauthorized, 404 Not Found) lengkap dengan format error RFC 7807.",
+    "starterCode":  "using System;\nusing System.Net;\nusing System.Net.Http;\nusing System.Threading.Tasks;\n\n// Simulasi Mini TestClient untuk WebApplicationFactory\npublic class MockTestServer\n{\n    public HttpResponseMessage SimulateRequest(string method, string path, string? jsonBody)\n    {\n        // Simulasi validasi pipeline endpoint\n        if (path == \"/api/v1/orders\" \u0026\u0026 method == \"POST\")\n        {\n            if (string.IsNullOrWhiteSpace(jsonBody))\n            {\n                return new HttpResponseMessage(HttpStatusCode.BadRequest);\n            }\n\n            return new HttpResponseMessage(HttpStatusCode.Created);\n        }\n\n        return new HttpResponseMessage(HttpStatusCode.NotFound);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var server = new MockTestServer();\n\n        // Integration Test 1: POST tanpa body -\u003e Harus 400 Bad Request\n        var resp1 = server.SimulateRequest(\"POST\", \"/api/v1/orders\", null);\n        Console.WriteLine($\"Test 1 (Empty Body) -\u003e Status: {resp1.StatusCode} (Ekspektasi: BadRequest)\");\n\n        // TODO: Buat Integration Test 2: POST dengan body valid \"{\\\"item\\\":\\\"Laptop\\\"}\"\n        // Pastikan status response adalah HttpStatusCode.Created (201).\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Net;\nusing System.Net.Http;\nusing System.Threading.Tasks;\n\npublic class MockTestServer\n{\n    public HttpResponseMessage SimulateRequest(string method, string path, string? jsonBody)\n    {\n        if (path == \"/api/v1/orders\" \u0026\u0026 method == \"POST\")\n        {\n            if (string.IsNullOrWhiteSpace(jsonBody))\n            {\n                return new HttpResponseMessage(HttpStatusCode.BadRequest);\n            }\n\n            return new HttpResponseMessage(HttpStatusCode.Created);\n        }\n\n        return new HttpResponseMessage(HttpStatusCode.NotFound);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var server = new MockTestServer();\n\n        var resp1 = server.SimulateRequest(\"POST\", \"/api/v1/orders\", null);\n        Console.WriteLine($\"Test 1 (Empty Body) -\u003e Status: {resp1.StatusCode} (Ekspektasi: BadRequest)\");\n\n        var resp2 = server.SimulateRequest(\"POST\", \"/api/v1/orders\", \"{\\\"item\\\":\\\"Laptop\\\"}\");\n        Console.WriteLine($\"Test 2 (Valid Body) -\u003e Status: {resp2.StatusCode} (Ekspektasi: Created)\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-16-02-1",
+                              "type":  "single_choice",
+                              "question":  "Apa keunggulan teknis dari in-memory TestServer pada WebApplicationFactory dibandingkan meluncurkan aplikasi dengan port TCP fisik nyata saat pengujian integrasi?",
+                              "options":  [
+                                              "TestServer secara otomatis mengunduh file video.",
+                                              "TestServer mengalirkan request HTTP langsung melalui memori tanpa overhead socket TCP OS dan tanpa risiko konflik port (port binding collision) saat tes dijalankan secara paralel.",
+                                              "TestServer tidak mendukung Dependency Injection.",
+                                              "TestServer hanya bisa digunakan jika server terhubung ke satelit."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "TestServer memproses request HTTP langsung di dalam memory stream proses yang sama. Ini mengeliminasi delay handshake TCP/jaringan dan mencegah tabrakan port saat puluhan test runner mengeksekusi suite secara bersamaan di build server CI.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak ada kaitan dengan file video.",
+                                                         "Benar! Eksekusi in-memory menghilangkan konflik port dan memaksimalkan kecepatan pengujian.",
+                                                         "Salah. WebApplicationFactory mempertahankan 100% kapabilitas DI container aplikasi.",
+                                                         "Salah. Berjalan secara lokal tanpa koneksi eksternal."
+                                                     ],
+                              "sectionRef":  "1. Arsitektur WebApplicationFactory\u003cProgram\u003e",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-16-02-2",
+                              "type":  "single_choice",
+                              "question":  "Mengapa penggunaan EF Core InMemory Provider untuk Integration Testing sangat tidak direkomendasikan pada aplikasi enterprise modern?",
+                              "options":  [
+                                              "Karena InMemory Provider menghapus seluruh file project C#.",
+                                              "Karena InMemory Provider bukan relational database sejati: ia tidak memvalidasi constraint foreign key, tidak mendukung raw SQL, dan mengabaikan boundary transaksi ACID, sehingga tes yang lolos bisa meledak di database SQL produksi.",
+                                              "Karena InMemory Provider membutuhkan pembayaran lisensi mahal.",
+                                              "Karena InMemory Provider hanya bisa dijalankan di smartphone."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "InMemory Provider hanyalah kumpulan list objek di memori. Ia tidak memiliki query engine relasional SQL sejati, mengabaikan constraint integritas referensial, dan tidak mencerminkan perilaku database produksi. Standar modern adalah menggunakan database kontainer nyata via Testcontainers.",
+                              "optionExplanations":  [
+                                                         "Salah. Provider ini tidak menghapus file.",
+                                                         "Benar! InMemory Provider memberikan ilusi keamanan palsu (false sense of security) karena mengabaikan aturan dasar database relasional.",
+                                                         "Salah. EF Core InMemory Provider bersifat open-source gratis.",
+                                                         "Salah. Berjalan di runtime .NET standar."
+                                                     ],
+                              "sectionRef":  "3. Real Database Testing dengan Testcontainers",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-11-01",
+                           "lesson-16-01",
+                           "lesson-16-03"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Integration tests in ASP.NET Core - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Testcontainers for .NET Documentation",
+                           "url":  "https://dotnet.testcontainers.org/",
+                           "type":  "documentation"
+                       }
+                   ]
+}

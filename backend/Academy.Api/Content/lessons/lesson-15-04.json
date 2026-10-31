@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-15-04",
+    "levelId":  "level-15",
+    "moduleId":  "mod-15-02",
+    "order":  4,
+    "title":  "Kriptografi Terapan: AES-256 Enkripsi Data at Rest, Hashing HMAC, dan Secrets Management",
+    "slug":  "applied-cryptography-aes-secrets",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menerapkan standar enkripsi enterprise: AES-256-GCM (Authenticated Encryption), integritas pesan dengan HMAC-SHA256, Zero-knowledge Secret Management (Azure Key Vault, HashiCorp Vault), dan proteksi kunci memori.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-15-01",
+                              "reason":  "Password Hashing \u0026 Cryptographic Randomness"
+                          },
+                          {
+                              "lessonId":  "lesson-00-06",
+                              "reason":  "Byte Manipulation \u0026 Hex Encoding"
+                          }
+                      ],
+    "introduces":  [
+                       "Symmetric Encryption: AES-256-GCM (AEAD) vs CBC",
+                       "Initialization Vectors (IV / Nonce) and uniqueness",
+                       "Message Authentication Codes (HMAC-SHA256)",
+                       "Timing Attacks \u0026 Constant-time comparison (CryptographicOperations)",
+                       "Enterprise Secrets Management (Azure Key Vault / AWS Secrets Manager)"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan mode enkripsi terotentikasi (AES-GCM) dengan mode klasik (AES-CBC) yang rentan padding oracle attack",
+                               "Menggunakan `CryptographicOperations.FixedTimeEquals` untuk mencegah Timing Attacks saat memvalidasi HMAC/token",
+                               "Menjelaskan bahaya menyimpan secrets/password di dalam file `appsettings.json` atau repository git",
+                               "Mengamankan data sensitif pada kolom database menggunakan pola Enkripsi Data at Rest"
+                           ],
+    "markdownContent":  "# Kriptografi Terapan: AES-256 Enkripsi Data at Rest, Hashing HMAC, dan Secrets Management\n\nDalam industri yang diatur ketat oleh regulasi (seperti PCI-DSS pada kartu kredit, HIPAA pada data medis, atau GDPR), data sensitif tidak boleh disimpan dalam bentuk teks biasa (*plaintext*) di database. Jika harddisk server dicuri atau backup database bocor, data harus tetap tidak terbaca tanpa kunci enkripsi (*Data at Rest Encryption*).\n\nNamun, kriptografi adalah ranah rekayasa yang sangat berbahaya jika salah diterapkan. Memilih mode enkripsi yang usang seperti AES-ECB atau AES-CBC dapat menyebabkan serangan manipulasi data atau *Padding Oracle Attack*.\n\nMateri ini membahas implementasi kriptografi simetris modern menggunakan **AES-256-GCM**, integritas pesan **HMAC**, pencegahan **Timing Attacks**, dan manajemen rahasia enterprise.\n\n---\n\n## 1. AES-256-GCM: Standar Emas Enkripsi Terotentikasi (AEAD)\n\nStandar modern industri mewajibkan penggunaan **AEAD (Authenticated Encryption with Associated Data)**, di mana algoritma terpopulernya adalah **AES-GCM (Galois/Counter Mode)**.\n\n```mermaid\nflowchart LR\n    P[\"Plaintext\"] \u0026 K[\"Secret Key (256-bit)\"] \u0026 N[\"Nonce / IV (96-bit)\"] --\u003e Engine[\"AES-GCM Engine\"]\n    Engine --\u003e C[\"Ciphertext\"] \u0026 T[\"Authentication Tag (128-bit)\"]\n```\n\n### Mengapa AES-GCM Lebih Unggul dari AES-CBC?\n1. **Integritas Terpadu**: AES-GCM menghasilkan **Authentication Tag** (biasanya 16 bytes). Jika penyerang mengubah satu bit saja pada ciphertext di database, proses dekripsi akan langsung gagal melempar `CryptographicException`.\n2. **Kebal Padding Oracle Attack**: AES-GCM bekerja sebagai stream-cipher mode; ia tidak memerlukan *padding*, sehingga serangan padding oracle yang melumpuhkan CBC mustahil terjadi.\n3. **Akselerasi Hardware**: Prosesor x86/ARM modern memiliki instruksi hardware khusus (`AES-NI` dan `CLMUL`) yang membuat AES-GCM dapat mengenkripsi data dengan kecepatan puluhan gigabit per detik.\n\n\u003e [!CAUTION]\n\u003e **Hukum Mutlak AES-GCM:**\n\u003e **JANGAN PERNAH MENGGUNAKAN NONCE (IV) YANG SAMA DUA KALI DENGAN KUNCI YANG SAMA!**\n\u003e Penggunaan nonce yang sama (nonce reuse) pada AES-GCM secara matematis membocorkan kunci enkripsi atau memungkinkan pemalsuan authentication tag! Selalu generate nonce baru (12 bytes acak) untuk setiap data yang dienkripsi.\n\n---\n\n## 2. Timing Attacks dan Solusinya: `FixedTimeEquals`\n\nKetika Anda memverifikasi tanda tangan HMAC dari webhook payment gateway (misal Stripe atau Midtrans), perhatikan kode perbandingan string ini:\n\n```csharp\n// CELAH TIMING ATTACK FATAL:\nif (incomingSignature == expectedSignature) { /* ... */ }\n```\n\n### Mengapa Operator `==` Rentan Terhadap Timing Attack?\nOperator `==` di C# membandingkan karakter demi karakter dari kiri ke kanan. **Begitu menemukan karakter pertama yang tidak cocok, operator langsung berhenti (short-circuit)**!\n\nHacker dapat mengirimkan ribuan request dan mengukur waktu respons server dengan presisi mikrodetik:\n- Jika karakter ke-1 salah: server merespons dalam 1.200 nanodetik.\n- Jika karakter ke-1 benar dan karakter ke-2 salah: server merespons dalam 1.240 nanodetik.\nDengan mengukur perbedaan waktu ini, hacker dapat menebak seluruh signature huruf demi huruf!\n\n### Solusi Wajib: `CryptographicOperations.FixedTimeEquals`\n```csharp\n// AMAN DARI TIMING ATTACK: Selalu memakan waktu konstan berapa pun karakter yang cocok!\nbyte[] incomingBytes = Encoding.UTF8.GetBytes(incomingSignature);\nbyte[] expectedBytes = Encoding.UTF8.GetBytes(expectedSignature);\n\nif (CryptographicOperations.FixedTimeEquals(incomingBytes, expectedBytes))\n{\n    // Signature valid secara aman!\n}\n```\n\n---\n\n## 3. Secrets Management di Lingkungan Enterprise\n\nAturan nomor satu keamanan software: **JANGAN PERNAH MENYIMPAN PASSWORD ATAU API KEY DI DALAM CODEBASE (GIT COMMIT)!**\n\nBahkan jika repository Anda privat, menyimpan connection string atau private key di file `appsettings.json` berisiko besar bocor ke seluruh developer, CI log, atau saat source code diaudit pihak ketiga.\n\n### Arsitektur Secrets Enterprise:\n```mermaid\nflowchart LR\n    App[\"Production Container (.NET API)\"] --\u003e|Managed Identity Token| Vault[\"Azure Key Vault / HashiCorp Vault\"]\n    Vault --\u003e|Kunci Enkripsi \u0026 Secrets| App\n```\n1. **Development**: Gunakan `dotnet user-secrets` yang tersimpan di direktori profil lokal developer di luar folder git.\n2. **Production**: Gunakan **Cloud KMS / Key Vault** (Azure Key Vault, AWS Secrets Manager, HashiCorp Vault).\n3. **Passwordless via Managed Identity**: Container di-deploy dengan IAM Role / Azure Managed Identity sehingga aplikasi dapat mengakses Key Vault tanpa membutuhkan password atau API token hardcoded!\n\n---\n\n## 4. Ringkasan \u0026 Aturan Kriptografi\n\n1. **Gunakan AES-GCM (AEAD)** untuk enkripsi simetris data at rest di database.\n2. **Selalu Buat Nonce Unik**: Generate 12 byte nonce baru menggunakan `RandomNumberGenerator` untuk setiap proses enkripsi.\n3. **Gunakan FixedTimeEquals**: Lindungi seluruh verifikasi token, HMAC, atau hash dari ancaman side-channel Timing Attacks.",
+    "starterCode":  "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\npublic class AesGcmEncryption\n{\n    public static (byte[] ciphertext, byte[] nonce, byte[] tag) Encrypt(byte[] plaintext, byte[] key)\n    {\n        byte[] nonce = new byte[AesGcm.NonceByteSizes.MaxSize];\n        RandomNumberGenerator.Fill(nonce);\n\n        byte[] tag = new byte[AesGcm.TagByteSizes.MaxSize];\n        byte[] ciphertext = new byte[plaintext.Length];\n\n        using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);\n        aes.Encrypt(nonce, plaintext, ciphertext, tag);\n\n        return (ciphertext, nonce, tag);\n    }\n\n    public static byte[] Decrypt(byte[] ciphertext, byte[] key, byte[] nonce, byte[] tag)\n    {\n        byte[] plaintext = new byte[ciphertext.Length];\n        using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);\n        aes.Decrypt(nonce, ciphertext, tag, plaintext);\n        return plaintext;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        byte[] key = new byte[32];\n        RandomNumberGenerator.Fill(key);\n\n        string secretData = \"NOMOR KARTU KREDIT: 4111-2222-3333-4444\";\n        byte[] plainBytes = Encoding.UTF8.GetBytes(secretData);\n\n        var (ciphertext, nonce, tag) = AesGcmEncryption.Encrypt(plainBytes, key);\n        Console.WriteLine($\"Ciphertext (Hex): {Convert.ToHexString(ciphertext)}\");\n        Console.WriteLine($\"Auth Tag   (Hex): {Convert.ToHexString(tag)}\");\n\n        byte[] decryptedBytes = AesGcmEncryption.Decrypt(ciphertext, key, nonce, tag);\n        Console.WriteLine($\"Decrypted Text  : {Encoding.UTF8.GetString(decryptedBytes)}\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Security.Cryptography;\nusing System.Text;\n\npublic class AesGcmEncryption\n{\n    public static (byte[] ciphertext, byte[] nonce, byte[] tag) Encrypt(byte[] plaintext, byte[] key)\n    {\n        byte[] nonce = new byte[AesGcm.NonceByteSizes.MaxSize]; // 12 bytes\n        RandomNumberGenerator.Fill(nonce);\n\n        byte[] tag = new byte[AesGcm.TagByteSizes.MaxSize]; // 16 bytes\n        byte[] ciphertext = new byte[plaintext.Length];\n\n        using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);\n        aes.Encrypt(nonce, plaintext, ciphertext, tag);\n\n        return (ciphertext, nonce, tag);\n    }\n\n    public static byte[] Decrypt(byte[] ciphertext, byte[] key, byte[] nonce, byte[] tag)\n    {\n        byte[] plaintext = new byte[ciphertext.Length];\n        using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);\n        aes.Decrypt(nonce, ciphertext, tag, plaintext);\n        return plaintext;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        byte[] key = new byte[32];\n        RandomNumberGenerator.Fill(key);\n\n        string secretData = \"NOMOR KARTU KREDIT: 4111-2222-3333-4444\";\n        byte[] plainBytes = Encoding.UTF8.GetBytes(secretData);\n\n        var (ciphertext, nonce, tag) = AesGcmEncryption.Encrypt(plainBytes, key);\n        Console.WriteLine($\"Ciphertext (Hex): {Convert.ToHexString(ciphertext)[..20]}...\");\n        Console.WriteLine($\"Auth Tag   (Hex): {Convert.ToHexString(tag)}\");\n\n        byte[] decryptedBytes = AesGcmEncryption.Decrypt(ciphertext, key, nonce, tag);\n        Console.WriteLine($\"Decrypted Text  : {Encoding.UTF8.GetString(decryptedBytes)}\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-15-04-1",
+                              "type":  "single_choice",
+                              "question":  "Mengapa penggunaan operator perbandingan standar (==) sangat berbahaya saat memvalidasi tanda tangan kriptografis (HMAC / Webhook secret)?",
+                              "options":  [
+                                              "Karena operator == hanya bisa membandingkan angka desimal.",
+                                              "Karena operator == berhenti (short-circuit) pada karakter salah pertama, memungkinkan penyerang mengukur perbedaan waktu respons (Timing Attack) untuk menebak karakter tanda tangan secara bertahap.",
+                                              "Karena operator == otomatis mencetak secret key ke console log.",
+                                              "Karena operator == memakan waktu 10 jam per evaluasi."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Perbandingan standar melakukan short-circuiting segera setelah satu byte tidak cocok. Fluktuasi nanodetik ini dapat diukur oleh penyerang melalui side-channel Timing Attack. CryptographicOperations.FixedTimeEquals membandingkan seluruh byte dengan durasi waktu konstan tanpa short-circuit.",
+                              "optionExplanations":  [
+                                                         "Salah. Operator == mendukung string dan objek.",
+                                                         "Benar! Short-circuit comparison membocorkan informasi panjang prefix yang benar lewat waktu eksekusi.",
+                                                         "Salah. Operator == tidak mencetak log.",
+                                                         "Salah. Evaluasi dilakukan dalam hitungan nanodetik."
+                                                     ],
+                              "sectionRef":  "2. Timing Attacks dan Solusinya: FixedTimeEquals",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-15-04-2",
+                              "type":  "single_choice",
+                              "question":  "Apa fungsi utama dari Authentication Tag pada algoritma enkripsi terotentikasi AES-GCM?",
+                              "options":  [
+                                              "Sebagai label harga data.",
+                                              "Menjamin integritas dan keaslian ciphertext, sehingga jika data dimodifikasi atau dirusak oleh penyerang di database, proses dekripsi akan langsung gagal melempar CryptographicException.",
+                                              "Mengurangi ukuran ciphertext menjadi separuh.",
+                                              "Mengubah warna tampilan teks menjadi hijau."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "AES-GCM adalah mode AEAD (Authenticated Encryption with Associated Data). Authentication Tag memastikan data tidak hanya terenkripsi (rahasia), namun juga terlindungi dari modifikasi atau manipulasi oleh pihak yang tidak memiliki kunci sah.",
+                              "optionExplanations":  [
+                                                         "Salah. Tag adalah istilah kriptografis, bukan harga finansial.",
+                                                         "Benar! Authentication Tag memvalidasi bahwa ciphertext tidak pernah dirusak atau diotak-atik sejak dienkripsi.",
+                                                         "Salah. Tag justru menambah 16 bytes overhead integritas.",
+                                                         "Salah. Kriptografi tidak berurusan dengan warna teks."
+                                                     ],
+                              "sectionRef":  "1. AES-256-GCM: Standar Emas Enkripsi Terotentikasi (AEAD)",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-15-01",
+                           "lesson-15-03",
+                           "lesson-00-06"
+                       ],
+    "references":  [
+                       {
+                           "title":  "NIST Special Publication 800-38D: Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM)",
+                           "url":  "https://csrc.nist.gov/publications/detail/sp/800-38d/final",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Cryptography in .NET - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/standard/security/cryptography-model",
+                           "type":  "documentation"
+                       }
+                   ]
+}

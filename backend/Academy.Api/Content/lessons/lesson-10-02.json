@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-10-02",
+    "levelId":  "level-10",
+    "moduleId":  "mod-10-01",
+    "order":  2,
+    "title":  "High-Performance Data Access dengan Dapper: Micro-ORM untuk Skala Besar",
+    "slug":  "dapper-micro-orm-high-performance",
+    "difficulty":  "Intermediate",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mempelajari micro-ORM legendaris karya Stack Overflow (Dapper): mengapa Dapper mampu mencapai performa mentah nyaris menyamai ADO.NET murni, mekanisme dynamic IL emission mapping, dan kapan memilih Dapper vs Entity Framework Core.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-10-01",
+                              "title":  "ADO.NET \u0026 Parameterized Queries",
+                              "levelName":  "LEVEL 10",
+                              "context":  "Memahami IDbConnection dan IDbCommand."
+                          }
+                      ],
+    "introduces":  [
+                       "Micro-ORM vs Full ORM",
+                       "Dapper Extension Methods (Query, Execute)",
+                       "Dynamic IL Deserializer",
+                       "Multi-Mapping (SplitOn)",
+                       "Dapper QueryMultiple",
+                       "Raw SQL Performance vs EF Core Productivity"
+                   ],
+    "learningObjectives":  [
+                               "Memahami arsitektur internal Dapper yang membangkitkan kode IL dinamis untuk memetakan IDataReader ke C# objek.",
+                               "Menggunakan Dapper QueryAsync dan ExecuteAsync untuk operasi database berkecepatan tinggi.",
+                               "Menganalisis matriks pemilihan: kapan menggunakan Dapper (read-heavy hot path) vs EF Core (kompleksitas bisnis write)."
+                           ],
+    "markdownContent":  "# High-Performance Data Access dengan Dapper: Micro-ORM untuk Skala Besar\n\n## Kelahiran Dapper di Stack Overflow\nPada tahun 2011, platform tanya jawab terbesar dunia, Stack Overflow, melayani ratusan juta page view per bulan dari segelintir server web.\nMereka menemukan bahwa Full-ORM tradisional (seperti Entity Framework versi lawas atau NHibernate) terlalu lambat karena overhead Change Tracking, Expression Tree translation, dan refleksi yang berat.\n\nSam Saffron dan Marc Gravell dari tim Stack Overflow merancang **Dapper**:\n- Disebut sebagai **King of Micro-ORM**.\n- Berjalan sebagai kumpulan **Extension Methods sederhana pada interface `IDbConnection`**.\n- **Hasil: Kecepatan eksekusi dan konsumsi memori hanya berselisih 1-2% dari ADO.NET mentah buatan tangan!**\n\n---\n\n## Bagaimana Dapper Bekerja Begitu Cepat?\nJika serializer berbasis Reflection biasa sangat lambat, mengapa Dapper begitu kencang?\n1. Saat sebuah kueri dieksekusi pertama kali, Dapper membaca metadata skema kolom dari `IDataReader`.\n2. Dapper menggunakan **`System.Reflection.Emit`** untuk **menulis bytecode IL secara dinamis saat runtime khusus untuk tipe class tersebut!**\n3. Bytecode IL tersebut di-cache di memori (*Dynamic Deserializer*).\n4. Untuk jutaan baris data berikutnya, Dapper mengeksekusi bytecode mesin tersebut secara langsung tanpa ada overhead refleksi sama sekali!\n\n---\n\n## Penggunaan Esensial Dapper\n\n### 1. Kueri Single Entity / List\n```csharp\nusing var connection = new SqlConnection(connectionString);\n\n// Query strongly-typed otomatis dipetakan ke record Customer!\nvar customers = await connection.QueryAsync\u003cCustomer\u003e(\n    \"SELECT Id, Name, Email, Balance FROM Customers WHERE Balance \u003e @MinBalance\",\n    new { MinBalance = 1_000_000m } // Parameterized otomatis anti-SQLi!\n);\n```\n\n### 2. Eksekusi Perintah Mutasi (INSERT/UPDATE/DELETE)\n```csharp\nint rowsAffected = await connection.ExecuteAsync(\n    \"UPDATE Accounts SET Balance = Balance - @Amount WHERE Id = @AccountId\",\n    new { Amount = 50000m, AccountId = \"ACC-01\" }\n);\n```\n\n---\n\n## Dapper vs Entity Framework Core: Kapan Menggunakan yang Mana?\n\n| Fitur | Dapper (Micro-ORM) | Entity Framework Core (Full ORM) |\n| :--- | :--- | :--- |\n| **Gaya Penulisan** | **Raw SQL murni** buatan developer | LINQ to Entities (Diterjemahkan otomatis ke SQL) |\n| **Change Tracker** | **Tidak ada** (Stateless murni) | Ada (Mendeteksi properti apa saja yang diedit) |\n| **Database Migrations**| Tidak ada (Gunakan DbUp / Flyway) | Terintegrasi penuh (`dotnet ef migrations`) |\n| **Performa Kueri Baca**| **Ekstrem / Maksimal** (Cocok untuk Hot Path)| Sangat Cepat (tetapi sedikit di bawah Dapper) |\n| **Ideal Digunakan Pada**| **Sisi Baca (Query / CQRS Read Model), Reporting, Batch Processing** | **Sisi Tulis (Command / Aggregate Root, Logika Transaksional Kompleks)** |",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\n// PROGRAM: Simulasi Cara Kerja Mapper Dapper Berbasis Anonymous Type Parameters\npublic record AccountRecord(string Id, string Name, decimal Balance);\n\npublic class FakeDapperConnection\n{\n    private readonly List\u003cAccountRecord\u003e _db = new()\n    {\n        new(\"ACC-1\", \"Budi\", 500_000m),\n        new(\"ACC-2\", \"Siti\", 1_500_000m),\n        new(\"ACC-3\", \"Ahmad\", 2_000_000m)\n    };\n\n    // Simulasi QueryAsync Dapper\n    public IEnumerable\u003cAccountRecord\u003e Query(string sql, object param)\n    {\n        Console.WriteLine($\"[DAPPER SQL EXEC] {sql}\");\n        // Ekstraksi parameter anonim via reflection dinamis yang di-cache\n        var prop = param.GetType().GetProperty(\"MinBalance\");\n        decimal min = prop != null ? (decimal)prop.GetValue(param)! : 0m;\n\n        return _db.Where(a =\u003e a.Balance \u003e= min);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var conn = new FakeDapperConnection();\n        var results = conn.Query(\"SELECT * FROM Accounts WHERE Balance \u003e= @MinBalance\", new { MinBalance = 1_000_000m });\n        \n        Console.WriteLine(\"\\nHasil Pemetaan Dapper:\");\n        foreach (var acc in results)\n        {\n            Console.WriteLine($\" - {acc.Name,-10} | Saldo: Rp {acc.Balance:N0}\");\n        }\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-10-02-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Mekanisme teknologi apakah yang digunakan oleh Dapper secara internal untuk memetakan baris IDataReader ke objek C# dengan kecepatan nyaris setara kode native tanpa overhead refleksi berulang?",
+                              "options":  [
+                                              "Dynamic IL Code Emission (System.Reflection.Emit) yang di-cache di memori",
+                                              "Mengubah database menjadi file teks CSV",
+                                              "Menjalankan kueri di GPU",
+                                              "Menonaktifkan tipe data generik"
+                                          ],
+                              "correctOptionIndex":  0,
+                              "explanation":  "Dapper membangkitkan kode Intermediate Language (IL) dinamis saat kueri pertama kali dijalankan dan meng-cache fungsi deserializer tersebut, menghasilkan pemetaan data secepat kode hand-written.",
+                              "optionExplanations":  [
+                                                         "Benar! Dynamic IL emission menghasilkan deserializer strongly-typed yang sangat efisien.",
+                                                         "Salah. Dapper beroperasi langsung pada IDataReader ADO.NET.",
+                                                         "Salah. Dapper berjalan di CPU managed thread biasa.",
+                                                         "Salah. Dapper sangat mengandalkan generics (`Query\u003cT\u003e`)."
+                                                     ],
+                              "sectionRef":  "Bagaimana Dapper Bekerja Begitu Cepat?",
+                              "difficulty":  "Intermediate"
+                          },
+                          {
+                              "id":  "q-10-02-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Dalam pola arsitektur CQRS (Command Query Responsibility Segregation), di layer manakah Dapper paling ideal digunakan?",
+                              "options":  [
+                                              "Pada sisi Write Command yang memerlukan audit change tracker kompleks",
+                                              "Pada sisi Read Query / Reporting yang menuntut latensi serendah mungkin dan throughput pembacaan data tinggi",
+                                              "Sebagai pengganti database SQL Server",
+                                              "Hanya untuk validasi email"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Dapper adalah micro-ORM stateless tanpa overhead change tracking, menjadikannya pilihan ideal untuk Read Model / Queries yang menuntut kecepatan throughput maksimal.",
+                              "optionExplanations":  [
+                                                         "Salah. Sisi write kompleks lebih diuntungkan oleh fitur Unit of Work EF Core.",
+                                                         "Benar! Sisi baca (Read model) mendapatkan efisiensi maksimal dari kueri raw SQL Dapper.",
+                                                         "Salah. Dapper adalah library akses data C#, bukan database server.",
+                                                         "Salah. Dapper tidak berhubungan dengan regex validasi email."
+                                                     ],
+                              "sectionRef":  "Dapper vs Entity Framework Core: Kapan Menggunakan yang Mana?",
+                              "difficulty":  "Beginner"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-10-01",
+                               "title":  "ADO.NET \u0026 Parameterized Queries",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Fondasi interface IDbConnection tempat Dapper bertengger."
+                           },
+                           {
+                               "lessonId":  "lesson-10-03",
+                               "title":  "Entity Framework Core Architecture",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Perbandingan fitur dengan Full-ORM EF Core."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Dapper - a simple object mapper for .NET - GitHub",
+                           "url":  "https://github.com/DapperLib/Dapper"
+                       },
+                       {
+                           "title":  "Stack Overflow Architecture and Performance",
+                           "url":  "https://stackexchange.github.io/StackExchange.Redis/"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Reflection;\n\npublic class MiniDapperParamMapper\n{\n    public static Dictionary\u003cstring, object?\u003e ExtractDapperParameters(object? parameters)\n    {\n        var result = new Dictionary\u003cstring, object?\u003e(StringComparer.OrdinalIgnoreCase);\n        if (parameters == null) return result;\n\n        var props = parameters.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);\n        foreach (var p in props)\n        {\n            result[$\"@{p.Name}\"] = p.GetValue(parameters);\n        }\n\n        return result;\n    }\n\n    public static void Main()\n    {\n        var p = new { AccountId = \"ACC-01\", Amount = 50000m };\n        var dict = ExtractDapperParameters(p);\n        foreach (var kv in dict) Console.WriteLine($\"{kv.Key} = {kv.Value}\");\n    }\n}"
+}

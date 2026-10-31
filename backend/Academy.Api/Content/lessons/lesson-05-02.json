@@ -1,0 +1,170 @@
+{
+  "id": "lesson-05-02",
+  "levelId": "level-05",
+  "moduleId": "mod-05-02",
+  "order": 2,
+  "title": "Hash Table Internals: Hash Functions, Bucket Arrays, Chaining vs Open Addressing",
+  "slug": "hash-table-internals-collisions-chaining",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar cara kerja struktur data terpenting dalam komputasi: fungsi hash kriptografis vs non-kriptografis, distribusi seragam modulo array bucket, resolusi tabrakan (Chaining vs Open Addressing), dan mitigasi serangan Hash DoS.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-08",
+      "title": "Koleksi Data C#: Dictionary \u0026 HashSet",
+      "levelName": "LEVEL 02",
+      "context": "Penggunaan dasar Dictionary dan HashSet."
+    }
+  ],
+  "introduces": [
+    "Hash Function \u0026 Hash Code",
+    "Bucket Array \u0026 Modulo Operator (%)",
+    "Hash Collision (Pigeonhole Principle)",
+    "Separate Chaining (Linked Lists)",
+    "Open Addressing (Linear Probing)",
+    "Load Factor \u0026 Rehashing",
+    "Hash DoS Attack Mitigations"
+  ],
+  "learningObjectives": [
+    "Menjelaskan alur pemetaan dari string key menuju indeks array bucket fisik.",
+    "Menganalisis dua teknik resolusi tabrakan hash: Separate Chaining dan Open Addressing.",
+    "Memahami bagaimana implementasi GetHashCode yang buruk merusak performa Dictionary dari O(1) menjadi O(N)."
+  ],
+  "markdownContent": "# Hash Table Internals: Hash Functions, Bucket Arrays, Chaining vs Open Addressing\n\n## Struktur Data Paling Revolusioner di Dunia Backend\nHampir seluruh teknologi performa tinggi\u2014mulai dari C# \u0060Dictionary\u003CTKey, TValue\u003E\u0060, Redis In-Memory Store, routing tabel router jaringan, hingga indeks database Memory-Optimized\u2014bergantung pada **Hash Table**.\n\nBagaimana Hash Table dapat menemukan satu data di antara 10.000.000 elemen dalam **waktu konstan \u0060O(1)\u0060 (\u003C 10 nanodetik)**?\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Key[\u0022Key String: \u0027user:101\u0027\u0022] --\u003E Hash[\u00221. Hash Function: GetHashCode()\u003Cbr/\u003E-\u003E 0x8F3A2B1C\u0022]\n    Hash --\u003E Mod[\u00222. Bucket Mapping: Abs(Hash) % Length\u003Cbr/\u003E-\u003E Indeks 12\u0022]\n    subgraph Buckets[\u0022Bucket Array (Ukuran 16)\u0022]\n        S0[\u0022Slot 0: null\u0022]\n        S12[\u0022Slot 12: Entry(\u0027user:101\u0027, Value, HashCode, NextPtr)\u0022]\n        S15[\u0022Slot 15: null\u0022]\n    end\n    Mod --\u003E S12\n\u0060\u0060\u0060\n\n---\n\n## Tabrakan Hash (Hash Collision): Hukum Kotak Merpati\nKarena rentang kunci string tidak terbatas sedangkan kapasitas integer 32-bit terbatas (2\u00B3\u00B2 nilai), **tabrakan hash pasti terjadi** (*Pigeonhole Principle*): dua string berbeda menghasilkan indeks bucket yang sama persis!\n\n### Dua Pendekatan Resolusi Tabrakan:\n1. **Separate Chaining (Digunakan oleh .NET Dictionary)**:\n   - Setiap slot bucket adalah kepala dari Linked List (atau array entri internal).\n   - Jika terjadi tabrakan pada slot 12, data baru disambungkan ke node berikutnya (\u0060Next\u0060).\n   - Saat lookup, runtime menelusuri rantai tersebut dan membandingkan key menggunakan \u0060Equals()\u0060.\n2. **Open Addressing (Linear Probing / Robin Hood Hashing)**:\n   - Tidak ada linked list. Jika slot 12 sudah terisi, algoritma memeriksa slot 13, 14, dst., hingga menemukan slot kosong.\n\n---\n\n## Load Factor dan Biaya Rehashing\nKapasitas bucket array tidak boleh terlalu penuh. Rasio antara jumlah elemen (\u0060N\u0060) dan jumlah slot bucket (\u0060B\u0060) disebut **Load Factor**:\n**Load Factor = N / B**\nDi .NET:\n- Ketika Load Factor mendekati batas maksimum (umumnya **0.72**), performa lookup mulai melambat karena rantai collision bertambah panjang.\n- CLR secara otomatis melakukan **Rehashing / Resize**: membuat array bucket baru berukuran bilangan prima berikutnya (~2x lebih besar), menghitung ulang modulo seluruh elemen lama, dan memindahkannya ke bucket baru.\n- *Best Practice: Selalu tentukan initial capacity di constructor \u0060new Dictionary\u003CK,V\u003E(capacity)\u0060 jika Anda sudah tahu estimasi jumlah data!*\n\n---\n\n## Bahaya Keamanan: Hash DoS Attack\nJika penyerang mengetahui algoritma hash yang digunakan web server Anda, mereka dapat mengirim ribuan request HTTP dengan parameter form yang sengaja dirancang agar **seluruh kuncinya bertabrakan di satu bucket yang sama!**\nAkibatnya:\n- Pencarian \u0060O(1)\u0060 merosot menjadi \u0060O(N)\u0060 linked list traversal.\n- CPU server langsung melonjak ke 100% dan server mengalami denial of service (DoS).\n- Di .NET modern, \u0060string.GetHashCode()\u0060 menggunakan **Randomized Hash per-Process** (setiap kali aplikasi restart, seed acak diacak sehingga penyerang tidak bisa memprediksi tabrakan).",
+  "starterCode": "using System;\nusing System.Collections.Generic;\n\n// PROGRAM: Simulasi Mini Hash Table Berbasis Chaining\npublic class SimpleHashTable\u003CTKey, TValue\u003E where TKey : notnull\n{\n    private class Node\n    {\n        public TKey Key { get; }\n        public TValue Value { get; set; }\n        public Node? Next { get; set; }\n        public Node(TKey key, TValue val, Node? next) =\u003E (Key, Value, Next) = (key, val, next);\n    }\n\n    private readonly Node?[] _buckets;\n\n    public SimpleHashTable(int bucketCount = 8)\n    {\n        _buckets = new Node?[bucketCount];\n    }\n\n    private int GetBucketIndex(TKey key)\n    {\n        int hash = key.GetHashCode();\n        return Math.Abs(hash) % _buckets.Length;\n    }\n\n    public void Put(TKey key, TValue val)\n    {\n        int idx = GetBucketIndex(key);\n        var head = _buckets[idx];\n\n        // Cari apakah key sudah ada (update value)\n        for (var curr = head; curr != null; curr = curr.Next)\n        {\n            if (EqualityComparer\u003CTKey\u003E.Default.Equals(curr.Key, key))\n            {\n                curr.Value = val;\n                return;\n            }\n        }\n\n        // Chaining: pasang di depan linked list\n        _buckets[idx] = new Node(key, val, head);\n    }\n\n    public bool TryGet(TKey key, out TValue? val)\n    {\n        int idx = GetBucketIndex(key);\n        for (var curr = _buckets[idx]; curr != null; curr = curr.Next)\n        {\n            if (EqualityComparer\u003CTKey\u003E.Default.Equals(curr.Key, key))\n            {\n                val = curr.Value;\n                return true;\n            }\n        }\n        val = default;\n        return false;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var table = new SimpleHashTable\u003Cstring, string\u003E(4);\n        table.Put(\u0022ACC-1\u0022, \u0022Budi\u0022);\n        table.Put(\u0022ACC-2\u0022, \u0022Siti\u0022);\n        \n        if (table.TryGet(\u0022ACC-1\u0022, out string? nama))\n        {\n            Console.WriteLine($\u0022Ketemu: {nama}\u0022);\n        }\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-05-02-1",
+      "type": "MultipleChoice",
+      "question": "Mekanisme apa yang terjadi ketika dua key yang berbeda menghasilkan indeks slot bucket yang sama persis di dalam Hash Table?",
+      "options": [
+        "Memory Corruption",
+        "Hash Collision (Tabrakan Hash)",
+        "Stack Overflow",
+        "Deadlock"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Hash Collision adalah kondisi alami di mana dua kunci berbeda dipetakan ke nomor indeks bucket yang sama, yang diselesaikan melalui chaining atau open addressing.",
+      "optionExplanations": [
+        "Salah. Hash collision adalah kondisi normal algoritma, bukan kerusakan memori.",
+        "Benar! Hash collision ditangani secara elegan oleh teknik collision resolution.",
+        "Salah. Tidak ada rekursi tak berhingga yang memicu stack overflow.",
+        "Salah. Tidak ada perebutan kunci threading (deadlock)."
+      ],
+      "sectionRef": "Tabrakan Hash (Hash Collision): Hukum Kotak Merpati",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-05-02-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana .NET modern memitigasi serangan keamanan \u0027Hash DoS Attack\u0027 pada Dictionary dan parsing query string HTTP?",
+      "options": [
+        "Menonaktifkan Dictionary pada web server",
+        "Menggunakan algoritma hashing dengan seed acak yang di-generate per-proses (Randomized Hash per process instance)",
+        "Membatasi jumlah request maksimal 10 per menit",
+        "Menolak semua karakter non-ASCII"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dengan randomized hash code per proses, nilai hash string berbeda setiap kali aplikasi di-restart, menggagalkan payload serangan tabrakan hash yang telah dikalkulasi penyerang sebelumnya.",
+      "optionExplanations": [
+        "Salah. Dictionary adalah struktur data utama di runtime .NET.",
+        "Benar! Seed acak per-proses membuat pola hash code tidak dapat diprediksi oleh penyerang dari luar.",
+        "Salah. Rate limiting adalah layer jaringan terpisah.",
+        "Salah. .NET mendukung Unicode UTF-8 secara penuh."
+      ],
+      "sectionRef": "Bahaya Keamanan: Hash DoS Attack",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-05-02",
+    "Title": "Penghitung Frekuensi Kata Berbasis Hash Table Dictionary",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca satu baris kalimat dari stdin.\nHitung frekuensi kemunculan setiap kata (case-insensitive, abaikan spasi berlebih).\nCetak kata dan jumlahnya dengan format \u0027\u003CKata\u003E:\u003CFrekuensi\u003E\u0027 dipisahkan koma dan spasi, diurutkan secara alfabetis berdasarkan kata.\nJika kalimat kosong, cetak \u0027EMPTY\u0027.",
+    "InputFormat": "Satu baris teks kalimat.",
+    "OutputFormat": "Satu baris pasangan kata dan frekuensi.",
+    "Constraints": "Panjang kalimat \u003C= 1000 karakter.",
+    "Examples": [
+      {
+        "Input": "Saya suka CSharp dan saya suka backend",
+        "Output": "backend:1, csharp:1, dan:1, saya:2, suka:2",
+        "Explanation": "Semua kata dinormalisasi huruf kecil dan dihitung."
+      },
+      {
+        "Input": "API API api",
+        "Output": "api:3",
+        "Explanation": "Kata \u0027api\u0027 muncul 3 kali."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? text = Console.ReadLine();\n        // TODO: Gunakan Dictionary\u003Cstring, int\u003E untuk menghitung frekuensi kata.\n        Console.WriteLine(\u0022EMPTY\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? text = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(text)) { Console.WriteLine(\u0022EMPTY\u0022); return; }\n\n        var words = text.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        var freq = new Dictionary\u003Cstring, int\u003E(StringComparer.OrdinalIgnoreCase);\n\n        foreach (var w in words)\n        {\n            string lower = w.ToLowerInvariant();\n            if (freq.TryGetValue(lower, out int count))\n            {\n                freq[lower] = count \u002B 1;\n            }\n            else\n            {\n                freq[lower] = 1;\n            }\n        }\n\n        var result = freq.OrderBy(kv =\u003E kv.Key, StringComparer.Ordinal)\n            .Select(kv =\u003E $\u0022{kv.Key}:{kv.Value}\u0022);\n\n        Console.WriteLine(string.Join(\u0022, \u0022, result));\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Kalimat)",
+        "Description": "Contoh 1 (Kalimat): input \u0027Saya suka CSharp dan saya suka backend\u0027 -\u003E expected \u0027backend:1, csharp:1, dan:1, saya:2, suka:2\u0027",
+        "Input": "Saya suka CSharp dan saya suka backend",
+        "ExpectedOutput": "backend:1, csharp:1, dan:1, saya:2, suka:2",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Kata Sama)",
+        "Description": "Contoh 2 (Kata Sama): input \u0027API API api\u0027 -\u003E expected \u0027api:3\u0027",
+        "Input": "API API api",
+        "ExpectedOutput": "api:3",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Satu Kata",
+        "Description": "Satu Kata: input \u0027Microservices\u0027 -\u003E expected \u0027microservices:1\u0027",
+        "Input": "Microservices",
+        "ExpectedOutput": "microservices:1",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Teks Kosong",
+        "Description": "Teks Kosong: input \u0027\u0027 -\u003E expected \u0027EMPTY\u0027",
+        "Input": "",
+        "ExpectedOutput": "EMPTY",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan Dictionary\u003Cstring, int\u003E dengan TryGetValue untuk lookup cepat O(1).",
+      "Gunakan OrderBy(kv =\u003E kv.Key) untuk pengurutan alfabetis."
+    ],
+    "Explanation": "Dictionary\u003CTKey, TValue\u003E di C# diimplementasikan menggunakan hash table dengan bucketing dan probing, memberikan kompleksitas waktu amortized O(1) untuk pencarian dan pembaruan frekuensi."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-05-01",
+      "title": "Analisis Kompleksitas Big O",
+      "levelName": "LEVEL 05",
+      "context": "Analisis komparasi Big O O(1) Dictionary vs O(N) Array."
+    },
+    {
+      "lessonId": "lesson-16-01",
+      "title": "High-Performance Caching Enterprise",
+      "levelName": "LEVEL 16",
+      "context": "Pemanfaatan struktur hash table pada In-Memory Cache dan Redis."
+    }
+  ],
+  "references": [
+    {
+      "title": "Dictionary\u003CTKey,TValue\u003E Class - .NET Source Code",
+      "url": "https://source.dot.net/#System.Private.CoreLib/src/libraries/System.Private.CoreLib/src/System/Collections/Generic/Dictionary.cs"
+    },
+    {
+      "title": "Hash table - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Hash_table"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class WordFrequencyAnalyzer\n{\n    public static Dictionary\u003Cstring, int\u003E CountWordFrequencies(string?[] words)\n    {\n        var result = new Dictionary\u003Cstring, int\u003E(StringComparer.OrdinalIgnoreCase);\n        if (words == null) return result;\n\n        foreach (var w in words)\n        {\n            if (string.IsNullOrWhiteSpace(w)) continue;\n            string clean = w.Trim();\n\n            if (result.TryGetValue(clean, out int count))\n            {\n                result[clean] = count \u002B 1;\n            }\n            else\n            {\n                result[clean] = 1;\n            }\n        }\n\n        return result;\n    }\n\n    public static void Main()\n    {\n        string?[] kata = { \u0022Apple\u0022, \u0022banana\u0022, \u0022apple\u0022, \u0022APPLE\u0022, \u0022orange\u0022, null, \u0022 \u0022 };\n        var freq = CountWordFrequencies(kata);\n        Console.WriteLine($\u0022Apple: {freq[\u0022apple\u0022]}\u0022);\n        Console.WriteLine($\u0022Banana: {freq[\u0022banana\u0022]}\u0022);\n    }\n}"
+}

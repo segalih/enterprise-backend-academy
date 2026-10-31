@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-00-08",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-03",
+    "order":  8,
+    "title":  "Virtual Memory, Paging, dan Proteksi Memori Proses",
+    "slug":  "virtual-memory-paging",
+    "difficulty":  "Intermediate",
+    "estimatedMinutes":  50,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendalami konsep memori virtual, Memory Management Unit (MMU), struktur Page Table 4-level, Page Fault, dan bagaimana OS mengisolasi ruang memori tiap proses backend.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-07",
+                              "title":  "Sistem Operasi \u0026 Kernel",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami isolasi User Mode dan Kernel Mode."
+                          }
+                      ],
+    "introduces":  [
+                       "Virtual Address Space",
+                       "Physical Memory (RAM)",
+                       "Memory Management Unit (MMU)",
+                       "Paging \u0026 Page Frames (4 KB)",
+                       "Page Fault (Major vs Minor)",
+                       "Swap / Pagefile"
+                   ],
+    "learningObjectives":  [
+                               "Memahami mengapa aplikasi tidak pernah melihat alamat memori fisik RAM secara langsung.",
+                               "Menguraikan proses penerjemahan Virtual Address ke Physical Address oleh hardware MMU.",
+                               "Menganalisis penyebab dan dampak performa dari Page Fault dan Swap Thrashing."
+                           ],
+    "markdownContent":  "# Virtual Memory, Paging, dan Proteksi Memori Proses\n\n## Ilusi Memori: Mengapa Virtual Memory Diciptakan?\nKetika Anda menjalankan aplikasi backend C# di server 64-bit:\n- Setiap proses diberikan ilusi seolah-olah memiliki **ruang alamat memori pribadi yang sangat besar (128 Terabyte di x86-64)**.\n- Pointer memori seperti `0x7FFE_1234_ABCD` yang Anda lihat di debugger **bukanlah** alamat fisik chip silikon RAM! Itu adalah **Virtual Address**.\n\n```mermaid\nflowchart LR\n    subgraph PA[\"Proses Backend A (Virtual Address Space)\"]\n        PA0[\"Page 0 (0x0000..0FFF)\"]\n        PA1[\"Page 1 (0x1000..1FFF)\"]\n    end\n\n    subgraph PB[\"Proses Backend B (Virtual Address Space)\"]\n        PB0[\"Page 0 (0x0000..0FFF)\"]\n    end\n\n    subgraph MMU[\"MMU \u0026 OS Page Table\"]\n        M1[\"Translasi Alamat Virtual A\"]\n        M2[\"Translasi Alamat Virtual B\"]\n    end\n\n    subgraph RAM[\"Memori Fisik (RAM)\"]\n        F5[\"Frame Fisik 5 (4 KB)\"]\n        F8[\"Frame Fisik 8 (4 KB)\"]\n        F12[\"Frame Fisik 12 (4 KB)\"]\n    end\n\n    PA0 --\u003e M1 --\u003e F5\n    PA1 --\u003e M1 --\u003e F12\n    PB0 --\u003e M2 --\u003e F8\n```\n\nKeuntungan revolusioner arsitektur ini:\n1. **Isolasi Mutlak**: Proses A mustahil membaca atau merusak memori Proses B karena tabel pemetaan MMU-nya terpisah total.\n2. **Memori Tidak Perlu Berurutan di RAM Fisik**: Di memori virtual, array 100 MB tampak tersusun rapi berdampingan, padahal di RAM fisik halaman-halamannya terpencar acak di chip yang berbeda.\n3. **Overcommit \u0026 Paging**: Server dapat menjalankan aplikasi yang membutuhkan memori lebih besar dari RAM fisik dengan memindahkan halaman yang jarang dipakai ke SSD (Swap/Pagefile).\n\n---\n\n## Mekanisme Paging: Halaman 4 KB\nSistem operasi membagi memori ke dalam blok berukuran tetap yang disebut **Page** (standar: **4096 Byte / 4 KB**). RAM fisik dibagi menjadi slot berukuran identik yang disebut **Page Frame**.\n\nSebuah Virtual Address 64-bit terdiri dari dua bagian:\n```text\n[ Virtual Page Number (VPN) ] + [ Page Offset (12 bit: 0-4095) ]\n```\n- Hardware **Memory Management Unit (MMU)** membaca Page Table untuk menerjemahkan VPN menjadi Physical Frame Number.\n- Offset 12 bit menunjukkan posisi byte presisi di dalam halaman 4 KB tersebut.\n\n---\n\n## Page Fault: Minor vs Major\nKetika aplikasi mencoba mengakses sebuah alamat virtual:\n1. **Page Hit**: Halaman sudah terpetakan di RAM fisik. MMU mengambil data dalam beberapa nanodetik (dipercepat oleh cache TLB / Translation Lookaside Buffer).\n2. **Minor Page Fault**: Halaman memori valid dan sudah ada di RAM, tetapi belum dipetakan ke page table proses saat ini. OS memetakan entry tanpa disk I/O.\n3. **Major Page Fault (Bencana Performa!)**:\n   - Halaman data telah dibuang ke SSD/NVMe (Swap Space) karena RAM kehabisan kapasitas.\n   - CPU menghentikan eksekusi thread, menunggu OS membaca 4 KB data dari SSD ke RAM (latensi melonjak dari 60 nanodetik menjadi 50.000+ nanodetik!).\n   - Jika server terus-menerus melakukan swapping halaman, terjadi kondisi **Thrashing** di mana 99% siklus CPU terbuang hanya untuk menunggu disk I/O.",
+    "starterCode":  "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Memantau Alokasi Virtual Memory vs Working Set Proses\nProcess currentProc = Process.GetCurrentProcess();\n\nConsole.WriteLine($\"=== MEMORY PROFILE: {currentProc.ProcessName} ===\");\nConsole.WriteLine($\"PID: {currentProc.Id}\");\nConsole.WriteLine($\"Working Set (RAM Fisik): {currentProc.WorkingSet64 / (1024 * 1024)} MB\");\nConsole.WriteLine($\"Virtual Memory (Ruang Alamat Virtual): {currentProc.VirtualMemorySize64 / (1024 * 1024)} MB\");\nConsole.WriteLine($\"Paged Memory (Commit Charge): {currentProc.PagedMemorySize64 / (1024 * 1024)} MB\");\n\n// Alokasi memori besar (50 MB)\nbyte[] largeAllocation = new byte[50 * 1024 * 1024];\ncurrentProc.Refresh();\n\nConsole.WriteLine(\"\\nSetelah alokasi 50 MB:\");\nConsole.WriteLine($\"Working Set Sekarang: {currentProc.WorkingSet64 / (1024 * 1024)} MB\");\nConsole.WriteLine($\"Virtual Memory Sekarang: {currentProc.VirtualMemorySize64 / (1024 * 1024)} MB\");",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-08-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Berapa ukuran standar satu halaman (Page) memori virtual pada sistem operasi modern x86-64?",
+                              "options":  [
+                                              "64 Byte",
+                                              "512 Byte",
+                                              "4096 Byte (4 KB)",
+                                              "1 Megabyte"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Ukuran standar Page pada arsitektur x86-64 adalah 4096 byte (4 KB), meskipun prosesor juga mendukung Huge Pages (2 MB atau 1 GB).",
+                              "optionExplanations":  [
+                                                         "Salah. 64 byte adalah ukuran CPU Cache Line.",
+                                                         "Salah. 512 byte adalah ukuran sektor disk lawas.",
+                                                         "Benar! 4 KB (4096 byte) adalah ukuran standar Paging sistem operasi modern.",
+                                                         "Salah. 1 MB bukan ukuran halaman baku hardware MMU x86-64."
+                                                     ],
+                              "sectionRef":  "Mekanisme Paging: Halaman 4 KB",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-08-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Kondisi apakah yang disebut Major Page Fault pada pengelolaan memori sistem operasi?",
+                              "options":  [
+                                              "Program mencoba mengakses memori yang dilarang dan langsung dihentikan paksa (Crash)",
+                                              "Halaman memori yang diminta tidak berada di RAM fisik dan harus dimuat dari disk penyimpanan (Swap/Pagefile)",
+                                              "Prosesor mengalami kerusakan fisik pada modul RAM",
+                                              "Alamat memori virtual bernilai null pointer"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Major Page Fault terjadi ketika halaman memori yang diminta telah di-page out ke swap/disk, sehingga OS harus membaca data dari SSD/HDD ke RAM fisik.",
+                              "optionExplanations":  [
+                                                         "Salah. Akses ke memori ilegal adalah Invalid Page Fault atau Access Violation / Segmentation Fault.",
+                                                         "Benar! Major Page Fault mengharuskan pembacaan data lambat dari disk penyimpanan ke RAM fisik.",
+                                                         "Salah. Page fault adalah mekanisme software/MMU normal, bukan kerusakan hardware.",
+                                                         "Salah. Null pointer dereference memicu NullReferenceException / SIGSEGV, bukan major swap page fault."
+                                                     ],
+                              "sectionRef":  "Page Fault: Minor vs Major",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-02-04",
+                               "title":  "Value Types vs Reference Types: Stack vs Heap",
+                               "levelName":  "LEVEL 02",
+                               "context":  "Bagaimana alokasi memori managed CLR berada di atas Virtual Address Space ini."
+                           },
+                           {
+                               "lessonId":  "lesson-08-02",
+                               "title":  "Garbage Collector Internals",
+                               "levelName":  "LEVEL 08",
+                               "context":  "Bagaimana CLR meminta VirtualAlloc segment memori dari OS untuk Managed Heap."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Virtual Memory Architecture - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/windows/win32/memory/virtual-address-space"
+                       },
+                       {
+                           "title":  "Understanding Virtual Memory Paging - Linux Kernel Documentation",
+                           "url":  "https://www.kernel.org/doc/gorman/html/understand/understand006.html"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class VirtualMemoryCalculator\n{\n    public static long CalculateRequiredPages(long bytesNeeded)\n    {\n        if (bytesNeeded \u003c= 0) return 0;\n        const long PageSize = 4096;\n        return (bytesNeeded + PageSize - 1) / PageSize;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\"4096 bytes: {CalculateRequiredPages(4096)}\");\n        Console.WriteLine($\"4097 bytes: {CalculateRequiredPages(4097)}\");\n    }\n}"
+}

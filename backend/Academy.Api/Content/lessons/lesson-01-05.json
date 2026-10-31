@@ -1,0 +1,169 @@
+{
+  "id": "lesson-01-05",
+  "levelId": "level-01",
+  "moduleId": "mod-01-03",
+  "order": 5,
+  "title": "Dekomposisi Masalah, Pattern Recognition, dan Edge Cases",
+  "slug": "problem-decomposition-edge-cases",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mempelajari 4 pilar Computational Thinking, teknik dekomposisi sistem monolitik menjadi sub-masalah independen, serta disiplin identifikasi Edge Cases (kondisi batas) yang sering melumpuhkan sistem produksi.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-03",
+      "title": "Merancang Algoritma dengan Flowchart",
+      "levelName": "LEVEL 01",
+      "context": "Memahami struktur alur algoritma."
+    }
+  ],
+  "introduces": [
+    "Computational Thinking",
+    "Problem Decomposition",
+    "Pattern Recognition",
+    "Edge Cases vs Corner Cases",
+    "Off-by-One Error",
+    "Boundary Testing"
+  ],
+  "learningObjectives": [
+    "Menerapkan teknik dekomposisi masalah besar menjadi fungsi-fungsi kecil berorientasi Single Responsibility.",
+    "Mengidentifikasi pola arsitektural yang berulang dalam domain backend.",
+    "Menemukan dan mengamankan edge cases (nilai batas 0, null, batas integer, empty collections)."
+  ],
+  "markdownContent": "# Dekomposisi Masalah, Pattern Recognition, dan Edge Cases\n\n## 4 Pilar Computational Thinking\nKetika Anda dihadapkan pada tiket backlog enterprise yang kompleks\u2014misalnya: *\u0022Bangun sistem rekonsiliasi mutasi rekening bank dengan penyedia payment gateway pihak ketiga\u0022*:\nJangan langsung mengetik kode C#! Terapkan 4 pilar berpikir komputasional:\n\n\u0060\u0060\u0060text\n1. DEKOMPOSISI         Memecah masalah raksasa menjadi sub-masalah kecil yang terisolasi\n        |\n2. PATTERN RECOGNITION Mengenali kesamaan struktur dengan masalah yang pernah dipecahkan\n        |\n3. ABSTRAKSI           Mengabaikan detail yang tidak relevan, fokus pada kontrak data inti\n        |\n4. ALGORITMA           Menyusun langkah deterministik solusi untuk setiap sub-masalah\n\u0060\u0060\u0060\n\n---\n\n## Seni Dekomposisi: Menghindari God Method\nAnti-pattern terbesar pemula adalah menulis satu method raksasa sepanjang 500 baris yang melakukan segalanya: membaca database, memvalidasi data, menghitung pajak, memanggil API eksternal, dan mengirim email.\n\nDengan **Dekomposisi Masalah**:\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Root[\u0022Sistem Rekonsiliasi Pembayaran\u0022]\n    Root --\u003E Ing[\u00221. Ingestion Engine\u003Cbr/\u003E\u2022 Parse CSV Gateway\u003Cbr/\u003E\u2022 Parse Ledger Bank\u0022]\n    Root --\u003E Match[\u00222. Matching Engine\u003Cbr/\u003E\u2022 Temukan Transaksi Sepadan\u003Cbr/\u003E\u2022 Deteksi Selisih Saldo\u0022]\n    Match --\u003E Res[\u00223. Resolution \u0026 Alert\u003Cbr/\u003E\u2022 Auto-Settle Selisih Wajar\u003Cbr/\u003E\u2022 Kirim Peringatan ke Tim Fraud\u0022]\n\u0060\u0060\u0060\nSetiap modul dapat diuji secara terpisah (*unit testable*), dikerjakan secara paralel oleh anggota tim, dan mudah dirawat.\n\n---\n\n## Bencana Produksi: Mengapa Edge Cases Mematikan Sistem?\nDalam pengujian happy path, kode berjalan 100% sempurna:\n\u0060\u0060\u0060csharp\ndecimal rataRata = totalNominal / jumlahTransaksi;\n\u0060\u0060\u0060\nNamun di hari peluncuran produksi pada pukul 00:01 tengah malam:\nBelum ada satu pun transaksi yang masuk (\u0060jumlahTransaksi = 0\u0060). Baris kode di atas langsung melempar **\u0060DivideByZeroException\u0060**, melumpuhkan dashboard monitoring seluruh bank!\n\n### Daftar Wajib Edge Cases yang Harus Diuji:\n1. **Nilai Nol \u0026 Negatif**: Angka \u00600\u0060, \u0060-1\u0060, negatif saldo, harga Rp 0.\n2. **Koleksi Kosong vs Sangat Besar**: Array dengan 0 elemen, 1 elemen (kondisi batas), atau 10.000.000 elemen (out of memory).\n3. **Null \u0026 Whitespace**: String \u0060null\u0060, string kosong \u0060\u0022\u0022\u0060, string spasi \u0060\u0022   \u0022\u0060.\n4. **Off-by-One Error**: Kesalahan batas loop \u0060i \u003C= length\u0060 alih-alih \u0060i \u003C length\u0060 yang memicu \u0060IndexOutOfRangeException\u0060.\n5. **Karakter Tak Terduga**: Teks dengan emoji, tanda kutip SQL (\u0060\u0027\u0060), karakter kontrol non-printable.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\n\n// PROGRAM: Mengamankan Kode dari Jebakan Edge Cases\npublic class FinancialStatistics\n{\n    // VERSI RENTAN BUG: Crash jika data kosong!\n    public static decimal HitungRataRataRentan(List\u003Cdecimal\u003E transaksis)\n    {\n        decimal total = 0;\n        foreach (var t in transaksis) total \u002B= t;\n        return total / transaksis.Count; // DivideByZeroException jika Count == 0!\n    }\n\n    // VERSI ENTERPRISE (Tahan Uji Edge Cases):\n    public static decimal HitungRataRataAman(List\u003Cdecimal\u003E? transaksis)\n    {\n        // 1. Guard edge case: null atau koleksi kosong\n        if (transaksis == null || transaksis.Count == 0)\n        {\n            return 0m;\n        }\n\n        decimal total = 0;\n        foreach (var t in transaksis)\n        {\n            total \u002B= t;\n        }\n\n        return total / transaksis.Count;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Uji kasus batas kosong\n        var dataKosong = new List\u003Cdecimal\u003E();\n        Console.WriteLine($\u0022Rata-rata aman data kosong: Rp {FinancialStatistics.HitungRataRataAman(dataKosong):N0}\u0022);\n        Console.WriteLine($\u0022Rata-rata aman data null: Rp {FinancialStatistics.HitungRataRataAman(null):N0}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-01-05-1",
+      "type": "MultipleChoice",
+      "question": "Kondisi batas apakah yang terjadi ketika sebuah loop membaca array dari indeks 0 hingga indeks N (di mana N adalah array.Length) menggunakan operator \u0060\u003C=\u0060, alih-alih \u0060\u003C\u0060?",
+      "options": [
+        "Memory Leak",
+        "Off-by-One Error (memicu IndexOutOfRangeException)",
+        "Stack Overflow Exception",
+        "Deadlock"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Off-by-One error terjadi saat batas loop melebihi indeks valid terakhir (Length - 1), memicu IndexOutOfRangeException saat mengakses indeks Length.",
+      "optionExplanations": [
+        "Salah. Memory leak adalah alokasi memori yang tidak dilepaskan.",
+        "Benar! Mengakses indeks \u0060array.Length\u0060 melebihi batas elemen array yang valid (0 sampai Length - 1).",
+        "Salah. Stack overflow terjadi akibat rekursi tak berhingga.",
+        "Salah. Deadlock terjadi akibat perebutan lock pada multi-threading."
+      ],
+      "sectionRef": "Bencana Produksi: Mengapa Edge Cases Mematikan Sistem?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-01-05-2",
+      "type": "MultipleChoice",
+      "question": "Apa tujuan utama dari proses Dekomposisi Masalah (Problem Decomposition)?",
+      "options": [
+        "Menggabungkan seluruh source code aplikasi ke dalam satu file tunggal agar mudah di-deploy",
+        "Memecah sistem atau algoritma yang kompleks menjadi unit-unit sub-masalah kecil yang terisolasi dan mudah diuji",
+        "Menghapus seluruh komentar dan dokumentasi teknis",
+        "Memaksa compiler mengabaikan warning tipe data"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dekomposisi masalah memecah kompleksitas besar menjadi komponen-komponen mandiri yang dapat dirancang, diimplementasikan, dan diuji secara independen.",
+      "optionExplanations": [
+        "Salah. Menyatukan seluruh kode ke satu file adalah anti-pattern Big Ball of Mud.",
+        "Benar! Dekomposisi memecah kompleksitas menjadi bagian modular yang terisolasi.",
+        "Salah. Dokumentasi justru sangat penting untuk memelihara sistem jangka panjang.",
+        "Salah. Mengabaikan compiler warning meningkatkan risiko bug."
+      ],
+      "sectionRef": "Seni Dekomposisi: Menghindari God Method",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-01-05",
+    "Title": "Parser \u0026 Normalizer String Nominal Rupiah",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca sebuah string nominal uang dari stdin yang mungkin memuat prefix \u0027Rp\u0027, tanda titik sebagai pemisah ribuan, dan koma desimal.\nKonversikan nominal tersebut menjadi bilangan bulat murni (long) tanpa desimal (dibulatkan ke bawah / truncate).\nJika string kosong atau tidak memuat digit angka yang valid, cetak \u00270\u0027.",
+    "InputFormat": "Satu baris string format nominal (misal \u0027Rp 1.500.000,50\u0027 atau \u0027750000\u0027).",
+    "OutputFormat": "Satu baris bilangan long hasil ekstraksi.",
+    "Constraints": "Nominal tidak negatif, muat dalam rentang long.",
+    "Examples": [
+      {
+        "Input": "Rp 1.500.000,00",
+        "Output": "1500000",
+        "Explanation": "Prefix Rp, titik, dan sen desimal dibersihkan."
+      },
+      {
+        "Input": "Rp250.000",
+        "Output": "250000",
+        "Explanation": "Format tanpa spasi tetap terurai dengan benar."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Text;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Ekstrak digit angka utama sebelum pemisah koma desimal.\n        Console.WriteLine(0);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Text;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(0); return; }\n\n        string s = line.Trim();\n        int commaIdx = s.IndexOf(\u0027,\u0027);\n        if (commaIdx \u003E= 0) s = s.Substring(0, commaIdx);\n\n        var sb = new StringBuilder();\n        foreach (char c in s)\n        {\n            if (char.IsDigit(c)) sb.Append(c);\n        }\n\n        if (sb.Length == 0) { Console.WriteLine(0); return; }\n        if (long.TryParse(sb.ToString(), out long val)) Console.WriteLine(val);\n        else Console.WriteLine(0);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Format Lengkap)",
+        "Description": "Contoh 1 (Format Lengkap): input \u0027Rp 1.500.000,00\u0027 -\u003E expected \u00271500000\u0027",
+        "Input": "Rp 1.500.000,00",
+        "ExpectedOutput": "1500000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Tanpa Spasi)",
+        "Description": "Contoh 2 (Tanpa Spasi): input \u0027Rp250.000\u0027 -\u003E expected \u0027250000\u0027",
+        "Input": "Rp250.000",
+        "ExpectedOutput": "250000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Angka Polos",
+        "Description": "Angka Polos: input \u002712500\u0027 -\u003E expected \u002712500\u0027",
+        "Input": "12500",
+        "ExpectedOutput": "12500",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "String Tanpa Angka",
+        "Description": "String Tanpa Angka: input \u0027Rp -\u0027 -\u003E expected \u00270\u0027",
+        "Input": "Rp -",
+        "ExpectedOutput": "0",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Potong teks sebelum koma jika terdapat nilai sen desimal.",
+      "Kumpulkan hanya karakter digit dengan char.IsDigit(c)."
+    ],
+    "Explanation": "Parsing data finansial enterprise memerlukan dekomposisi pembersihan format visual (currency symbol \u0026 thousands separator) sebelum diproses logika internal."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-09",
+      "title": "Robust Exception Handling",
+      "levelName": "LEVEL 02",
+      "context": "Menangani kondisi error sistem yang tidak dapat dicegah secara logis."
+    },
+    {
+      "lessonId": "lesson-16-01",
+      "title": "Strategi Pengujian xUnit",
+      "levelName": "LEVEL 16",
+      "context": "Menulis automated boundary unit tests untuk memastikan keandalan sistem."
+    }
+  ],
+  "references": [
+    {
+      "title": "Defensive Programming - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Defensive_programming"
+    },
+    {
+      "title": "Testing Boundaries and Edge Cases - Martin Fowler",
+      "url": "https://martinfowler.com/bliki/TestPyramid.html"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Text;\n\npublic class PaymentParser\n{\n    public static long ParseNominalSafe(string? input)\n    {\n        if (string.IsNullOrWhiteSpace(input)) return 0;\n        if (input.Contains(\u0027-\u0027)) return 0; // Edge case: tidak menerima nominal negatif\n\n        var sb = new StringBuilder();\n        foreach (char c in input)\n        {\n            if (char.IsDigit(c))\n            {\n                sb.Append(c);\n            }\n        }\n\n        if (sb.Length == 0) return 0;\n\n        return long.TryParse(sb.ToString(), out long result) ? result : 0;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u0022\u0027Rp 150.000\u0027: {ParseNominalSafe(\u0022Rp 150.000\u0022)}\u0022);\n        Console.WriteLine($\u0022Null: {ParseNominalSafe(null)}\u0022);\n        Console.WriteLine($\u0022Negatif: {ParseNominalSafe(\u0022-5000\u0022)}\u0022);\n    }\n}"
+}

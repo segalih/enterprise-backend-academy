@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-10-03",
+    "levelId":  "level-10",
+    "moduleId":  "mod-10-02",
+    "order":  3,
+    "title":  "Entity Framework Core Architecture: DbContext Lifecycle, Change Tracker, dan AsNoTracking",
+    "slug":  "ef-core-architecture-change-tracker-asnotracking",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  50,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membongkar cara kerja internal Entity Framework Core 8: siklus hidup DbContext (Scoped lifetime), mekanisme Change Tracker (EntityEntry State: Unchanged, Modified, Added, Deleted), dan optimasi performa masif menggunakan AsNoTracking() untuk kueri pembacaan murni.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-04-02",
+                              "title":  "IEnumerable vs IQueryable",
+                              "levelName":  "LEVEL 04",
+                              "context":  "Memahami evaluasi kueri LINQ pada database provider."
+                          }
+                      ],
+    "introduces":  [
+                       "DbContext Lifecycle \u0026 Scoped Lifetime",
+                       "Change Tracker Engine",
+                       "Entity States (Added, Modified, Deleted, Unchanged, Detached)",
+                       "Snapshot Change Tracking vs DetectChanges",
+                       ".AsNoTracking() \u0026 .AsNoTrackingWithIdentityResolution()",
+                       "DbContext Concurrency Thread-Safety Rules"
+                   ],
+    "learningObjectives":  [
+                               "Memahami siklus hidup DbContext dan alasan mutlak mengapa DbContext BUKAN thread-safe.",
+                               "Menguraikan cara kerja internal Change Tracker dalam mendeteksi mutasi properti objek.",
+                               "Menerapkan AsNoTracking() untuk memangkas konsumsi RAM dan waktu eksekusi pada kueri read-only."
+                           ],
+    "markdownContent":  "# Entity Framework Core Architecture: DbContext Lifecycle, Change Tracker, dan AsNoTracking\n\n## Arsitektur Internal EF Core\nEntity Framework Core (EF Core 8) adalah **Object-Relational Mapper (ORM)** modern paling populer di dunia .NET.\nJantung dari seluruh operasi EF Core adalah **`DbContext`**, yang menggabungkan dua pola arsitektural klasik Martin Fowler:\n1. **Unit of Work**: Mengumpulkan seluruh perubahan data ke dalam satu transaksi transaksional saat `SaveChangesAsync()` dipanggil.\n2. **Repository**: Mewakili setiap tabel database sebagai koleksi strongly-typed **`DbSet\u003cTEntity\u003e`**.\n\n---\n\n## 1. Aturan Sakral: DbContext BUKAN Thread-Safe!\nBanyak pemula melakukan kesalahan fatal mendaftarkan `DbContext` sebagai **Singleton** di Dependency Injection ASP.NET Core:\n```csharp\n// FATAL ERROR! JANGAN PERNAH MENJADIKAN DBCONTEXT SINGLETON!\nbuilder.Services.AddSingleton\u003cAppDbContext\u003e(); \n```\n**Mengapa?**\n- Satu instance `DbContext` hanya dapat mengeksekusi **satu kueri pada satu waktu**.\n- Jika dua request HTTP konkuren dari pengguna berbeda mengakses instance `DbContext` yang sama, EF Core akan melempar exception legendaris:\n`InvalidOperationException: A second operation was started on this context instance before a previous operation completed. This is usually caused by different threads concurrently using the same instance of DbContext.`\n- **Standar Wajib: Selalu daftarkan `DbContext` sebagai `Scoped` (1 instance per 1 HTTP Request)!**\n\n---\n\n## 2. Cara Kerja Change Tracker: Snapshot vs Dirty Checking\nKetika Anda menarik data nasabah dari database:\n```csharp\nvar customer = await dbContext.Customers.FirstAsync(c =\u003e c.Id == 1);\ncustomer.Balance += 50000m; // Mutasi properti C# biasa\nawait dbContext.SaveChangesAsync(); // Ajaib! EF Core tahu persis bahwa Balance berubah!\n```\n\n### Apa yang Terjadi di Balik Layar?\n1. Saat `FirstAsync` dieksekusi, EF Core membuat **Snapshot Salinan** dari seluruh nilai properti awal di dalam memori internal **Change Tracker**.\n2. Objek ditandai dengan status: **`EntityState.Unchanged`**.\n3. Saat `SaveChangesAsync()` dipanggil:\n   - EF Core membandingkan nilai properti saat ini dengan Snapshot awal (*Dirty Checking*).\n   - EF Core mendeteksi bahwa hanya properti `Balance` yang nilainya berbeda!\n   - Status entitas berubah menjadi: **`EntityState.Modified`**.\n4. EF Core menyusun SQL UPDATE minimal yang hanya memperbarui kolom `Balance`:\n   `UPDATE Customers SET Balance = @p0 WHERE Id = @p1;`\n\n---\n\n## 3. Senjata Performa Kueri Baca: `.AsNoTracking()`\nMenyimpan Snapshot dan memantau setiap entitas di Change Tracker membutuhkan alokasi memori Heap dan siklus CPU yang signifikan.\nJika Anda mengeksekusi kueri pembacaan murni (misal: menampilkan daftar 5.000 transaksi ke layar laporan yang **tidak akan pernah di-edit**):\n\n```csharp\n// NONAKTIFKAN CHANGE TRACKER DENGAN ASNOTRACKING():\nvar reports = await dbContext.Transactions\n    .AsNoTracking() // Nol Snapshot, Nol Change Tracker overhead!\n    .ToListAsync();\n```\n\n### Dampak Nyata di Produksi:\n- Waktu eksekusi **2x hingga 3x lebih cepat**.\n- Konsumsi memori RAM turun hingga **50%**.\n- Entitas yang dikembalikan berstatus **`EntityState.Detached`**.",
+    "starterCode":  "using System;\n\n// PROGRAM: Simulasi Siklus Hidup EntityState pada Change Tracker EF Core\npublic enum EntityState { Detached, Unchanged, Added, Deleted, Modified }\n\npublic class TrackedEntity\u003cT\u003e\n{\n    public T Current { get; set; }\n    public T Snapshot { get; private set; }\n    public EntityState State { get; set; }\n\n    public TrackedEntity(T initialData)\n    {\n        Current = initialData;\n        Snapshot = initialData;\n        State = EntityState.Unchanged;\n    }\n\n    public void DetectChanges()\n    {\n        if (State == EntityState.Detached) return;\n\n        if (!Current!.Equals(Snapshot))\n        {\n            State = EntityState.Modified;\n            Console.WriteLine(\"[CHANGE TRACKER] Perubahan terdeteksi! Status berubah menjadi: MODIFIED.\");\n        }\n        else\n        {\n            Console.WriteLine(\"[CHANGE TRACKER] Tidak ada perubahan nilai (UNCHANGED).\");\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Simulasi\n        var tracker = new TrackedEntity\u003cdecimal\u003e(1_000_000m);\n        Console.WriteLine($\"Status Awal: {tracker.State} (Saldo: Rp {tracker.Current:N0})\");\n        \n        // Mutasi nilai\n        tracker.Current = 1_500_000m;\n        tracker.DetectChanges(); // Status menjadi Modified!\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-10-03-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Mengapa DbContext pada Entity Framework Core dilarang keras untuk didaftarkan sebagai Singleton pada Dependency Injection ASP.NET Core?",
+                              "options":  [
+                                              "Karena DbContext tidak bisa dikompilasi pada mode Release",
+                                              "Karena DbContext bukan thread-safe; eksekusi kueri paralel dari beberapa request konkuren secara bersamaan pada instance yang sama akan memicu InvalidOperationException dan kerusakan memori status",
+                                              "Karena Singleton hanya diperuntukkan untuk tipe integer",
+                                              "Karena DbContext otomatis menghapus koneksi internet"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "DbContext didesain non-thread-safe untuk satu alur kerja transaksi. Berbagi satu instance di antara banyak thread HTTP memicu tabrakan konkurensi (concurrent operation exception).",
+                              "optionExplanations":  [
+                                                         "Salah. Kode tetap lolos kompilasi.",
+                                                         "Benar! DbContext tidak thread-safe dan wajib memiliki masa hidup Scoped per-request.",
+                                                         "Salah. Singleton dapat digunakan untuk class thread-safe apa pun.",
+                                                         "Salah. Tidak ada hubungan dengan konektivitas internet."
+                                                     ],
+                              "sectionRef":  "1. Aturan Sakral: DbContext BUKAN Thread-Safe!",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-10-03-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Kapan developer backend WAJIB menambahkan method `.AsNoTracking()` pada kueri Entity Framework Core?",
+                              "options":  [
+                                              "Ketika kueri bertujuan untuk melakukan penghapusan data",
+                                              "Ketika kueri bersifat Read-Only (hanya membaca data untuk ditampilkan/dikirim ke klien) dan data tersebut tidak akan dimutasi atau disimpan kembali ke database",
+                                              "Ketika ingin mengubah nama database",
+                                              "Hanya pada saat unit testing"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "`.AsNoTracking()` menonaktifkan Change Tracker dan alokasi memori snapshot, memberikan lonjakan performa besar pada kueri pembacaan data read-only.",
+                              "optionExplanations":  [
+                                                         "Salah. Operasi delete memerlukan entitas ter-track di Change Tracker.",
+                                                         "Benar! Read-only query mendapatkan efisiensi memori dan kecepatan maksimal dengan `.AsNoTracking()`.",
+                                                         "Salah. Mengubah nama database diatur di connection string.",
+                                                         "Salah. `.AsNoTracking()` adalah praktik wajib di lingkungan produksi."
+                                                     ],
+                              "sectionRef":  "3. Senjata Performa Kueri Baca: .AsNoTracking()",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-10-04",
+                               "title":  "Pola Akses Data: Repository \u0026 Unit of Work",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Membungkus DbContext dalam pola arsitektur Unit of Work."
+                           },
+                           {
+                               "lessonId":  "lesson-11-03",
+                               "title":  "Dependency Injection Deep Dive: Scoped Lifetime",
+                               "levelName":  "LEVEL 11",
+                               "context":  "Mengapa DbContext wajib terdaftar dengan lifetime Scoped."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Change Tracking in EF Core - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/ef/core/change-tracking/"
+                       },
+                       {
+                           "title":  "Tracking vs. No-Tracking Queries - EF Core",
+                           "url":  "https://learn.microsoft.com/en-us/ef/core/querying/tracking"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class ChangeTrackerSimulator\n{\n    public static string DetectEntityState(decimal originalBalance, decimal currentBalance, bool isMarkedForDeletion, bool isNew)\n    {\n        if (isNew) return \"Added\";\n        if (isMarkedForDeletion) return \"Deleted\";\n        if (originalBalance != currentBalance) return \"Modified\";\n        return \"Unchanged\";\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(DetectEntityState(100m, 100m, false, false));\n        Console.WriteLine(DetectEntityState(100m, 200m, false, false));\n        Console.WriteLine(DetectEntityState(100m, 100m, false, true));\n    }\n}"
+}

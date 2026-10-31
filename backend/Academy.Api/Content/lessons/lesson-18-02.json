@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-18-02",
+    "levelId":  "level-18",
+    "moduleId":  "mod-18-01",
+    "order":  2,
+    "title":  "Pemrosesan Pembayaran Skala Tinggi: Penanganan Transaksi Gagal, Rekonsiliasi Otomatis, dan Reversal",
+    "slug":  "high-volume-financial-reconciliation",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Arsitektur payment gateway dan settlement transaksi: State Machine pembayaran, webhook verification, penanganan timeout ambigu (In-Doubt state), rekonsiliasi otomatis harian, dan penyelesaian sengketa transaksi.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-18-01",
+                              "reason":  "Double-Entry Ledger Architecture"
+                          },
+                          {
+                              "lessonId":  "lesson-11-04",
+                              "reason":  "Idempotency Keys \u0026 REST Standards"
+                          }
+                      ],
+    "introduces":  [
+                       "Payment Processing State Machine (Initiated, Pending, In-Doubt, Settled, Failed)",
+                       "The \u0027In-Doubt\u0027 Transaction Dilemma \u0026 Automated Polling",
+                       "Webhook Verification \u0026 Replay Protection",
+                       "Automated Daily Reconciliation Pipeline (Two-Way \u0026 Three-Way Matching)",
+                       "Payment Reversals, Refunds, and Chargebacks"
+                   ],
+    "learningObjectives":  [
+                               "Merancang state machine transaksi pembayaran yang menangani status ambigu (*In-Doubt*) saat timeout jaringan terjadi",
+                               "Membangun pipeline rekonsiliasi harian (*Automated Reconciliation Engine*) untuk mencocokkan log internal bank dengan laporan settlement pihak ketiga",
+                               "Mendeteksi dan mengoreksi anomali finansial (transaksi yang berhasil di payment gateway tetapi gagal tercatat di database lokal)",
+                               "Mengamankan penerimaan Webhook menggunakan validasi tanda tangan HMAC dan pencegahan serangan replay"
+                           ],
+    "markdownContent":  "# Pemrosesan Pembayaran Skala Tinggi: Penanganan Transaksi Gagal, Rekonsiliasi Otomatis, dan Reversal\n\nKetika aplikasi Anda memproses ribuan transaksi pembayaran per menit melalui berbagai payment gateway pihak ketiga (Visa, Mastercard, Midtrans, Stripe, BI-FAST), Anda akan berhadapan dengan kenyataan pahit: **jaringan eksternal tidak pernah 100% konsisten**.\n\nApa yang terjadi jika server Anda memanggil API debit kartu kredit, koneksi internet putus tepat di detik ke-5, dan Anda tidak menerima respons HTTP?\n- Apakah kartu nasabah sudah didebit? Anda tidak tahu.\n- Jika Anda mengulang request (retry), nasabah bisa terpotong dua kali.\n- Jika Anda membatalkan pesanan, nasabah bisa mengamuk karena uangnya terpotong tetapi barang tidak dikirim!\n\nKondisi ambigu ini disebut status **In-Doubt (Meragukan)**. Materi ini membahas bagaimana sistem pembayaran enterprise memecahkan masalah ini melalui **Payment State Machines**, **Automated Reconciliation Engine**, dan **Idempotent Reversals**.\n\n---\n\n## 1. Payment State Machine: Mengelola Status \"In-Doubt\"\n\nSistem pembayaran yang tangguh tidak boleh hanya memiliki status sederhana `Sukses` atau `Gagal`. Ia harus memiliki status transisi eksplisit:\n\n```mermaid\nstateDiagram-v2\n    [*] --\u003e INITIATED: Buat Transaksi\n    INITIATED --\u003e PENDING: Panggil Payment Gateway\n    PENDING --\u003e SETTLED: HTTP 200 Confirmed\n    PENDING --\u003e IN_DOUBT: Network Timeout / Glitch\n    IN_DOUBT --\u003e SETTLED: Webhook / Worker Berhasil\n    IN_DOUBT --\u003e FAILED: Webhook / Worker Gagal\n    SETTLED --\u003e REVERSED: Refund / Chargeback / Reversal\n    FAILED --\u003e [*]\n    REVERSED --\u003e [*]\n```\n\n### Aturan Status \"In-Doubt\":\n1. Jika terjadi network timeout saat memanggil gateway, transaksi **TIDAK BOLEH** langsung ditandai `FAILED`. Transaksi diubah statusnya menjadi **`IN_DOUBT`**.\n2. Background worker secara asinkronus melakukan inquiry status (*Polling Query*) ke payment gateway menggunakan `PaymentReferenceId` unik.\n3. Begitu status resmi dari gateway didapatkan, status diperbarui menjadi `SETTLED` atau `FAILED`.\n\n---\n\n## 2. Mengamankan Webhook Notifikasi\n\nPayment gateway mengirimkan notifikasi status pembayaran asinkronus ke server backend Anda melalui HTTP POST (**Webhook**).\n\n### Tiga Pilar Keamanan Webhook:\n1. **Verifikasi Tanda Tangan HMAC**: Hitung `HMACSHA256(payload, secretKey)` dan bandingkan dengan header `X-Signature` menggunakan `CryptographicOperations.FixedTimeEquals`.\n2. **Replay Attack Protection**: Periksa header `X-Timestamp`. Jika timestamp berbeda lebih dari 5 menit dari jam server, tolak webhook!\n3. **Idempotent Webhook Handler**: Gateway dapat mengirimkan webhook yang sama berkali-kali. Pastikan penanganan event bersifat idempotent.\n\n---\n\n## 3. Pipeline Rekonsiliasi Otomatis (Automated Reconciliation)\n\nDi akhir setiap hari kerja (misal pukul 23:59), bank dan payment gateway menerbitkan **Settlement Report (Laporan Mutasi Akhir Hari)** berisi seluruh transaksi yang berhasil dicatat oleh sistem mereka.\n\n**Automated Reconciliation Engine** membandingkan dua sumber data ini:\n```text\n[ Database Internal Anda ]    vs    [ File Settlement Laporan Bank/Gateway ]\n        (Sumber A)                                  (Sumber B)\n```\n\n### Tiga Kategori Hasil Rekonsiliasi:\n1. **Matched (Cocok)**: Transaksi ada di Sumber A dan Sumber B dengan nominal yang identik sama.\n2. **Missing in Gateway (Hanya ada di internal)**: Transaksi tercatat sukses di sistem kita, namun tidak ada di laporan bank. (Aksi: Selidiki potensi penipuan atau transaksi fiktif).\n3. **Missing in Internal (Hanya ada di bank)**: Uang nasabah sudah terpotong di bank, namun pesanan di sistem kita belum aktif akibat webhook yang gagal terkirim. (Aksi: Sistem otomatis melakukan settlement susulan dan menerbitkan notifikasi ke nasabah).\n\n---\n\n## 4. Ringkasan \u0026 Aturan Pemrosesan Finansial\n\n1. **Jangan Pernah Mengasumsikan Status saat Timeout**: Status timeout adalah `IN_DOUBT`, bukan kegagalan. Selalu lakukan verifikasi status ke sumber kebenaran sebelum membatalkan order.\n2. **Rekonsiliasi Otomatis adalah Garis Pertahanan Terakhir**: Kegagalan jaringan apapun di siang hari akan disembuhkan secara otomatis oleh rekonsiliasi di malam hari.\n3. **Audit Transaksi Pembalik (Reversal)**: Setiap refund atau pembatalan harus dicatat sebagai transaksi baru berlawanan arah di buku besar, bukan dengan mengedit transaksi lama.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// Simulasi Mini Automated Reconciliation Engine\npublic record InternalTx(string TxId, decimal Amount, string Status);\npublic record BankSettlementTx(string TxId, decimal Amount);\n\npublic class ReconciliationEngine\n{\n    public static (int matched, int missingInBank, int missingInInternal) Reconcile(\n        List\u003cInternalTx\u003e internalRecords, \n        List\u003cBankSettlementTx\u003e bankRecords)\n    {\n        int matched = 0;\n        int missingInBank = 0;\n        int missingInInternal = 0;\n\n        // TODO:\n        // 1. Buat mapping atau dictionary dari bankRecords berdasarkan TxId.\n        // 2. Iterasi internalRecords:\n        //    - Jika ada di bankRecords dengan nominal sama: matched++.\n        //    - Jika tidak ada di bankRecords: missingInBank++.\n        // 3. Cari transaksi di bankRecords yang tidak ada di internalRecords: missingInInternal++.\n        // 4. Kembalikan (matched, missingInBank, missingInInternal).\n        \n        return (matched, missingInBank, missingInInternal);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var internalTxs = new List\u003cInternalTx\u003e\n        {\n            new(\"TX_001\", 100_000m, \"SETTLED\"),\n            new(\"TX_002\", 250_000m, \"SETTLED\"),\n            new(\"TX_003\", 500_000m, \"SETTLED\") // Anomali: Tidak tercatat di bank\n        };\n\n        var bankTxs = new List\u003cBankSettlementTx\u003e\n        {\n            new(\"TX_001\", 100_000m),\n            new(\"TX_002\", 250_000m),\n            new(\"TX_004\", 75_000m) // Anomali: Ada di bank, belum masuk di internal!\n        };\n\n        var (matched, missingBank, missingInternal) = ReconciliationEngine.Reconcile(internalTxs, bankTxs);\n\n        Console.WriteLine($\"[Hasil Rekonsiliasi]\");\n        Console.WriteLine($\"Matched Transaksi       : {matched} (Ekspektasi: 2)\");\n        Console.WriteLine($\"Missing in Bank Report  : {missingBank} (Ekspektasi: 1)\");\n        Console.WriteLine($\"Missing in Internal DB  : {missingInternal} (Ekspektasi: 1)\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic record InternalTx(string TxId, decimal Amount, string Status);\npublic record BankSettlementTx(string TxId, decimal Amount);\n\npublic class ReconciliationEngine\n{\n    public static (int matched, int missingInBank, int missingInInternal) Reconcile(\n        List\u003cInternalTx\u003e internalRecords, \n        List\u003cBankSettlementTx\u003e bankRecords)\n    {\n        var bankMap = bankRecords.ToDictionary(b =\u003e b.TxId, b =\u003e b.Amount);\n        var internalMap = internalRecords.ToDictionary(i =\u003e i.TxId, i =\u003e i.Amount);\n\n        int matched = 0;\n        int missingInBank = 0;\n\n        foreach (var itx in internalRecords)\n        {\n            if (bankMap.TryGetValue(itx.TxId, out decimal bankAmount) \u0026\u0026 bankAmount == itx.Amount)\n            {\n                matched++;\n            }\n            else\n            {\n                missingInBank++;\n            }\n        }\n\n        int missingInInternal = bankRecords.Count(b =\u003e !internalMap.ContainsKey(b.TxId));\n\n        return (matched, missingInBank, missingInInternal);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var internalTxs = new List\u003cInternalTx\u003e\n        {\n            new(\"TX_001\", 100_000m, \"SETTLED\"),\n            new(\"TX_002\", 250_000m, \"SETTLED\"),\n            new(\"TX_003\", 500_000m, \"SETTLED\")\n        };\n\n        var bankTxs = new List\u003cBankSettlementTx\u003e\n        {\n            new(\"TX_001\", 100_000m),\n            new(\"TX_002\", 250_000m),\n            new(\"TX_004\", 75_000m)\n        };\n\n        var (matched, missingBank, missingInternal) = ReconciliationEngine.Reconcile(internalTxs, bankTxs);\n\n        Console.WriteLine($\"[Hasil Rekonsiliasi]\");\n        Console.WriteLine($\"Matched Transaksi       : {matched} (Ekspektasi: 2)\");\n        Console.WriteLine($\"Missing in Bank Report  : {missingBank} (Ekspektasi: 1)\");\n        Console.WriteLine($\"Missing in Internal DB  : {missingInternal} (Ekspektasi: 1)\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-17-04-3",
+                              "type":  "single_choice",
+                              "question":  "Apa status yang seharusnya diberikan kepada transaksi pembayaran ketika pemanggilan API ke payment gateway mengalami HTTP network timeout tanpa respons balasan?",
+                              "options":  [
+                                              "FAILED (Gagal total dan langsung batalkan pesanan nasabah).",
+                                              "IN_DOUBT (Meragukan / Ambigu), lalu lakukan polling asinkronus ke payment gateway untuk memastikan apakah dana sebenarnya terpotong atau tidak sebelum mengambil keputusan.",
+                                              "SUCCESS (Anggap selalu sukses tanpa verifikasi).",
+                                              "Hapus seluruh baris data transaksi dari database."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Network timeout berarti paket permintaan mungkin sampai atau tidak sampai di gateway. Menandai langsung FAILED dapat membuat nasabah terpotong uangnya tanpa mendapatkan barang. Status IN_DOUBT menahan keputusan hingga proses rekonsiliasi/polling mengonfirmasi status definitif.",
+                              "optionExplanations":  [
+                                                         "Salah. Membatalkan pesanan secara gegabah berisiko penarikan dana tanpa pemberian barang.",
+                                                         "Benar! IN_DOUBT adalah status penampung ambigu yang aman sampai status asli diverifikasi.",
+                                                         "Salah. Menganggap sukses tanpa verifikasi menimbulkan risiko kerugian finansial akibat pesanan tanpa pembayaran.",
+                                                         "Salah. Menghapus rekaman transaksi melanggar aturan audit finansial."
+                                                     ],
+                              "sectionRef":  "1. Payment State Machine: Mengelola Status \u0027In-Doubt\u0027",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-17-04-4",
+                              "type":  "single_choice",
+                              "question":  "Apa fungsi utama dari proses Rekonsiliasi Otomatis (Automated Reconciliation) di akhir hari pada sistem backend pembayaran?",
+                              "options":  [
+                                              "Mencetak seluruh transaksi ke printer kertas.",
+                                              "Membandingkan catatan transaksi di database internal aplikasi dengan laporan settlement resmi dari bank/payment gateway untuk menemukan dan menyelesaikan anomali selisih dana secara otomatis.",
+                                              "Menghapus seluruh akun nasabah yang tidak aktif.",
+                                              "Mengubah nilai mata uang Rupiah ke Bitcoin."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Rekonsiliasi adalah pilar integritas finansial: mencocokkan mutasi internal dengan laporan settlement pihak ketiga untuk mendeteksi transaksi yang terlewat, selisih biaya fee, atau kegagalan transmisi webhook.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak berkaitan dengan pencetakan fisik kertas.",
+                                                         "Benar! Rekonsiliasi mendeteksi ketidaksesuaian finansial antara internal ledger dan penyedia gateway.",
+                                                         "Salah. Rekonsiliasi tidak menghapus akun.",
+                                                         "Salah. Rekonsiliasi tidak melakukan konversi mata uang otomatis sembarangan."
+                                                     ],
+                              "sectionRef":  "3. Pipeline Rekonsiliasi Otomatis (Automated Reconciliation)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-18-01",
+                           "lesson-11-04",
+                           "lesson-14-03"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Financial Systems Architecture: Reconciliation at Scale",
+                           "url":  "https://stripe.com/blog/reconciliation-engine",
+                           "type":  "article"
+                       },
+                       {
+                           "title":  "Building Resilient Payment Processing Pipelines",
+                           "url":  "https://martinfowler.com/articles/patterns-of-distributed-systems/",
+                           "type":  "article"
+                       }
+                   ]
+}

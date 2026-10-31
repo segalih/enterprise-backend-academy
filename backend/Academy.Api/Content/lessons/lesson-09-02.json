@@ -1,0 +1,169 @@
+{
+  "id": "lesson-09-02",
+  "levelId": "level-09",
+  "moduleId": "mod-09-01",
+  "order": 2,
+  "title": "Database Storage \u0026 Indexing: Clustered Index, Covering Index, dan Scan vs Seek",
+  "slug": "database-storage-indexing-clustered-covering",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "btree",
+  "simulatorContext": "Eksplorasi simulator B-Tree untuk memvisualisasikan bagaimana Clustered Index mengorganisasi urutan fisik baris data di halaman storage database (8 KB Pages), dan mengapa kueri Index Seek langsung melompat ke node daun tanpa memindai seluruh tabel.",
+  "description": "Membongkar struktur penyimpanan fisik database: struktur Page 8 KB, perbedaan fundamental Clustered Index (data fisik terurut) vs Non-Clustered Index, Covering Index dengan klausul INCLUDE, serta perbedaan dramatis performa Index Seek vs Table Scan.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-05-03",
+      "title": "B-Tree \u0026 B\u002B Tree",
+      "levelName": "LEVEL 05",
+      "context": "Memahami struktur B\u002B Tree sebagai tulang punggung indeks database."
+    }
+  ],
+  "introduces": [
+    "Database Storage Page (8 KB / 4 KB)",
+    "Clustered Index vs Heap Table",
+    "Non-Clustered (Secondary) Index",
+    "Index Seek vs Table Scan",
+    "Covering Index (INCLUDE Clause)",
+    "RID Lookup / Key Lookup Penalty"
+  ],
+  "learningObjectives": [
+    "Memahami struktur fisik halaman penyimpanan data (Data Pages) di SQL Server dan PostgreSQL.",
+    "Membedakan eksekusi Index Seek (O(log N)) dengan Index Scan / Table Scan (O(N)).",
+    "Merancang Covering Index untuk mengeliminasi Key Lookup yang mahal pada query hot path."
+  ],
+  "markdownContent": "# Database Storage \u0026 Indexing: Clustered Index, Covering Index, dan Scan vs Seek\n\n## Bagaimana Data Sebenarnya Disimpan di Hard Drive?\nDatabase tidak menyimpan baris data satu per satu secara bebas. Database menyimpan data dalam blok berukuran tetap yang disebut **Data Page (Halaman Data berukuran 8 KB)**:\n- 1 Data Page = 8.192 Byte.\n- Sebuah tabel berisi ribuan Data Page yang dialokasikan di file disk (\u0060.mdf\u0060 di SQL Server atau file relasi di PostgreSQL).\n\n---\n\n## 1. Clustered Index: Menentukan Susunan Fisik Tabel\nHanya boleh ada **TEPAT 1 Clustered Index** per tabel:\n- Pada tabel ber-Clustered Index, **seluruh baris data fisik di Data Page disusun dan diurutkan secara fisik mengikuti urutan kunci indeks tersebut!**\n- Di B\u002B Tree Clustered Index: Simpul daun (Leaf Node) **ADALAH DATA FISIK TABEL ITU SENDIRI!**\n- *Umumnya Clustered Index diletakkan pada Primary Key bertipe integer/GUID sekuensial.*\n\n---\n\n## 2. Non-Clustered Index \u0026 Bahaya Key Lookup\nJika Anda sering mencari nasabah berdasarkan nomor KTP (\u0060NIK\u0060), Anda membuat **Non-Clustered Index**:\n- Non-Clustered Index adalah B\u002B Tree terpisah yang hanya menyimpan salinan kolom \u0060NIK\u0060 dan **Pointer ke baris fisik Clustered Index**.\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Q[\u0022Kueri: SELECT Nama, Alamat, Saldo FROM Nasabah WHERE NIK = \u0027320101...\u0027\u0022] --\u003E NC\n    subgraph NC[\u0022B\u002B Tree Non-Clustered Index (NIK)\u0022]\n        RootNC[\u0022Root Node\u0022] --\u003E LeafNC[\u0022Leaf Node (Menemukan NIK dalam 3 I/O)\u0022]\n    end\n    LeafNC --\u003E|Mendapatkan Clustered Key: Id = 4021| C\n    subgraph C[\u0022B\u002B Tree Clustered Index (Primary Key: Id)\u0022]\n        RootC[\u0022Root Node\u0022] --\u003E LeafC[\u0022Leaf Data Page (Semua Kolom Data Lengkap)\u0022]\n    end\n    LeafC --\u003E Result[\u0022Hasil Data Lengkap (Nama, Alamat, Saldo)\u0022]\n\u0060\u0060\u0060\n\n### Masalah Performa: Key Lookup Penalty\nJika kueri di atas mengembalikan 10.000 baris data:\n- Database harus melakukan 10.000 kali lompatan acak (*Random I/O Seek*) ke Clustered Index!\n- Optimizer database sering kali memutuskan bahwa Key Lookup terlalu lambat, lalu **membuang indeks Anda dan beralih ke FULL TABLE SCAN yang lambat!**\n\n---\n\n## 3. Solusi Pamungkas: Covering Index (\u0060INCLUDE\u0060)\nBagaimana cara melenyapkan Key Lookup secara permanen?\nBuat **Covering Index** yang menyertakan seluruh kolom yang diminta kueri:\n\n\u0060\u0060\u0060sql\nCREATE NONCLUSTERED INDEX IX_Nasabah_NIK_Covering\nON Nasabah (NIK)\nINCLUDE (Nama, Alamat, Saldo);\n\u0060\u0060\u0060\n\n### Keunggulan Fenomenal:\n- Seluruh data yang diminta kueri (\u0060Nama\u0060, \u0060Alamat\u0060, \u0060Saldo\u0060) sudah ada di daun Non-Clustered Index!\n- Database **TIDAK PERNAH PERLU MENYENTUH TABEL UTAMA SAMA SEKALI (Zero Key Lookup)!**\n- Kueri selesai dalam hitungan mikrodetik (100% Index Seek).",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Simulasi Perbedaan Waktu Eksekusi: Index Seek (B\u002B Tree) vs Table Scan (O(N))\nconst int TableSize = 1_000_000;\nint[] clusteredKeys = new int[TableSize];\nfor (int i = 0; i \u003C TableSize; i\u002B\u002B) clusteredKeys[i] = i * 2; // Data terurut fisik\n\nint target = 1_500_000; // Elemen yang dicari\n\n// 1. Simulasi Table Scan (O(N) - Membaca seluruh data satu per satu)\nvar swScan = Stopwatch.StartNew();\nbool foundScan = false;\nfor (int i = 0; i \u003C TableSize; i\u002B\u002B)\n{\n    if (clusteredKeys[i] == target)\n    {\n        foundScan = true;\n        break;\n    }\n}\nswScan.Stop();\nConsole.WriteLine($\u0022[TABLE SCAN O(N)] {swScan.ElapsedTicks} ticks ({swScan.ElapsedMilliseconds} ms) | Found: {foundScan}\u0022);\n\n// 2. Simulasi Index Seek (O(log N) - Binary Search B\u002B Tree traversal)\nvar swSeek = Stopwatch.StartNew();\nint idx = Array.BinarySearch(clusteredKeys, target);\nswSeek.Stop();\nConsole.WriteLine($\u0022[INDEX SEEK O(log N)] {swSeek.ElapsedTicks} ticks ({swSeek.ElapsedMilliseconds} ms) | Found: {idx \u003E= 0}\u0022);\n\nConsole.WriteLine($\u0022\\nIndex Seek {(double)swScan.ElapsedTicks / Math.Max(1, swSeek.ElapsedTicks):N0}x lebih cepat daripada Full Table Scan!\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-09-02-1",
+      "type": "MultipleChoice",
+      "question": "Apa perbedaan struktural utama antara Clustered Index dengan Non-Clustered Index pada database relasional?",
+      "options": [
+        "Clustered index hanya bisa dibuat pada kolom string",
+        "Clustered index menentukan susunan penyimpanan fisik baris data di halaman disk, di mana leaf node adalah data baris itu sendiri; sedangkan Non-Clustered index adalah struktur terpisah yang menunjuk ke baris data utama",
+        "Non-clustered index otomatis menghapus data duplikat",
+        "Tabel dapat memiliki hingga 10 Clustered Index sekaligus"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Clustered index menyortir baris data fisik di disk. Karena data hanya bisa disusun dalam 1 urutan fisik, hanya ada 1 clustered index per tabel.",
+      "optionExplanations": [
+        "Salah. Clustered index umumnya diletakkan pada kolom numerik (seperti integer auto-increment).",
+        "Benar! Daun clustered index adalah data fisik baris tabel itu sendiri.",
+        "Salah. Menghapus duplikat adalah tugas UNIQUE constraint.",
+        "Salah. Tabel hanya dapat memiliki tepat 1 Clustered Index."
+      ],
+      "sectionRef": "1. Clustered Index: Menentukan Susunan Fisik Tabel",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-09-02-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana cara kerja \u0027Covering Index\u0027 (menggunakan klausul INCLUDE) dalam mengeliminasi fenomena lambat Key Lookup / Bookmark Lookup?",
+      "options": [
+        "Menghapus seluruh Foreign Key di database",
+        "Menyertakan seluruh kolom yang diminta oleh kueri ke dalam simpul daun Non-Clustered Index, sehingga database tidak perlu lagi melompat ke tabel utama Clustered Index",
+        "Menyalin seluruh tabel ke file Microsoft Excel",
+        "Menonaktifkan logging transaksi WAL"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Covering Index memuat semua kolom yang dibutuhkan kueri di leaf level index, sehingga query engine mendapatkan semua data langsung dari indeks tanpa menyentuh clustered table.",
+      "optionExplanations": [
+        "Salah. Foreign Key tidak dihapus.",
+        "Benar! Menghilangkan overhead lompatan memori/disk ke tabel utama secara total.",
+        "Salah. Operasi database tetap berjalan di internal storage engine.",
+        "Salah. Write-Ahead Logging tetap aktif untuk integritas ACID."
+      ],
+      "sectionRef": "3. Solusi Pamungkas: Covering Index (INCLUDE)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-09-02",
+    "Title": "Simulator Evaluasi Operator RDBMS: Index Seek vs Table Scan",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Baca dua baris dari stdin:\nBaris 1: Kolom tabel yang memiliki indeks (\u0027Id, Email, CreatedAt\u0027)\nBaris 2: Kolom yang difilter pada klausa WHERE (\u0027WHERE Email = ...\u0027 atau \u0027WHERE Name = ...\u0027).\nJika kolom yang difilter ada di dalam daftar kolom berindeks, cetak \u0027OPERATOR: INDEX_SEEK\u0027.\nJika kolom tidak berindeks, cetak \u0027OPERATOR: TABLE_SCAN\u0027.",
+    "InputFormat": "Dua baris stdin: baris 1 indeks kolom, baris 2 klausa WHERE.",
+    "OutputFormat": "Satu baris operator kueri.",
+    "Constraints": "Case-insensitive.",
+    "Examples": [
+      {
+        "Input": "Id, Email, CreatedAt\nWHERE Email = \u0027alice@example.com\u0027",
+        "Output": "OPERATOR: INDEX_SEEK",
+        "Explanation": "Kolom Email memiliki indeks."
+      },
+      {
+        "Input": "Id, Email\nWHERE FullName = \u0027Bob\u0027",
+        "Output": "OPERATOR: TABLE_SCAN",
+        "Explanation": "Kolom FullName tidak berindeks."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Evaluasi keberadaan indeks pada kolom klausa WHERE.\n        Console.WriteLine(\u0022OPERATOR: TABLE_SCAN\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || string.IsNullOrWhiteSpace(l2)) return;\n\n        var indexedCols = new HashSet\u003Cstring\u003E(\n            l1.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries).Select(s =\u003E s.Trim()),\n            StringComparer.OrdinalIgnoreCase\n        );\n\n        string whereClause = l2.Trim();\n        if (whereClause.StartsWith(\u0022WHERE \u0022, StringComparison.OrdinalIgnoreCase))\n        {\n            whereClause = whereClause.Substring(6).Trim();\n        }\n\n        var tokens = whereClause.Split(new[] { \u0027 \u0027, \u0027=\u0027, \u0027\u003C\u0027, \u0027\u003E\u0027, \u0027!\u0027 }, StringSplitOptions.RemoveEmptyEntries);\n        string filterCol = tokens.Length \u003E 0 ? tokens[0].Trim() : \u0022\u0022;\n\n        if (indexedCols.Contains(filterCol))\n        {\n            Console.WriteLine(\u0022OPERATOR: INDEX_SEEK\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022OPERATOR: TABLE_SCAN\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Seek)",
+        "Description": "Contoh 1 (Seek): input \u0027Id, Email, CreatedAt\nWHERE Email = \u0027alice@example.com\u0027\u0027 -\u003E expected \u0027OPERATOR: INDEX_SEEK\u0027",
+        "Input": "Id, Email, CreatedAt\nWHERE Email = \u0027alice@example.com\u0027",
+        "ExpectedOutput": "OPERATOR: INDEX_SEEK",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Scan)",
+        "Description": "Contoh 2 (Scan): input \u0027Id, Email\nWHERE FullName = \u0027Bob\u0027\u0027 -\u003E expected \u0027OPERATOR: TABLE_SCAN\u0027",
+        "Input": "Id, Email\nWHERE FullName = \u0027Bob\u0027",
+        "ExpectedOutput": "OPERATOR: TABLE_SCAN",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Id Kolom Pertama",
+        "Description": "Id Kolom Pertama: input \u0027Id, Name\nWHERE Id = 10\u0027 -\u003E expected \u0027OPERATOR: INDEX_SEEK\u0027",
+        "Input": "Id, Name\nWHERE Id = 10",
+        "ExpectedOutput": "OPERATOR: INDEX_SEEK",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Filter Bukan Indeks",
+        "Description": "Filter Bukan Indeks: input \u0027CreatedAt\nWHERE DeletedAt IS NULL\u0027 -\u003E expected \u0027OPERATOR: TABLE_SCAN\u0027",
+        "Input": "CreatedAt\nWHERE DeletedAt IS NULL",
+        "ExpectedOutput": "OPERATOR: TABLE_SCAN",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Ekstrak nama kolom pertama pada klausa WHERE.",
+      "Uji apakah nama kolom tersebut terdapat di dalam koleksi indexedCols."
+    ],
+    "Explanation": "Index Seek menjelajahi pohon B-Tree secara logaritmik O(log N) langsung ke baris yang dicari, sedangkan Table Scan membaca seluruh page tabel O(N) dari disk."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-05-03",
+      "title": "B-Tree \u0026 B\u002B Tree",
+      "levelName": "LEVEL 05",
+      "context": "Algoritma struktur data dasar B\u002B Tree di memori."
+    },
+    {
+      "lessonId": "lesson-09-04",
+      "title": "Query Optimization Enterprise",
+      "levelName": "LEVEL 09",
+      "context": "Membaca Execution Plan visual dan penulisan query SARGable."
+    }
+  ],
+  "references": [
+    {
+      "title": "Use The Index, Luke! - A Guide to Database Performance",
+      "url": "https://use-the-index-luke.com/"
+    },
+    {
+      "title": "Clustered and Nonclustered Indexes Described - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class QueryExecutionPlanner\n{\n    public static string DetermineQueryOperator(bool hasIndexOnFilterColumn, bool isFilterSargable, bool isCovering)\n    {\n        if (!hasIndexOnFilterColumn || !isFilterSargable)\n        {\n            return \u0022Full-Table-Scan\u0022;\n        }\n\n        return isCovering ? \u0022Index-Seek-Covering\u0022 : \u0022Index-Seek-With-KeyLookup\u0022;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(DetermineQueryOperator(true, true, true));\n        Console.WriteLine(DetermineQueryOperator(true, true, false));\n        Console.WriteLine(DetermineQueryOperator(false, true, false));\n    }\n}"
+}

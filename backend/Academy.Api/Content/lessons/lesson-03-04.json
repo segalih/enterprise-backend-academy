@@ -1,0 +1,168 @@
+{
+  "id": "lesson-03-04",
+  "levelId": "level-03",
+  "moduleId": "mod-03-02",
+  "order": 4,
+  "title": "Interfaces \u0026 Kontrak: Desain Abstraksi Bersih dan Loose Coupling",
+  "slug": "interfaces-clean-contracts-loose-coupling",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Merancang kontrak perangkat lunak bersih menggunakan Interfaces: prinsip Interface Segregation (ISP), Default Interface Methods, Explicit Interface Implementation, dan isolasi dependensi untuk arsitektur testable.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-03-02",
+      "title": "Pewarisan vs Komposisi",
+      "levelName": "LEVEL 03",
+      "context": "Memahami injeksi komponen melalui antarmuka."
+    }
+  ],
+  "introduces": [
+    "Interface as Contract",
+    "Interface Segregation Principle (ISP)",
+    "Explicit Interface Implementation",
+    "Default Interface Methods (C# 8)",
+    "Interface Dispatching (ITable)"
+  ],
+  "learningObjectives": [
+    "Mendefinisikan interface sebagai kontrak formal tanpa keterikatan implementasi fisik.",
+    "Menerapkan Interface Segregation Principle untuk memecah interface gemuk menjadi interface granular.",
+    "Menggunakan Explicit Interface Implementation untuk menyelesaikan konflik nama method."
+  ],
+  "markdownContent": "# Interfaces \u0026 Kontrak: Desain Abstraksi Bersih dan Loose Coupling\n\n## Interface adalah Kontrak Murni\nDi C#, sebuah **Interface** mendefinisikan *\u201CAPA yang bisa dilakukan oleh suatu objek\u201D*, bukan *\u201CBAGAIMANA objek melakukannya\u201D*.\nInterface tidak menyimpan data status (*instance state*) dan tidak mengalokasikan memori field.\n\n\u0060\u0060\u0060csharp\npublic interface IPaymentGateway\n{\n    Task\u003CPaymentResult\u003E ChargeAsync(string customerId, decimal amount, CancellationToken ct);\n}\n\u0060\u0060\u0060\n\n---\n\n## Prinsip Kritis: Interface Segregation Principle (ISP)\nSalah satu kesalahan pemula adalah membuat satu **Fat Interface (Interface Raksasa)**:\n\n\u0060\u0060\u0060csharp\n// ANTI-PATTERN: FAT INTERFACE YANG MERUSAK LOOSE COUPLING\npublic interface IOrderProcessor\n{\n    void ValidateOrder();\n    void ChargeCreditCard();\n    void SendSmsNotification();\n    void GeneratePdfInvoice();\n    void ShipPhysicalPackage(); // Bagaimana jika produknya adalah software digital yang tidak butuh kirim fisik?!\n}\n\u0060\u0060\u0060\n\n### Solusi: Pecah Menjadi Kontrak-Kontrak Granular\n\u0060\u0060\u0060csharp\npublic interface IOrderValidator { void Validate(Order order); }\npublic interface IPaymentService { Task ChargeAsync(Order order); }\npublic interface IInvoiceGenerator { byte[] GeneratePdf(Order order); }\n\u0060\u0060\u0060\nKelas hanya perlu mengimplementasikan kontrak yang benar-benar relevan dengannya!\n\n---\n\n## Explicit Interface Implementation\nApa yang terjadi jika sebuah class mengimplementasikan dua interface berbeda yang kebetulan memiliki nama method yang sama?\n\n\u0060\u0060\u0060csharp\npublic interface ITransferBank { void Eksekusi(); }\npublic interface ITransferEWallet { void Eksekusi(); }\n\npublic class TransactionEngine : ITransferBank, ITransferEWallet\n{\n    // Implementasi Eksplisit Interface Bank\n    void ITransferBank.Eksekusi()\n    {\n        Console.WriteLine(\u0022Memproses mutasi kliring Bank...\u0022);\n    }\n\n    // Implementasi Eksplisit Interface E-Wallet\n    void ITransferEWallet.Eksekusi()\n    {\n        Console.WriteLine(\u0022Memproses QRIS E-Wallet...\u0022);\n    }\n}\n\u0060\u0060\u0060\nMethod eksplisit **hanya bisa dipanggil jika objek dicasting ke interface terkait**:\n\u0060\u0060\u0060csharp\nvar engine = new TransactionEngine();\n// engine.Eksekusi(); // ERROR CS1061: Tidak bisa dipanggil langsung dari class!\n\n((ITransferBank)engine).Eksekusi();    // Memanggil versi Bank\n((ITransferEWallet)engine).Eksekusi(); // Memanggil versi E-Wallet\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Interface dan Explicit Implementation\npublic interface ICustomerNotifier\n{\n    void Notify(string message);\n}\n\npublic interface IInternalAuditLogger\n{\n    void Notify(string message); // Nama method sama persis!\n}\n\npublic class SecurityAlertSystem : ICustomerNotifier, IInternalAuditLogger\n{\n    // 1. Implementasi ICustomerNotifier\n    void ICustomerNotifier.Notify(string message)\n    {\n        Console.WriteLine($\u0022[SMS KE NASABAH] Peringatan: {message}\u0022);\n    }\n\n    // 2. Implementasi IInternalAuditLogger\n    void IInternalAuditLogger.Notify(string message)\n    {\n        Console.WriteLine($\u0022[SIEM AUDIT LOG] Internal Event: {message} | Timestamp: {DateTime.UtcNow}\u0022);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var system = new SecurityAlertSystem();\n        \n        // Panggilan melalui interface spesifik\n        ICustomerNotifier customerChannel = system;\n        customerChannel.Notify(\u0022Percobaan login mencurigakan terdeteksi.\u0022);\n        \n        IInternalAuditLogger auditChannel = system;\n        auditChannel.Notify(\u0022Auth failure from IP 192.168.1.100\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-03-04-1",
+      "type": "MultipleChoice",
+      "question": "Prinsip apakah dalam SOLID yang menyatakan bahwa sebuah class tidak boleh dipaksa bergantung pada method-method interface yang tidak digunakannya?",
+      "options": [
+        "Single Responsibility Principle (SRP)",
+        "Open/Closed Principle (OCP)",
+        "Liskov Substitution Principle (LSP)",
+        "Interface Segregation Principle (ISP)"
+      ],
+      "correctOptionIndex": 3,
+      "explanation": "Interface Segregation Principle (ISP) menyatakan bahwa banyak interface kecil dan spesifik jauh lebih baik daripada satu interface gemuk serba bisa.",
+      "optionExplanations": [
+        "Salah. SRP mengatur bahwa satu class hanya boleh memiliki satu alasan untuk berubah.",
+        "Salah. OCP mengatur keterbukaan terhadap ekstensi dan ketertutupan terhadap modifikasi.",
+        "Salah. LSP mengatur substitusi tipe turunan terhadap tipe dasar.",
+        "Benar! ISP menekankan pemisahan interface menjadi kontrak-kontrak granular."
+      ],
+      "sectionRef": "Prinsip Kritis: Interface Segregation Principle (ISP)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-04-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana cara memanggil method yang diimplementasikan secara eksplisit (Explicit Interface Implementation) pada sebuah instance class di C#?",
+      "options": [
+        "Method tersebut otomatis menjadi static dan dipanggil lewat nama class",
+        "Instance class harus di-cast terlebih dahulu ke tipe interface terkait sebelum method dapat dipanggil",
+        "Method dapat dipanggil langsung dari mana saja karena otomatis public",
+        "Method tersebut hanya dapat dipanggil di dalam constructor"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Explicit interface implementation menyembunyikan method dari public interface class; method hanya dapat diakses setelah objek di-cast ke interface yang bersangkutan.",
+      "optionExplanations": [
+        "Salah. Method eksplisit bukan static method.",
+        "Benar! Casting ke interface target adalah satu-satunya cara mengakses method eksplisit.",
+        "Salah. Method eksplisit tidak memiliki access modifier public pada badan class.",
+        "Salah. Method dapat dipanggil kapan saja melalui referensi interface."
+      ],
+      "sectionRef": "Explicit Interface Implementation",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-04",
+    "Title": "Perancangan Multi-Saluran Pembayaran via Interface",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat antarmuka \u0060IPaymentGateway\u0060 dengan method \u0060string Process(decimal amount)\u0060.\nImplementasikan dua gateway:\n- \u0060QrisGateway\u0060: mengembalikan \u0027QRIS_\u003Camount\u003E_PAID\u0027\n- \u0060CreditCardGateway\u0060: mengembalikan \u0027CC_\u003Camount\u003E_AUTHORIZED\u0027\nBaca satu baris dari stdin: \u0027\u003CGATEWAY\u003E \u003CAMOUNT\u003E\u0027.\nCetak hasil pemrosesan pembayaran.",
+    "InputFormat": "Satu baris: \u0027\u003CGATEWAY\u003E \u003CAMOUNT\u003E\u0027.",
+    "OutputFormat": "Satu baris string response gateway.",
+    "Constraints": "Gateway: \u0027QRIS\u0027 atau \u0027CC\u0027. Amount \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "QRIS 50000",
+        "Output": "QRIS_50000_PAID",
+        "Explanation": "Channel QRIS memproses pembayaran."
+      },
+      {
+        "Input": "CC 150000",
+        "Output": "CC_150000_AUTHORIZED",
+        "Explanation": "Channel Credit Card mengotorisasi transaksi."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic interface IPaymentGateway\n{\n    string Process(decimal amount);\n}\n// TODO: Implementasikan QrisGateway dan CreditCardGateway.\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        Console.WriteLine(\u0022PAID\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic interface IPaymentGateway\n{\n    string Process(decimal amount);\n}\n\npublic class QrisGateway : IPaymentGateway\n{\n    public string Process(decimal amount) =\u003E $\u0022QRIS_{amount}_PAID\u0022;\n}\n\npublic class CreditCardGateway : IPaymentGateway\n{\n    public string Process(decimal amount) =\u003E $\u0022CC_{amount}_AUTHORIZED\u0022;\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 2) return;\n\n        string channel = p[0].ToUpperInvariant();\n        decimal amount = decimal.Parse(p[1], CultureInfo.InvariantCulture);\n\n        IPaymentGateway gateway = channel == \u0022CC\u0022 ? new CreditCardGateway() : new QrisGateway();\n        Console.WriteLine(gateway.Process(amount));\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (QRIS)",
+        "Description": "Contoh 1 (QRIS): input \u0027QRIS 50000\u0027 -\u003E expected \u0027QRIS_50000_PAID\u0027",
+        "Input": "QRIS 50000",
+        "ExpectedOutput": "QRIS_50000_PAID",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Credit Card)",
+        "Description": "Contoh 2 (Credit Card): input \u0027CC 150000\u0027 -\u003E expected \u0027CC_150000_AUTHORIZED\u0027",
+        "Input": "CC 150000",
+        "ExpectedOutput": "CC_150000_AUTHORIZED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "QRIS Desimal",
+        "Description": "QRIS Desimal: input \u0027QRIS 25000.50\u0027 -\u003E expected \u0027QRIS_25000.50_PAID\u0027",
+        "Input": "QRIS 25000.50",
+        "ExpectedOutput": "QRIS_25000.50_PAID",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "CC Nol",
+        "Description": "CC Nol: input \u0027CC 0\u0027 -\u003E expected \u0027CC_0_AUTHORIZED\u0027",
+        "Input": "CC 0",
+        "ExpectedOutput": "CC_0_AUTHORIZED",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Interface mendefinisikan kontrak tanpa implementasi.",
+      "Instansiasi gateway yang bersesuaian ke variabel bertipe IPaymentGateway."
+    ],
+    "Explanation": "Desain berbasis antarmuka memisahkan konsumen layanan pembayaran dari vendor konkret, memudahkan mocking saat unit testing dan swapping vendor di produksi."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-03-02",
+      "title": "Pewarisan vs Komposisi",
+      "levelName": "LEVEL 03",
+      "context": "Menggunakan interface sebagai fondasi perancangan komposisi modular."
+    },
+    {
+      "lessonId": "lesson-13-01",
+      "title": "Prinsip SOLID dalam Praktik",
+      "levelName": "LEVEL 13",
+      "context": "Penerapan Interface Segregation dan Dependency Inversion secara menyeluruh."
+    }
+  ],
+  "references": [
+    {
+      "title": "Interfaces - C# Programming Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/interfaces"
+    },
+    {
+      "title": "Explicit Interface Implementation - C# Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/interfaces/explicit-interface-implementation"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic interface IPaymentChannel\n{\n    string Process(decimal amount);\n}\n\npublic class QrisPayment : IPaymentChannel\n{\n    public string Process(decimal amount)\n    {\n        if (amount \u003C= 0) throw new ArgumentException(\u0022Amount must be positive.\u0022);\n        return $\u0022[QRIS] Tagihan Rp {amount:N0} digenerate\u0022;\n    }\n}\n\npublic class VirtualAccountPayment : IPaymentChannel\n{\n    public string Process(decimal amount)\n    {\n        if (amount \u003C= 0) throw new ArgumentException(\u0022Amount must be positive.\u0022);\n        return $\u0022[VA] Nomor VA Rp {amount:N0} aktif\u0022;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        IPaymentChannel qris = new QrisPayment();\n        IPaymentChannel va = new VirtualAccountPayment();\n\n        Console.WriteLine(qris.Process(50000m));\n        Console.WriteLine(va.Process(100000m));\n    }\n}"
+}

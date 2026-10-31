@@ -1,0 +1,168 @@
+{
+  "id": "lesson-03-02",
+  "levelId": "level-03",
+  "moduleId": "mod-03-01",
+  "order": 2,
+  "title": "Pewarisan vs Komposisi: Mengapa Enterprise Lebih Memilih Komposisi",
+  "slug": "inheritance-vs-composition-enterprise",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar jebakan pewarisan hierarki yang dalam (Fragile Base Class problem), prinsip \u0027Favor Composition Over Inheritance\u0027, dan bagaimana membangun perilaku fleksibel melalui dependency injection antarmuka.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-03-01",
+      "title": "Kelas, Objek \u0026 Enkapsulasi",
+      "levelName": "LEVEL 03",
+      "context": "Memahami struktur class dan modularitas method."
+    }
+  ],
+  "introduces": [
+    "Inheritance (\u0027is-a\u0027)",
+    "Composition (\u0027has-a\u0027)",
+    "Fragile Base Class Problem",
+    "Tight Coupling vs Loose Coupling",
+    "Single Responsibility Principle (SRP)"
+  ],
+  "learningObjectives": [
+    "Menganalisis bahaya hierarki pewarisan yang terlalu dalam pada codebase jangka panjang.",
+    "Menerapkan prinsip \u0027Favor Composition over Inheritance\u0027 untuk fleksibilitas arsitektur.",
+    "Menggabungkan komponen fungsional melalui delegasi interface."
+  ],
+  "markdownContent": "# Pewarisan vs Komposisi: Mengapa Enterprise Lebih Memilih Komposisi\n\n## Mitos Buku Teks vs Realita Enterprise\nDi bangku kuliah atau buku pemrograman dasar, pewarisan (*inheritance*) sering diagung-agungkan:\n\u0060\u0060\u0060mermaid\nclassDiagram\n    direction TB\n    class Vehicle {\n        \u002BStartEngine()\n    }\n    class Car {\n        \u002BShiftGear()\n    }\n    class ElectricCar {\n        \u002BChargeBattery()\n    }\n    class TeslaModel3 {\n        \u002BAutopilot()\n    }\n    Vehicle \u003C|-- Car\n    Car \u003C|-- ElectricCar\n    ElectricCar \u003C|-- TeslaModel3\n\u0060\u0060\u0060\nNamun di sistem backend enterprise berskala besar, **pewarisan kelas hierarkis yang dalam dihindari secara ketat**. Bahkan prinsip GoF (Gang of Four) menegaskan:\n\u003E *\u0022Favor object composition over class inheritance.\u0022*\n\n---\n\n## 3 Bahaya Fatal Pewarisan Kelas (Inheritance Trap)\n\n1. **Fragile Base Class Problem**:\n   - Jika Anda mengubah 1 baris logika di \u0060BaseService\u0060, puluhan subclass turunan di berbagai modul dapat mendadak mengalami bug perilaku tak terduga (*breaking changes*).\n2. **Pelanggaran Enkapsulasi (White-Box Reuse)**:\n   - Subclass memiliki akses ke status internal kelas induk melalui keyword \u0060protected\u0060, menciptakan kopling yang sangat erat (*tight coupling*).\n3. **Rigid Hierarchy (Ketidakfleksibelan Dimensi)**:\n   - Bagaimana jika sebuah sistem butuh \u0060SqlDatabaseNotifier\u0060 dan \u0060EmailNotificationService\u0060? Jika menggunakan pewarisan, Anda akan menghadapi ledakan kombinasi kelas yang mustahil dirawat.\n\n---\n\n## Komposisi: Hubungan \u0022HAS-A\u0022 yang Fleksibel\nAlih-alih mengatakan *\u201CService A adalah turunan dari Service B\u201D* (\u0060is-a\u0060), kita menyusun perilaku dengan mengatakan *\u201CService A memiliki komponen B dan C\u201D* (\u0060has-a\u0060):\n\n\u0060\u0060\u0060csharp\n// PENDEKATAN KOMPOSISI: KOMPONEN LEPAS DAN FLEKSIBEL\npublic class OrderService\n{\n    private readonly IPaymentProcessor _paymentProcessor;\n    private readonly INotificationService _notificationService;\n\n    // Komponen disuntikkan dari luar (Dependency Injection)\n    public OrderService(IPaymentProcessor payment, INotificationService notification)\n    {\n        _paymentProcessor = payment;\n        _notificationService = notification;\n    }\n\n    public async Task ProcessOrderAsync(Order order)\n    {\n        await _paymentProcessor.ChargeAsync(order.Total);\n        await _notificationService.SendReceiptAsync(order.CustomerEmail);\n    }\n}\n\u0060\u0060\u0060\n\n### Keunggulan Mutlak Komposisi:\n- **Tukar Komponen Saat Runtime**: Mengganti implementasi pengiriman dari \u0060SmtpEmailNotification\u0060 ke \u0060SendGridApiNotification\u0060 cukup dengan mengubah konfigurasi DI tanpa menyentuh satu baris pun kode \u0060OrderService\u0060!\n- **100% Mudah Diuji (Unit Testable)**: Anda dapat menyuntikkan mock atau stub interface saat pengujian otomatis dengan xUnit.",
+  "starterCode": "using System;\n\n// PROGRAM: Pembuktian Fleksibilitas Komposisi vs Pewarisan\npublic interface IReceiptPrinter\n{\n    void Print(string message);\n}\n\npublic class ConsolePrinter : IReceiptPrinter\n{\n    public void Print(string message) =\u003E Console.WriteLine($\u0022[PAPER PRINTER] {message}\u0022);\n}\n\npublic class CloudEmailPrinter : IReceiptPrinter\n{\n    public void Print(string message) =\u003E Console.WriteLine($\u0022[CLOUD EMAIL] Mengirim receipt via email: {message}\u0022);\n}\n\n// KOMPOSISI: Kasir \u0027MEMILIKI\u0027 alat cetak, bukan \u0027MERUPAKAN\u0027 alat cetak\npublic class CashierDesk\n{\n    private readonly IReceiptPrinter _printer;\n\n    public CashierDesk(IReceiptPrinter printer)\n    {\n        _printer = printer;\n    }\n\n    public void Checkout(decimal amount)\n    {\n        Console.WriteLine($\u0022Transaksi Rp {amount:N0} diterima.\u0022);\n        _printer.Print($\u0022Lunas Rp {amount:N0}\u0022);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Mengganti perilaku output cukup dengan menukar komponen printer!\n        var kasirToko = new CashierDesk(new ConsolePrinter());\n        kasirToko.Checkout(150_000m);\n        \n        var kasirOnline = new CashierDesk(new CloudEmailPrinter());\n        kasirOnline.Checkout(500_000m);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-03-02-1",
+      "type": "MultipleChoice",
+      "question": "Masalah apakah yang disebut \u0027Fragile Base Class Problem\u0027 dalam perancangan perangkat lunak berorientasi objek?",
+      "options": [
+        "Class induk memiliki ukuran file lebih besar dari 1 Megabyte",
+        "Perubahan kecil pada implementasi base class induk dapat memicu malfungsi tak terduga pada banyak sub-class turunan",
+        "Compiler menolak mewariskan class yang memiliki interface",
+        "Base class tidak bisa memiliki constructor"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Fragile Base Class terjadi ketika perubahan pada kelas induk secara tidak sengaja merusak fungsionalitas turunan-turunannya akibat keterikatan erat (tight coupling).",
+      "optionExplanations": [
+        "Salah. Ukuran file bukan definisi masalah arsitektural ini.",
+        "Benar! Kerapuhan kelas induk merambat ke seluruh subclass yang mewarisinya.",
+        "Salah. C# mendukung pewarisan class yang mengimplementasikan interface.",
+        "Salah. Base class selalu memiliki constructor."
+      ],
+      "sectionRef": "3 Bahaya Fatal Pewarisan Kelas (Inheritance Trap)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-02-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa arsitektur berbasis Komposisi (\u0027has-a\u0027) jauh lebih disukai daripada Pewarisan (\u0027is-a\u0027) pada aplikasi backend enterprise modern?",
+      "options": [
+        "Karena komposisi mengeksekusi kode di GPU",
+        "Karena komponen dapat diganti secara independen (loose coupling) dan sangat mudah diuji menggunakan Mocking pada Unit Test",
+        "Karena keyword class dilarang dalam arsitektur microservices",
+        "Karena komposisi otomatis menyimpan data ke database Redis"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Komposisi mempromosikan loose coupling: dependensi didefinisikan melalui interface yang dapat diganti implementasinya tanpa mengubah kode pemanggil, memudahkan testing dan evolusi sistem.",
+      "optionExplanations": [
+        "Salah. Komposisi tidak berhubungan dengan eksekusi GPU.",
+        "Benar! Komposisi memberikan fleksibilitas tinggi dan kemudahan pengujian otomatis.",
+        "Salah. Class tetap merupakan blok pembangun dasar di C#.",
+        "Salah. Komposisi adalah prinsip desain logika objek, bukan database connector."
+      ],
+      "sectionRef": "Komposisi: Hubungan HAS-A yang Fleksibel",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-02",
+    "Title": "Perancangan Komposisi Notifikasi Multi-Channel",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Buat sistem pengirim notifikasi menggunakan komposisi. Terdapat antarmuka \u0060IMessageSender\u0060 dengan method \u0060Send(string message)\u0060.\nImplementasikan \u0060EmailSender\u0060 (mencetak \u0027EMAIL: \u003Cmsg\u003E\u0027) dan \u0060SmsSender\u0060 (mencetak \u0027SMS: \u003Cmsg\u003E\u0027).\nKelas \u0060NotificationService\u0060 menerima kumpulan sender melalui konstruktor komposisi.\nBaca satu baris teks pesan dari stdin dan kirimkan ke kedua sender secara berurutan.",
+    "InputFormat": "Satu baris pesan notifikasi.",
+    "OutputFormat": "Dua baris hasil pengiriman: pertama EMAIL, kedua SMS.",
+    "Constraints": "Pesan tidak kosong.",
+    "Examples": [
+      {
+        "Input": "Tagihan Anda jatuh tempo",
+        "Output": "EMAIL: Tagihan Anda jatuh tempo\nSMS: Tagihan Anda jatuh tempo",
+        "Explanation": "Kedua channel mengirimkan pesan yang sama."
+      },
+      {
+        "Input": "OTP: 123456",
+        "Output": "EMAIL: OTP: 123456\nSMS: OTP: 123456",
+        "Explanation": "Notifikasi OTP terkirim ke multi-channel."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic interface IMessageSender { void Send(string message); }\n// TODO: Implementasikan EmailSender, SmsSender, dan NotificationService dengan komposisi.\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? msg = Console.ReadLine();\n        Console.WriteLine($\u0022EMAIL: {msg}\u0022);\n        Console.WriteLine($\u0022SMS: {msg}\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic interface IMessageSender\n{\n    void Send(string message);\n}\n\npublic class EmailSender : IMessageSender\n{\n    public void Send(string message) =\u003E Console.WriteLine($\u0022EMAIL: {message}\u0022);\n}\n\npublic class SmsSender : IMessageSender\n{\n    public void Send(string message) =\u003E Console.WriteLine($\u0022SMS: {message}\u0022);\n}\n\npublic class NotificationService\n{\n    private readonly List\u003CIMessageSender\u003E _senders = new();\n    public NotificationService(IEnumerable\u003CIMessageSender\u003E senders)\n    {\n        _senders.AddRange(senders);\n    }\n    public void NotifyAll(string message)\n    {\n        foreach (var s in _senders) s.Send(message);\n    }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? msg = Console.ReadLine()?.Trim();\n        if (string.IsNullOrEmpty(msg)) return;\n\n        var service = new NotificationService(new IMessageSender[] { new EmailSender(), new SmsSender() });\n        service.NotifyAll(msg);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Tagihan)",
+        "Description": "Contoh 1 (Tagihan): input \u0027Tagihan Anda jatuh tempo\u0027 -\u003E expected \u0027EMAIL: Tagihan Anda jatuh tempo\nSMS: Tagihan Anda jatuh tempo\u0027",
+        "Input": "Tagihan Anda jatuh tempo",
+        "ExpectedOutput": "EMAIL: Tagihan Anda jatuh tempo\nSMS: Tagihan Anda jatuh tempo",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (OTP)",
+        "Description": "Contoh 2 (OTP): input \u0027OTP: 123456\u0027 -\u003E expected \u0027EMAIL: OTP: 123456\nSMS: OTP: 123456\u0027",
+        "Input": "OTP: 123456",
+        "ExpectedOutput": "EMAIL: OTP: 123456\nSMS: OTP: 123456",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Pesan Singkat",
+        "Description": "Pesan Singkat: input \u0027Halo\u0027 -\u003E expected \u0027EMAIL: Halo\nSMS: Halo\u0027",
+        "Input": "Halo",
+        "ExpectedOutput": "EMAIL: Halo\nSMS: Halo",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Pesan Simbol",
+        "Description": "Pesan Simbol: input \u0027Trans $100 -\u003E OK!\u0027 -\u003E expected \u0027EMAIL: Trans $100 -\u003E OK!\nSMS: Trans $100 -\u003E OK!\u0027",
+        "Input": "Trans $100 -\u003E OK!",
+        "ExpectedOutput": "EMAIL: Trans $100 -\u003E OK!\nSMS: Trans $100 -\u003E OK!",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola komposisi menyatukan perilaku dengan menggabungkan objek-objek kecil independen alih-alih inheritance hierarki ketat.",
+      "Iterasi daftar IMessageSender untuk memanggil Send(msg)."
+    ],
+    "Explanation": "Prinsip Composition over Inheritance memungkinkan penambahan channel komunikasi baru (misal WhatsAppSender) tanpa memodifikasi kode NotificationService yang sudah ada (Open/Closed Principle)."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-03-04",
+      "title": "Interfaces \u0026 Kontrak Abstraksi",
+      "levelName": "LEVEL 03",
+      "context": "Merancang antarmuka kontrak untuk komposisi komponen."
+    },
+    {
+      "lessonId": "lesson-11-03",
+      "title": "Dependency Injection Deep Dive",
+      "levelName": "LEVEL 11",
+      "context": "Injeksi komponen komposisi otomatis menggunakan IoC Container ASP.NET Core."
+    }
+  ],
+  "references": [
+    {
+      "title": "Design Patterns: Elements of Reusable Object-Oriented Software (GoF)",
+      "url": "https://www.oreilly.com/library/view/design-patterns-elements/0201633612/"
+    },
+    {
+      "title": "Composition over inheritance - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Composition_over_inheritance"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic interface IMessageSender\n{\n    string Send(string to, string body);\n}\n\npublic class SmsSender : IMessageSender\n{\n    public string Send(string to, string body) =\u003E $\u0022[SMS to {to}]: {body}\u0022;\n}\n\npublic class AlertManager\n{\n    private readonly IMessageSender _sender;\n\n    public AlertManager(IMessageSender sender)\n    {\n        _sender = sender ?? throw new ArgumentNullException(nameof(sender));\n    }\n\n    public string SendEmergencyAlert(string recipient, string alertCode)\n    {\n        string message = $\u0022ALERT [{alertCode}]: Emergency detected!\u0022;\n        return _sender.Send(recipient, message);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var alert = new AlertManager(new SmsSender());\n        Console.WriteLine(alert.SendEmergencyAlert(\u0022\u002B628123456\u0022, \u0022E-99\u0022));\n    }\n}"
+}

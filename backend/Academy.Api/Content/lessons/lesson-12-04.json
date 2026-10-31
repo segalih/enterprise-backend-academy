@@ -1,0 +1,164 @@
+{
+  "id": "lesson-12-04",
+  "levelId": "level-12",
+  "moduleId": "mod-12-02",
+  "order": 4,
+  "title": "High-Throughput Producer-Consumer dengan System.Threading.Channels dan Backpressure",
+  "slug": "channels-producer-consumer-backpressure",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 55,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membangun arsitektur Producer-Consumer berkecepatan tinggi menggunakan System.Threading.Channels: bounded vs unbounded channels, strategi backpressure (Wait, DropNewest, DropOldest), dan perbandingan dengan BlockingCollection.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-12-01",
+      "reason": "Async/Await State Machine \u0026 Non-blocking continuations"
+    },
+    {
+      "lessonId": "lesson-02-08",
+      "reason": "Generics \u0026 Collections di .NET"
+    }
+  ],
+  "introduces": [
+    "System.Threading.Channels architecture (ChannelWriter \u0026 ChannelReader)",
+    "BoundedChannelOptions \u0026 Backpressure mitigation",
+    "BoundedChannelFullMode (Wait, DropNewest, DropOldest, DropWrite)",
+    "Comparison with BlockingCollection \u0026 TPL Dataflow",
+    "High-throughput log/event batching pipelines"
+  ],
+  "learningObjectives": [
+    "Menganalisis perbedaan performa dan alokasi memori antara \u0060System.Threading.Channels\u0060 dan \u0060BlockingCollection\u0060",
+    "Menerapkan konsep Backpressure menggunakan Bounded Channel untuk mencegah OutOfMemoryException saat producer lebih cepat dari consumer",
+    "Mengonfigurasi opsi optimasi \u0060SingleReader\u0060 dan \u0060SingleWriter\u0060 untuk mengeliminasi overhead lock internal channel",
+    "Membangun pipeline ingestion data transaksi streaming dengan konsumsi batching asinkronus"
+  ],
+  "markdownContent": "# High-Throughput Producer-Consumer dengan System.Threading.Channels dan Backpressure\n\nPola **Producer-Consumer** adalah fondasi pemrosesan data asinkronus di backend: satu atau beberapa thread menghasilkan data (misalnya HTTP request yang menerima event log atau audit trail), dan satu atau beberapa worker thread mengambil data tersebut dari antrean untuk diproses (misalnya menulis batch ke database).\n\nDi era .NET lawas, developer menggunakan \u0060BlockingCollection\u003CT\u003E\u0060 atau \u0060ConcurrentQueue\u003CT\u003E\u0060. Namun, keduanya dirancang untuk threading sinkronus (memblokir thread OS saat antrean kosong).\n\nDi .NET Core 3\u002B hingga .NET 8, Microsoft memperkenalkan **\u0060System.Threading.Channels\u0060**: pustaka antrean in-memory asinkronus dengan performa sangat tinggi, zero-allocation pada jalur panas, dan dukungan terintegrasi untuk **Backpressure**.\n\n---\n\n## 1. Masalah Kritis: Uncontrolled Memory Growth \u0026 Backpressure\n\nBayangkan Anda memiliki aplikasi backend web:\n- **Producer**: 1.000 HTTP request per detik menerima log pembayaran dan memasukkannya ke dalam antrean in-memory.\n- **Consumer**: Worker background yang menulis log ke database hanya mampu menulis 200 baris per detik.\n\nApa yang terjadi jika antrean Anda bersifat **Unbounded (Tanpa Batas)**?\nSetiap detik, antrean bertambah 800 objek. Dalam beberapa jam, jutaan objek menumpuk di RAM hingga server mengalami **OutOfMemoryException (OOM Crash)**!\n\n### Apa itu Backpressure?\n**Backpressure** adalah mekanisme di mana sistem memberikan \u0022tekanan balik\u0022 kepada Producer ketika buffer antrean mendekati kapasitas penuh:\n1. **Wait (Rekomendasi Utama)**: Producer menunggu secara asinkronus (\u0060await WriteAsync\u0060) sampai ada ruang kosong di buffer. Ini otomatis memperlambat laju penerimaan request sebelum sistem meledak.\n2. **DropOldest**: Hapus data terlama di buffer untuk memberi ruang pada data baru (cocok untuk telemetry/metrik real-time).\n3. **DropNewest**: Tolak data baru yang masuk.\n4. **DropWrite**: Gagalkan penulisan secara langsung.\n\n---\n\n## 2. Mengonfigurasi Bounded Channel\n\n\u0060\u0060\u0060csharp\nvar options = new BoundedChannelOptions(capacity: 10_000)\n{\n    // Jika penuh, tunggu secara asinkronus (Backpressure!)\n    FullMode = BoundedChannelFullMode.Wait,\n    \n    // Optimasi performa jika hanya ada 1 consumer background worker!\n    SingleReader = true,\n    \n    // False jika banyak HTTP request thread yang menulis\n    SingleWriter = false \n};\n\nChannel\u003CAuditLog\u003E channel = Channel.CreateBounded\u003CAuditLog\u003E(options);\n\u0060\u0060\u0060\n\n\u003E [!TIP]\n\u003E Mengatur \u0060SingleReader = true\u0060 atau \u0060SingleWriter = true\u0060 memungkinkan channel menggunakan struktur data lock-free khusus yang jauh lebih cepat dibandingkan struktur multi-reader/multi-writer umum!\n\n---\n\n## 3. Menulis dan Membaca dari Channel\n\n### Producer (Menulis Event):\n\u0060\u0060\u0060csharp\npublic class LogProducer\n{\n    private readonly ChannelWriter\u003CAuditLog\u003E _writer;\n\n    public LogProducer(ChannelWriter\u003CAuditLog\u003E writer) =\u003E _writer = writer;\n\n    public async Task PublishLogAsync(AuditLog log, CancellationToken ct)\n    {\n        // Menunggu secara non-blocking jika buffer penuh!\n        await _writer.WriteAsync(log, ct);\n    }\n}\n\u0060\u0060\u0060\n\n### Consumer (Membaca dengan \u0060ReadAllAsync\u0060):\n\u0060\u0060\u0060csharp\npublic class LogConsumerService : BackgroundService\n{\n    private readonly ChannelReader\u003CAuditLog\u003E _reader;\n    private readonly ILogger\u003CLogConsumerService\u003E _logger;\n\n    public LogConsumerService(ChannelReader\u003CAuditLog\u003E reader, ILogger\u003CLogConsumerService\u003E logger)\n    {\n        _reader = reader;\n        _logger = logger;\n    }\n\n    protected override async Task ExecuteAsync(CancellationToken stoppingToken)\n    {\n        // ReadAllAsync mengembalikan IAsyncEnumerable\u003CT\u003E!\n        // Loop akan terus berjalan asinkronus sampai channel ditutup (_writer.Complete())\n        await foreach (var log in _reader.ReadAllAsync(stoppingToken))\n        {\n            await ProcessLogAsync(log);\n        }\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 4. Channels vs BlockingCollection vs TPL Dataflow\n\n| Fitur | BlockingCollection\u003CT\u003E | TPL Dataflow | System.Threading.Channels |\n| :--- | :--- | :--- | :--- |\n| **Model Eksekusi** | Sinkronus (Thread Blocking) | Asinkronus (Actor/Block) | Asinkronus Murni (Async/Await) |\n| **Throughput** | Sedang | Tinggi | **Sangat Tinggi / Maksimal** |\n| **Alokasi Heap** | Tinggi | Sedang | **Sangat Rendah (Zero on hot-path)**|\n| **Integrasi IAsyncEnumerable**| Tidak | Parsial | **Native (\u0060ReadAllAsync\u0060)** |\n| **Kasus Penggunaan Terbaik** | Aplikasi legacy sinkronus | Kompleks Directed Acyclic Graph (DAG) | Pipeline Producer-Consumer backend modern |\n\n---\n\n## 5. Ringkasan \u0026 Best Practice\n\n1. **Selalu Gunakan Bounded Channels di Produksi**: Jangan pernah gunakan \u0060UnboundedChannel\u0060 tanpa pembatasan, karena dapat menjadi vektor serangan Denial-of-Service (DoS) melalui penghabisan memori.\n2. **Manfaatkan SingleReader / SingleWriter**: Jika topologi Anda adalah N producer ke 1 consumer background task, aktifkan \u0060SingleReader = true\u0060 untuk performa maksimal.\n3. **Graceful Shutdown**: Saat aplikasi berhenti, panggil \u0060channel.Writer.Complete()\u0060. Ini memberi sinyal kepada consumer bahwa tidak ada lagi data baru, sehingga consumer dapat menyelesaikan sisa data di buffer sebelum proses dimatikan.",
+  "starterCode": "using System;\nusing System.Threading;\nusing System.Threading.Channels;\nusing System.Threading.Tasks;\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        // Bounded Channel kapasitas 3\n        var options = new BoundedChannelOptions(3)\n        {\n            FullMode = BoundedChannelFullMode.Wait,\n            SingleReader = true,\n            SingleWriter = true\n        };\n        var channel = Channel.CreateBounded\u003Cint\u003E(options);\n\n        // Consumer Worker yang membaca data\n        var consumerTask = Task.Run(async () =\u003E\n        {\n            Console.WriteLine(\u0022[Consumer] Siap memproses data...\u0022);\n            await foreach (var item in channel.Reader.ReadAllAsync())\n            {\n                Console.WriteLine($\u0022[Consumer] Memproses item: {item}\u0022);\n                await Task.Delay(20);\n            }\n        });\n\n        // Producer: Menghasilkan 5 item\n        for (int i = 1; i \u003C= 5; i\u002B\u002B)\n        {\n            Console.WriteLine($\u0022[Producer] Menulis item {i}...\u0022);\n            await channel.Writer.WriteAsync(i);\n        }\n\n        channel.Writer.Complete();\n        await consumerTask;\n        Console.WriteLine(\u0022[Sistem] Seluruh pemrosesan channel selesai.\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Threading;\nusing System.Threading.Channels;\nusing System.Threading.Tasks;\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var options = new BoundedChannelOptions(3)\n        {\n            FullMode = BoundedChannelFullMode.Wait,\n            SingleReader = true,\n            SingleWriter = true\n        };\n        var channel = Channel.CreateBounded\u003Cint\u003E(options);\n\n        var consumerTask = Task.Run(async () =\u003E\n        {\n            await foreach (var item in channel.Reader.ReadAllAsync())\n            {\n                Console.WriteLine($\u0022  [Consumer] Memproses item {item}\u0022);\n                await Task.Delay(50);\n            }\n        });\n\n        for (int i = 1; i \u003C= 5; i\u002B\u002B)\n        {\n            Console.WriteLine($\u0022[Producer] Menulis item {i}...\u0022);\n            await channel.Writer.WriteAsync(i);\n        }\n\n        channel.Writer.Complete();\n        await consumerTask;\n        Console.WriteLine(\u0022[Sistem] Seluruh pemrosesan channel selesai.\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-12-04-1",
+      "type": "single_choice",
+      "question": "Apa bahaya arsitektur paling kritis jika Anda menggunakan Unbounded Channel pada sistem ingestion data backend yang menerima jutaan transaksi?",
+      "options": [
+        "Database akan otomatis terenkripsi dan meminta tebusan.",
+        "Jika laju Producer lebih cepat daripada laju Consumer, antrean in-memory akan terus membesar tanpa batas hingga server mengalami OutOfMemoryException (OOM Crash).",
+        "Kabel jaringan server akan terputus karena kelebihan muatan elektron.",
+        "Compiler C# akan menolak menjalankan aplikasi di Linux."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Unbounded channel tidak memiliki batas kapasitas buffer. Jika laju kedatangan data melebihi kecepatan worker memprosesnya, memori RAM server akan terus tersedot sampai habis, mematikan seluruh proses aplikasi secara mendadak.",
+      "optionExplanations": [
+        "Salah. Ini bukan serangan ransomware.",
+        "Benar! Tanpa backpressure kapasitas bounded, penumpukan objek in-memory pasti berujung pada OutOfMemoryException.",
+        "Salah. Kabel jaringan tidak terpengaruh oleh alokasi antrean software.",
+        "Salah. Channels berjalan sepenuhnya di Linux."
+      ],
+      "sectionRef": "1. Masalah Kritis: Uncontrolled Memory Growth \u0026 Backpressure",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-12-04-2",
+      "type": "single_choice",
+      "question": "Apa pengaruh dari pengaturan opsi \u0027SingleReader = true\u0027 saat membuat Bounded Channel di C#?",
+      "options": [
+        "Membatasi aplikasi agar hanya boleh dijalankan oleh satu pengguna terdaftar.",
+        "Mengizinkan Channel menggunakan algoritma internal lock-free yang lebih teroptimasi karena menjamin hanya ada satu thread/task yang membaca data secara bersamaan.",
+        "Menghapus seluruh data di antrean jika ada lebih dari 1 pembaca.",
+        "Memaksa pembacaan channel dilakukan menggunakan harddisk mekanis."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Ketika runtime mengetahui bahwa hanya ada 1 consumer yang membaca antrean, Channel dapat mengeliminasi penguncian multi-reader (lock contention) dan menggunakan pointer ring buffer yang jauh lebih cepat.",
+      "optionExplanations": [
+        "Salah. Tidak berkaitan dengan otentikasi user aplikasi.",
+        "Benar! Menghilangkan overhead multi-consumer locking dan memaksimalkan throughput transfer data.",
+        "Salah. Jika dilanggar, runtime akan melempar exception atau terjadi data race, bukan menghapus data.",
+        "Salah. Channels adalah struktur data murni di memori RAM."
+      ],
+      "sectionRef": "2. Mengonfigurasi Bounded Channel",
+      "difficulty": "Advanced"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-12-04",
+    "Title": "Simulasi Bounded Channel Producer-Consumer",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Simulasikan bounded queue berkapasitas tetap K dengan antrian pesan FIFO.\nBaca dua baris dari stdin:\nBaris 1: KapasitasK (int)\nBaris 2: Operasi dipisahkan koma: \u0027PUB:\u003Cpesan\u003E\u0027 (publish) atau \u0027SUB\u0027 (consume).\n- \u0027PUB:\u003Cpesan\u003E\u0027: jika antrian belum penuh (\u003C K), tambahkan ke antrian dan cetak \u0027ENQUEUED: \u003Cpesan\u003E\u0027. Jika penuh, cetak \u0027DROPPED: \u003Cpesan\u003E\u0027.\n- \u0027SUB\u0027: jika ada pesan di antrian, ambil pesan paling depan dan cetak \u0027CONSUMED: \u003Cpesan\u003E\u0027. Jika kosong, cetak \u0027QUEUE_EMPTY\u0027.",
+    "InputFormat": "Dua baris: baris 1 kapasitas antrian, baris 2 deretan operasi.",
+    "OutputFormat": "Status ENQUEUED, DROPPED, CONSUMED, atau QUEUE_EMPTY per operasi.",
+    "Constraints": "Kapasitas K \u003E= 1.",
+    "Examples": [
+      {
+        "Input": "2\nPUB:M1, PUB:M2, PUB:M3, SUB",
+        "Output": "ENQUEUED: M1\nENQUEUED: M2\nDROPPED: M3\nCONSUMED: M1",
+        "Explanation": "Pesan M3 di-drop karena kapasitas 2 penuh. SUB mengambil M1."
+      },
+      {
+        "Input": "1\nSUB, PUB:Data, SUB",
+        "Output": "QUEUE_EMPTY\nENQUEUED: Data\nCONSUMED: Data",
+        "Explanation": "SUB awal kosong, lalu enqueue data dan consume."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Simulasikan antrian BoundedChannel dengan Queue\u003Cstring\u003E.\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || string.IsNullOrWhiteSpace(l2)) return;\n\n        int capacity = int.Parse(l1.Trim());\n        var ops = l2.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var queue = new Queue\u003Cstring\u003E();\n\n        foreach (var op in ops)\n        {\n            string t = op.Trim();\n            if (t.StartsWith(\u0022PUB:\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                string msg = t.Substring(4).Trim();\n                if (queue.Count \u003C capacity)\n                {\n                    queue.Enqueue(msg);\n                    Console.WriteLine($\u0022ENQUEUED: {msg}\u0022);\n                }\n                else\n                {\n                    Console.WriteLine($\u0022DROPPED: {msg}\u0022);\n                }\n            }\n            else if (t.Equals(\u0022SUB\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                if (queue.Count \u003E 0)\n                {\n                    string consumed = queue.Dequeue();\n                    Console.WriteLine($\u0022CONSUMED: {consumed}\u0022);\n                }\n                else\n                {\n                    Console.WriteLine(\u0022QUEUE_EMPTY\u0022);\n                }\n            }\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Drop \u0026 Consume)",
+        "Description": "Contoh 1 (Drop \u0026 Consume): input \u00272\nPUB:M1, PUB:M2, PUB:M3, SUB\u0027 -\u003E expected \u0027ENQUEUED: M1\nENQUEUED: M2\nDROPPED: M3\nCONSUMED: M1\u0027",
+        "Input": "2\nPUB:M1, PUB:M2, PUB:M3, SUB",
+        "ExpectedOutput": "ENQUEUED: M1\nENQUEUED: M2\nDROPPED: M3\nCONSUMED: M1",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Queue Kosong",
+        "Description": "Queue Kosong: input \u00271\nSUB\u0027 -\u003E expected \u0027QUEUE_EMPTY\u0027",
+        "Input": "1\nSUB",
+        "ExpectedOutput": "QUEUE_EMPTY",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Kapasitas Penuh Lalu Kosong",
+        "Description": "Kapasitas Penuh Lalu Kosong: input \u00271\nPUB:A, SUB, PUB:B\u0027 -\u003E expected \u0027ENQUEUED: A\nCONSUMED: A\nENQUEUED: B\u0027",
+        "Input": "1\nPUB:A, SUB, PUB:B",
+        "ExpectedOutput": "ENQUEUED: A\nCONSUMED: A\nENQUEUED: B",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Banyak Publish",
+        "Description": "Banyak Publish: input \u00272\nPUB:1, PUB:2, PUB:3, PUB:4\u0027 -\u003E expected \u0027ENQUEUED: 1\nENQUEUED: 2\nDROPPED: 3\nDROPPED: 4\u0027",
+        "Input": "2\nPUB:1, PUB:2, PUB:3, PUB:4",
+        "ExpectedOutput": "ENQUEUED: 1\nENQUEUED: 2\nDROPPED: 3\nDROPPED: 4",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "System.Threading.Channels.Channel.CreateBounded\u003CT\u003E(capacity) menyediakan antrian producer-consumer dengan backpressure.",
+      "Gunakan Queue\u003Cstring\u003E untuk menyimulasikan bounded queue berkapasitas K."
+    ],
+    "Explanation": "Channels di C# menyediakan primitif komunikasi asinkron antar thread/task berkinerja tinggi dengan kebijakan backpressure terstruktur saat consumer lebih lambat dari producer."
+  },
+  "relatedLessons": [
+    "lesson-12-01",
+    "lesson-12-03",
+    "lesson-14-02"
+  ],
+  "references": [
+    {
+      "title": "An Introduction to System.Threading.Channels - Stephen Toub",
+      "url": "https://devblogs.microsoft.com/dotnet/an-introduction-to-system-threading-channels/",
+      "type": "article"
+    },
+    {
+      "title": "System.Threading.Channels Namespace - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/api/system.threading.channels",
+      "type": "documentation"
+    }
+  ]
+}

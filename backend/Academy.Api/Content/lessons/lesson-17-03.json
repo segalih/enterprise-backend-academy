@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-17-03",
+    "levelId":  "level-17",
+    "moduleId":  "mod-17-03",
+    "order":  3,
+    "title":  "Investigasi Masalah Produksi: Diagnosa High CPU, Memory Leaks, dan Thread Pool Starvation",
+    "slug":  "production-debugging-dumps-traces",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mendiagnosa insiden produksi tanpa Visual Studio IDE: CLI diagnostic tools (dotnet-dump, dotnet-trace, dotnet-gcdump), menganalisis Memory Leaks, High CPU profiling, dan Thread Pool Starvation.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-08-02",
+                              "reason":  "Garbage Collection Generations \u0026 LOH"
+                          },
+                          {
+                              "lessonId":  "lesson-12-02",
+                              "reason":  "Async Deadlocks \u0026 Thread Pool Starvation"
+                          }
+                      ],
+    "introduces":  [
+                       "Production diagnostics CLI tools (dotnet-dump, dotnet-trace, dotnet-counters)",
+                       "Capturing \u0026 analyzing Core Dumps on Linux containers",
+                       "Memory Leak root cause analysis (GC Roots \u0026 Static references)",
+                       "High CPU flamegraph profiling",
+                       "Thread Pool Starvation diagnosis via SOS commands"
+                   ],
+    "learningObjectives":  [
+                               "Menjalankan `dotnet-dump` di dalam kontainer Linux Kubernetes untuk menangkap snapshot memori proses tanpa mematikan aplikasi",
+                               "Menganalisis file dump menggunakan perintah SOS (`dumpheap -stat`, `gcroot`) untuk menemukan akar penyebab memory leak",
+                               "Merekam aktivitas CPU menggunakan `dotnet-trace` dan menghasilkan Speedscope Flamegraph untuk menemukan hot-path algoritma",
+                               "Mendiagnosa Thread Pool Starvation dengan memeriksa antrean kerja dan status thread pool worker threads"
+                           ],
+    "markdownContent":  "# Investigasi Masalah Produksi: Diagnosa High CPU, Memory Leaks, dan Thread Pool Starvation\n\nDi komputer lokal developer, mencari bug sangat mudah: Anda memasang breakpoint di Visual Studio, menekan F5, dan menginspeksi nilai variabel.\n\nNamun di lingkungan produksi:\n- Server berjalan di dalam kontainer Linux Kubernetes tanpa antarmuka GUI.\n- Anda tidak boleh memasang debugger langsung karena akan menghentikan transaksi ribuan nasabah (*freezing the world*).\n- Masalah performa seperti lonjakan **CPU 100%**, **Memory Leak lambat**, atau **Thread Pool Starvation** seringkali hanya muncul di bawah beban jutaan request nyata.\n\nMateri ini membekali Anda dengan keterampilan investigasi produksi menggunakan toolkit diagnostik resmi .NET: **dotnet-dump**, **dotnet-trace**, dan **dotnet-gcdump**.\n\n---\n\n## 1. Alat Diagnostik Resmi .NET (.NET CLI Tools)\n\nMicrosoft menyediakan serangkaian alat diagnostik mandiri yang dapat di-install secara global atau dijalankan sebagai sidecar container di Kubernetes:\n\n| Perintah CLI | Fungsi Utama | Ukuran Output | Dampak ke Proses |\n| :--- | :--- | :--- | :--- |\n| **dotnet-counters** | Monitoring metrik real-time (GC rate, CPU, ThreadPool queue, Exception count) di terminal | 0 MB (Live streaming) | Nyaris Nol (\u003c 1%) |\n| **dotnet-trace** | Merekam sampel profil CPU \u0026 call stack untuk membuat Flamegraph | Puluhan MB | Sangat Rendah (\u003c 3%) |\n| **dotnet-gcdump** | Snapshot ringkas objek GC heap (hanya tipe data dan ukuran) | Kecil (puluhan MB) | Rendah (Pause GC sesaat) |\n| **dotnet-dump** | Menangkap **Full Memory Dump** (seluruh isi RAM proses: objek, string, memory buffer, thread stacks) | Besar (sesuai ukuran RAM proses) | Sedang (Freeze proses 1-3 detik) |\n\n---\n\n## 2. Investigasi Memory Leak: Menemukan GC Root\n\nMemory leak di lingkungan managed .NET tidak disebabkan oleh pointer C++ yang lupa di-free, melainkan oleh **objek yang sudah tidak digunakan tetapi referensinya masih tertahan oleh GC Root** (seperti static collection, event subscription yang tidak di-unsubscribe, atau singleton cache tanpa batas).\n\n### Langkah Menangkap \u0026 Menganalisis Dump di Linux:\n```bash\n# 1. Masuk ke pod kubernetes dan tangkap dump proses .NET (PID 1)\ndotnet-dump collect --process-id 1 --output /tmp/app.dump\n\n# 2. Buka dump analyzer di terminal\ndotnet-dump analyze /tmp/app.dump\n```\n\n### Perintah SOS Kunci di dalam `dotnet-dump analyze`:\n1. **`dumpheap -stat`**: Menampilkan rekapitulasi seluruh objek di heap diurutkan berdasarkan total ukuran byte.\n   ```text\n   MT               Count    TotalSize  Class Name\n   ...\n   7ffb2a041000   1.200.000  96.000.000  System.String\n   7ffb2a048000     450.000  72.000.000  Enterprise.OrderCacheItem\n   ```\n2. **`dumpheap -mt 7ffb2a048000`**: Menampilkan daftar alamat memori dari objek tipe tersebut.\n3. **`gcroot \u003calamat_objek\u003e`**: **INILAH JAWABANNYA!** Perintah ini menelusuri rantai referensi dari objek tersebut ke atas hingga menemukan siapa \"GC Root\" yang menahannya:\n   ```mermaid\nflowchart TD\n    Root[\"GC Root (Static Reference)\"] --\u003e Reg[\"static Enterprise.MemoryCache._globalRegistry\"]\n    Reg --\u003e Dict[\"Dictionary\u0026lt;string, OrderCacheItem\u0026gt;\"]\n    Dict --\u003e Item[\"Enterprise.OrderCacheItem\u003cbr/\u003e(Tertahan di Managed Heap, Memory Leak!)\"]\n```\n\n---\n\n## 3. Investigasi High CPU: Profiling dengan Flamegraph\n\nJika CPU container Anda melonjak 100%, jangan menebak-nebak baris kode mana yang lambat. Rekam trace CPU selama 30 detik:\n\n```bash\ndotnet-trace collect --process-id 1 --duration 00:00:30 --providers Microsoft-DotNETCore-SampleProfiler\n```\nOutput file `trace.nettrace` dapat dikonversi ke format **Speedscope** (`dotnet-trace convert --format Speedscope`) dan dibuka di browser (`speedscope.app`).\n\n```text\n+-------------------------------------------------------------+\n|                     SPEEDSCOPE FLAMEGRAPH                   |\n|                                                             |\n|  [                     Kestrel Request Loop              ]  |\n|     [ OrderController.CalculatePricing                   ]  |\n|        [ Regex.Match (Uncompiled ReDoS Regex) 92% CPU!!  ]  |\n|                                                             |\n+-------------------------------------------------------------+\n```\nFlamegraph secara visual menunjukkan blok method mana yang paling lebar memakan waktu CPU (misalnya regex uncompiled atau loop kalkulasi O(N^2)).\n\n---\n\n## 4. Investigasi Thread Pool Starvation\n\nJika response time API melonjak menjadi 30 detik tetapi CPU server hanya 5%, kemungkinan besar sistem Anda mengalami **Thread Pool Starvation** akibat sync-over-async (`.Result` atau `.Wait()`).\n\n### Deteksi via `dotnet-counters`:\n```bash\ndotnet-counters monitor --process-id 1 System.Runtime\n```\nPerhatikan dua metrik ini:\n- **`ThreadPool Queue Length`**: Jika angka ini bernilai ribuan dan terus bertambah, berarti ribuan task sedang mengantre tanpa ada thread yang melayani!\n- **`ThreadPool Thread Count`**: Jika angka ini merangkak naik perlahan (hanya bertambah 1 thread setiap 500-1000 milidetik), ini bukti konfirmasi Thread Pool Starvation.\n\nDi dalam `dotnet-dump analyze`, jalankan perintah:\n```text\nclrstack -all\n```\nCari thread yang memiliki stack trace: `Task.Wait()` atau `Task.GetResult()`. Anda akan langsung menemukan baris kode yang memblokir worker thread!\n\n---\n\n## 5. Ringkasan \u0026 Alur Respons Insiden\n\n1. **Amankan Bukti Sebelum Restart (Dump First, Restart Second)**: Jika pod harus di-restart untuk memulihkan trafik pengguna, jalankan skrip otomatis untuk menangkap `dotnet-dump` sesaat sebelum pod dimatikan. Tanpa file dump, Anda tidak akan pernah tahu akar masalah sebenarnya.\n2. **Kuasai gcroot**: Perintah `gcroot` adalah satu-satunya alat ilmiah yang membuktikan mengapa sebuah objek tidak dapat dibersihkan oleh Garbage Collector.\n3. **Gunakan Profiling Berkelanjutan**: Integrasikan continuous profiler di staging/production untuk menangkap regresi performa sebelum mencapai pengguna akhir.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// Skenario Simulasi Memory Leak: Static Event Listener Leak\npublic class Publisher\n{\n    public static event Action\u003cstring\u003e? OnAlert;\n    public static void Trigger(string msg) =\u003e OnAlert?.Invoke(msg);\n}\n\npublic class LeakingSubscriber\n{\n    private readonly byte[] _heavyBuffer = new byte[1024 * 1024]; // 1 MB per instance\n    private readonly int _id;\n\n    public LeakingSubscriber(int id)\n    {\n        _id = id;\n        \n        // BUG LEAK: Berlangganan ke static event tanpa pernah unsubscribe!\n        Publisher.OnAlert += HandleAlert;\n    }\n\n    private void HandleAlert(string msg)\n    {\n        // ...\n    }\n\n    public void Dispose()\n    {\n        // TODO: Perbaiki memory leak dengan mencabut event handler dari static Publisher.OnAlert\n        // Hint: Publisher.OnAlert -= HandleAlert;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        Console.WriteLine(\"Membuat 5 subscriber...\");\n        for (int i = 1; i \u003c= 5; i++)\n        {\n            var sub = new LeakingSubscriber(i);\n            // Simulasikan pembersihan objek oleh caller\n            sub.Dispose();\n        }\n\n        // Panggil GC untuk membuktikan apakah memori terbebas\n        GC.Collect();\n        GC.WaitForPendingFinalizers();\n\n        Console.WriteLine(\"Pembersihan selesai.\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class Publisher\n{\n    public static event Action\u003cstring\u003e? OnAlert;\n    public static void Trigger(string msg) =\u003e OnAlert?.Invoke(msg);\n}\n\npublic class LeakingSubscriber\n{\n    private readonly byte[] _heavyBuffer = new byte[1024 * 1024];\n    private readonly int _id;\n\n    public LeakingSubscriber(int id)\n    {\n        _id = id;\n        Publisher.OnAlert += HandleAlert;\n    }\n\n    private void HandleAlert(string msg)\n    {\n    }\n\n    public void Dispose()\n    {\n        Publisher.OnAlert -= HandleAlert;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        Console.WriteLine(\"Membuat 5 subscriber...\");\n        for (int i = 1; i \u003c= 5; i++)\n        {\n            var sub = new LeakingSubscriber(i);\n            sub.Dispose();\n        }\n\n        GC.Collect();\n        GC.WaitForPendingFinalizers();\n\n        Console.WriteLine(\"Pembersihan selesai. Event subscription berhasil dicabut, tidak ada memory leak.\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-17-03-1",
+                              "type":  "single_choice",
+                              "question":  "Perintah SOS manakah di dalam dotnet-dump analyze yang digunakan untuk melacak rantai referensi yang menahan sebuah objek agar tidak bisa dibersihkan oleh Garbage Collector?",
+                              "options":  [
+                                              "format c: /fs:ntfs",
+                                              "gcroot \u003calamat_objek\u003e",
+                                              "restart-service",
+                                              "kill -9"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Perintah gcroot menelusuri graf memori dari objek target ke atas hingga mencapai GC Root (static variable, stack pointer, atau CPU register) yang menahannya, secara instan mengungkap akar penyebab memory leak.",
+                              "optionExplanations":  [
+                                                         "Salah. Ini adalah perintah memformat harddisk Windows lawas.",
+                                                         "Benar! gcroot adalah perintah standar industri untuk membongkar rantai penahan objek GC.",
+                                                         "Salah. Ini adalah perintah PowerShell service management.",
+                                                         "Salah. Ini adalah sinyal kill proses Unix."
+                                                     ],
+                              "sectionRef":  "2. Investigasi Memory Leak: Menemukan GC Root",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-17-03-2",
+                              "type":  "single_choice",
+                              "question":  "Apa indikasi kuat terjadinya Thread Pool Starvation saat Anda memantau metrik dotnet-counters di server produksi?",
+                              "options":  [
+                                              "CPU load 100% dan RAM kosong.",
+                                              "ThreadPool Queue Length melonjak tinggi (ribuan item antre), CPU load rendah (\u003c 10%), latency request melonjak ke puluhan detik, dan jumlah worker thread merangkak naik sangat lambat (1 thread per detik).",
+                                              "Database SQL menghapus seluruh backup.",
+                                              "Layar monitor berkedip merah."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Thread pool starvation terjadi saat worker thread terblokir oleh operasi sinkronus (sync-over-async). CPU rendah karena thread sedang tidur/menunggu, namun request baru menumpuk di antrean ThreadPool tanpa thread yang tersedia untuk melayaninya.",
+                              "optionExplanations":  [
+                                                         "Salah. High CPU mengindikasikan infinite loop atau komputasi intensif, bukan starvation.",
+                                                         "Benar! Kombinasi antrean queue panjang, CPU rendah, dan kenaikan thread yang lambat adalah tanda khas Thread Pool Starvation.",
+                                                         "Salah. Tidak ada penghapusan data database.",
+                                                         "Salah. Server produksi berjalan secara headless tanpa layar monitor."
+                                                     ],
+                              "sectionRef":  "4. Investigasi Thread Pool Starvation",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-08-02",
+                           "lesson-12-02",
+                           "lesson-17-01"
+                       ],
+    "references":  [
+                       {
+                           "title":  "dotnet-dump diagnostic tool - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-dump",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Diagnose a memory leak in .NET - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/core/diagnostics/debug-memory-leak",
+                           "type":  "documentation"
+                       }
+                   ]
+}

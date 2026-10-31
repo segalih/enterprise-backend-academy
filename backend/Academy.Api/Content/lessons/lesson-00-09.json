@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-00-09",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-03",
+    "order":  9,
+    "title":  "Mastering Terminal \u0026 CLI: Shell, Environment Variables, dan PATH",
+    "slug":  "cli-environment-variables",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  35,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menguasai navigasi Command Line Interface (CLI), cara kerja shell interpreter (Bash/PowerShell), konfigurasi Environment Variables, dan resolusi binary melalui variabel PATH.",
+    "prerequisites":  [
+
+                      ],
+    "introduces":  [
+                       "Command Line Interface (CLI)",
+                       "Shell Interpreter",
+                       "Standard Streams (stdin, stdout, stderr)",
+                       "Environment Variables",
+                       "PATH Resolution",
+                       "Exit Codes"
+                   ],
+    "learningObjectives":  [
+                               "Memahami bagaimana Shell mengeksekusi perintah dan menyelesaikan path binary executable.",
+                               "Mengelola Environment Variables untuk konfigurasi sistem backend cloud-native (12-Factor App).",
+                               "Menghubungkan program CLI menggunakan pipeline I/O stream (stdin, stdout, stderr)."
+                           ],
+    "markdownContent":  "# Mastering Terminal \u0026 CLI: Shell, Environment Variables, dan PATH\n\n## Mengapa Backend Engineer Wajib Menguasai CLI?\nDi lingkungan produksi enterprise, Anda **tidak akan pernah** memiliki antarmuka grafis (GUI) seperti desktop Windows. Server produksi cloud (seperti AWS EC2, Azure Kubernetes Service, atau container Docker Linux) dijalankan secara *headless*. Terminal CLI adalah satu-satunya instrumen untuk mengontrol, men-deploy, dan mendiagnosis sistem Anda.\n\n---\n\n## Bagaimana Shell Mengeksekusi Perintah?\nKetika Anda mengetik `dotnet run` di terminal PowerShell atau Bash:\n```mermaid\nflowchart TD\n    A[\"User Mengetik: \u003ccode\u003edotnet run\u003c/code\u003e\"] --\u003e B{\"Shell Memeriksa Alias \u0026 Built-in\"}\n    B --\u003e|Bukan Internal Shell| C[\"Pencarian Direktori di PATH\u003cbr/\u003e(/usr/local/bin, /usr/bin, /opt/dotnet)\"]\n    C --\u003e D{\"Binary Ditemukan di PATH?\"}\n    D --\u003e|Ditemukan: /opt/dotnet/dotnet| E[\"Shell Menjalankan Syscall Spawning:\u003cbr/\u003eâ€¢ POSIX: \u003ccode\u003efork()\u003c/code\u003e \u0026 \u003ccode\u003eexecve()\u003c/code\u003e\u003cbr/\u003eâ€¢ Windows: \u003ccode\u003eCreateProcess()\u003c/code\u003e\"]\n    D --\u003e|Tidak Ditemukan| F[\"Command Not Found Error\"]\n    E --\u003e G[\"Child Process Menjalankan Host Runtime .NET\"]\n```\n\nJika binary tidak ditemukan di satu pun direktori yang terdaftar di variabel `PATH`, shell akan menampilkan error legendaris:\n`\u0027dotnet\u0027 is not recognized as an internal or external command, operable program or batch file.`\n\n---\n\n## Tiga Jalur Standard Streams (POSIX)\nSetiap proses yang dijalankan oleh OS secara otomatis dibekali 3 saluran file descriptor:\n\n1. **Standard Input (`stdin` / FD 0)**: Saluran aliran input data (secara default terhubung ke keyboard).\n2. **Standard Output (`stdout` / FD 1)**: Saluran output normal program (terhubung ke layar terminal).\n3. **Standard Error (`stderr` / FD 2)**: Saluran khusus untuk pesan kesalahan dan log diagnostik.\n\nDengan memisahkan `stdout` dan `stderr`, Anda dapat memfilter aliran output di Linux:\n```bash\n# Hanya mencetak output sukses ke file, error tetap tampil di layar:\ndotnet run \u003e output.txt\n\n# Menangkap output dan error ke file terpisah:\ndotnet run \u003e output.txt 2\u003e error.log\n```\n\n---\n\n## Environment Variables \u0026 Pola 12-Factor App\nDalam arsitektur backend modern, **kode aplikasi tidak boleh menyimpan konfigurasi rahasia** (seperti connection string database atau JWT Secret). Seluruh konfigurasi dinamis disuntikkan dari luar melalui **Environment Variables**:\n\n```csharp\n// Membaca Environment Variable di C#\nstring? dbConn = Environment.GetEnvironmentVariable(\"DATABASE_URL\");\nstring env = Environment.GetEnvironmentVariable(\"ASPNETCORE_ENVIRONMENT\") ?? \"Production\";\n```",
+    "starterCode":  "using System;\nusing System.Collections;\n\n// PROGRAM: Menginspeksi Environment Variables \u0026 Saluran Output\nConsole.WriteLine(\"=== DIAGNOSTIK TERMINAL \u0026 ENVIRONMENT ===\");\nConsole.WriteLine($\"Machine Name: {Environment.MachineName}\");\nConsole.WriteLine($\"User Domain: {Environment.UserDomainName}\");\nConsole.WriteLine($\"Current Directory: {Environment.CurrentDirectory}\");\n\n// Menampilkan beberapa direktori yang terdaftar di variabel PATH\nstring? pathVar = Environment.GetEnvironmentVariable(\"PATH\");\nif (!string.IsNullOrEmpty(pathVar))\n{\n    char separator = Path.PathSeparator; // Titik koma (;) di Windows, titik dua (:) di Linux\n    string[] paths = pathVar.Split(separator, StringSplitOptions.RemoveEmptyEntries);\n    \n    Console.WriteLine($\"\\nTotal direktori di PATH: {paths.Length}\");\n    Console.WriteLine(\"3 Direktori pertama di PATH:\");\n    for (int i = 0; i \u003c Math.Min(3, paths.Length); i++)\n    {\n        Console.WriteLine($\" [{i + 1}] {paths[i]}\");\n    }\n}\n\n// Menulis ke stderr secara terpisah dari stdout\nConsole.Error.WriteLine(\"[DIAGNOSTIC NOTICE] Pesan ini dikirim ke STDERR!\");",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-09-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Bagaimana cara kerja Shell ketika pengguna mengetikkan perintah eksekusi nama program tanpa path lengkap (misal `dotnet`)?",
+                              "options":  [
+                                              "Mencari program di seluruh hard drive secara rekursif dari root directory",
+                                              "Mencari binary program secara sekuensial di dalam direktori-direktori yang terdaftar pada variabel PATH",
+                                              "Mengirim permintaan download otomatis ke package manager OS",
+                                              "Menjalankan perintah langsung di dalam memori kernel"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Shell membaca variabel lingkungan `PATH` dan mencari file executable di direktori yang terdaftar satu per satu dari awal hingga akhir.",
+                              "optionExplanations":  [
+                                                         "Salah. Mencari seluruh hard drive akan sangat lambat dan membebani disk.",
+                                                         "Benar! Variabel `PATH` berisi daftar direktori tempat shell mencari executable binary.",
+                                                         "Salah. Shell tidak otomatis mengunduh program jika tidak ditemukan.",
+                                                         "Salah. Perintah dijalankan di user space setelah binary ditemukan."
+                                                     ],
+                              "sectionRef":  "Bagaimana Shell Mengeksekusi Perintah?",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-09-2",
+                              "type":  "MultipleChoice",
+                              "question":  "File descriptor standar nomor berapa yang digunakan khusus untuk Standard Error (`stderr`) pada sistem operasi?",
+                              "options":  [
+                                              "FD 0",
+                                              "FD 1",
+                                              "FD 2",
+                                              "FD 3"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Standar POSIX menetapkan: FD 0 = stdin, FD 1 = stdout, dan FD 2 = stderr.",
+                              "optionExplanations":  [
+                                                         "Salah. FD 0 adalah Standard Input (stdin).",
+                                                         "Salah. FD 1 adalah Standard Output (stdout).",
+                                                         "Benar! FD 2 adalah Standard Error (stderr) khusus untuk pesan kegagalan dan log.",
+                                                         "Salah. FD 3 adalah file deskriptor pertama yang dibuka oleh aplikasi pengguna."
+                                                     ],
+                              "sectionRef":  "Tiga Jalur Standard Streams (POSIX)",
+                              "difficulty":  "Beginner"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-02-01",
+                               "title":  "Ekosistem .NET Modern: dotnet CLI",
+                               "levelName":  "LEVEL 02",
+                               "context":  "Menggunakan CLI dotnet untuk membangun dan menjalankan aplikasi C#."
+                           },
+                           {
+                               "lessonId":  "lesson-16-03",
+                               "title":  "Docker Containerization",
+                               "levelName":  "LEVEL 16",
+                               "context":  "Konfigurasi variabel PATH dan ENV di Dockerfile backend."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "POSIX Standard Shell \u0026 Utilities",
+                           "url":  "https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html"
+                       },
+                       {
+                           "title":  "The Twelve-Factor App - Config",
+                           "url":  "https://12factor.net/config"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class PathResolver\n{\n    public static string? ResolveBinary(string pathVariable, string[] existingFiles, string targetBinary)\n    {\n        if (string.IsNullOrWhiteSpace(pathVariable) || existingFiles == null || string.IsNullOrWhiteSpace(targetBinary))\n            return null;\n\n        var dirs = pathVariable.Split(\u0027;\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var fileSet = new System.Collections.Generic.HashSet\u003cstring\u003e(existingFiles, StringComparer.OrdinalIgnoreCase);\n\n        foreach (var rawDir in dirs)\n        {\n            var dir = rawDir.Trim();\n            string candidate = $\"{dir}/{targetBinary}\";\n            if (fileSet.Contains(candidate))\n            {\n                return candidate;\n            }\n        }\n\n        return null;\n    }\n\n    public static void Main()\n    {\n        string path = \"C:/Windows;C:/Program Files/dotnet;C:/Tools\";\n        string[] files = { \"C:/Windows/notepad.exe\", \"C:/Program Files/dotnet/dotnet.exe\" };\n        Console.WriteLine(ResolveBinary(path, files, \"dotnet.exe\"));\n    }\n}"
+}

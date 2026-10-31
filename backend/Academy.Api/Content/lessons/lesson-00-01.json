@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-00-01",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-01",
+    "order":  1,
+    "title":  "Anatomi Komputer: Dari Input, CPU, Bus, hingga Output",
+    "slug":  "computer-anatomy",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  35,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Memahami arsitektur fisik komputer berdasarkan model Von Neumann, jalur komunikasi bus data/address/control, dan bagaimana instruksi mengalir dari peripheral ke CPU.",
+    "prerequisites":  [
+
+                      ],
+    "introduces":  [
+                       "Von Neumann Architecture",
+                       "System Bus",
+                       "Address Bus",
+                       "Control Bus",
+                       "Data Bus",
+                       "Direct Memory Access (DMA)"
+                   ],
+    "learningObjectives":  [
+                               "Memahami empat blok utama arsitektur Von Neumann dan interaksinya.",
+                               "Menjelaskan peran System Bus (Data, Address, Control) dalam transmisi sinyal digital.",
+                               "Menganalisis bagaimana bottleneck I/O mempengaruhi performa aplikasi backend modern."
+                           ],
+    "markdownContent":  "# Anatomi Komputer: Dari Input, CPU, Bus, hingga Output\n\n## Fondasi Arsitektur Von Neumann\nSetiap server backend modern beroperasi berdasarkan prinsip dasar yang dirumuskan oleh John von Neumann pada tahun 1945:\n\n```mermaid\nflowchart TD\n    subgraph Komputer[\"Sistem Komputer\"]\n        IN[\"Perangkat Input\u003cbr/\u003e(Network NIC, Keyboard, PCIe)\"]\n        OUT[\"Perangkat Output\u003cbr/\u003e(SSD Storage, Display, Jaringan)\"]\n        CPU[\"Central Processing Unit (CPU)\"]\n        RAM[\"Memori Utama (RAM)\"]\n\n        IN --\u003e|Data Masuk| CPU\n        CPU --\u003e|Data Keluar| OUT\n        CPU \u003c---\u003e|\"Data Bus (Dua Arah)\"| RAM\n        RAM --\u003e|Control Bus| CPU\n        CPU --\u003e|Address Bus| RAM\n    end\n```\n\nPrinsip fundamental ini memiliki konsekuensi langsung pada backend engineering:\n1. **Shared Stored-Program**: Kode instruksi mesin dan data yang diolah berada pada ruang memori fisik (RAM) yang sama.\n2. **Sequential Fetch-Decode-Execute**: CPU mengeksekusi instruksi langkah demi langkah, kecuali dialihkan oleh instruksi branching (if/jump) atau interrupt.\n3. **Pemisahan Processing vs Memory (Von Neumann Bottleneck)**: Kecepatan pemrosesan CPU tumbuh jauh lebih cepat daripada bandwidth transmisi data dari RAM melintasi system bus. Inilah alasan mendasar mengapa caching di semua tingkatan menjadi sangat krusial.\n\n---\n\n## Tiga Jalur Utama System Bus\nCPU terhubung ke RAM dan periferal melalui tiga kelompok konduktor fisik paralel:\n\n| Jenis Bus | Karakteristik Arah | Fungsi Utama | Dampak Rekayasa Sistem |\n| :--- | :--- | :--- | :--- |\n| **Address Bus** | Searah (CPU -\u003e RAM/Device) | Menentukan lokasi alamat fisik memori atau port I/O | Menentukan batas teoritis RAM (`2^N` byte, misal 32-bit = 4GB, 64-bit = 16EB) |\n| **Data Bus** | Dua Arah (Bidirectional) | Membawa muatan data aktual (operand instruksi) | Menentukan throughput per siklus clock (arsitektur 64-bit memindahkan 8 byte per clock) |\n| **Control Bus** | Dua Arah / Sinyal Khusus | Membawa sinyal sinkronisasi: READ, WRITE, CLOCK, IRQ | Mengatur koordinasi agar tidak terjadi tabrakan sinyal (bus collision) |\n\n---\n\n## Alur Data I/O: Polling vs Interrupt vs Direct Memory Access (DMA)\nKetika request HTTP dari browser pengguna tiba di Network Interface Card (NIC) server Anda:\n1. **Polling**: CPU secara terus-menerus membaca register status NIC untuk mengecek ada tidaknya byte baru. Polling menguras 100% kapasitas CPU dan sangat tidak efisien untuk beban tidak beraturan.\n2. **Interrupt Request (IRQ)**: NIC mengirim sinyal tegangan tinggi pada jalur IRQ Control Bus. CPU menunda instruksi saat ini, menyimpan konteks register ke stack, lalu mengeksekusi **Interrupt Service Routine (ISR)** di kernel Linux/Windows.\n3. **Direct Memory Access (DMA)**: Controller NIC tingkat enterprise menyalin paket Ethernet langsung ke ring buffer RAM utama tanpa melibatkan CPU untuk setiap byte. CPU hanya menerima sinyal interrupt setelah satu blok paket utuh tersimpan di RAM.\n\nDi .NET 8, Kestrel web server memanfaatkan DMA dan abstraction socket Linux (epoll) / Windows (IOCP) untuk memproses jutaan request tanpa saturasi CPU pada penanganan byte mentah.",
+    "starterCode":  "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Mengamati Latensi Alur Memori dan Bus Komputer\n// Membandingkan akses sekuensial (Cache Hit) vs akses acak (Cache Miss / Bus Traffic)\nconst int Size = 5_000_000;\nint[] array = new int[Size];\nfor (int i = 0; i \u003c Size; i++) array[i] = i;\n\n// 1. Akses Sekuensial (Jalur data bus teratur, hardware prefetcher aktif)\nvar sw = Stopwatch.StartNew();\nlong sum = 0;\nfor (int i = 0; i \u003c Size; i++)\n{\n    sum += array[i];\n}\nsw.Stop();\nConsole.WriteLine($\"[1] Akses Sekuensial: {sw.ElapsedMilliseconds} ms (Sum: {sum})\");\n\n// TODO: Buat eksperimen dengan stride/lompatan indeks (misal: i += 64)\n// dan amati bagaimana latensi berubah akibat beban transfer bus data!\nConsole.WriteLine(\"Selesai menguji jalur memori.\");",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Jalur bus manakah yang menentukan kapasitas maksimum memori RAM fisik yang dapat diakses secara langsung oleh CPU?",
+                              "options":  [
+                                              "Data Bus",
+                                              "Address Bus",
+                                              "Control Bus",
+                                              "System Clock Bus"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Address Bus menentukan alamat unik memori. Jumlah bit pada Address Bus menentukan batas pengalamatan memori fisik (`2^N` bytes).",
+                              "optionExplanations":  [
+                                                         "Salah. Data Bus menentukan berapa bit data yang dapat dipindahkan dalam 1 clock cycle.",
+                                                         "Benar! Lebar Address Bus membatasi ruang alamat memori langsung CPU (misalnya 32-bit = 4 GB, 64-bit = ratusan Terabyte).",
+                                                         "Salah. Control Bus mengirimkan sinyal perintah kendali seperti sinyal baca/tulis dan interrupt.",
+                                                         "Salah. System clock mengatur kecepatan detak osilator, bukan pengalamatan memori."
+                                                     ],
+                              "sectionRef":  "Tiga Jalur Utama System Bus",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Mekanisme transfer data apa yang memungkinkan perangkat berkecepatan tinggi seperti Network Card menyalin payload langsung ke RAM tanpa intervensi CPU per byte?",
+                              "options":  [
+                                              "Instruction Pipelining",
+                                              "Direct Memory Access (DMA)",
+                                              "Spinlock Polling",
+                                              "Context Switching"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Direct Memory Access (DMA) memungkinkan pengontrol periferal menulis buffer data langsung ke RAM, membebaskan CPU dari pekerjaan menyalin byte per byte.",
+                              "optionExplanations":  [
+                                                         "Salah. Pipelining adalah teknik pembagian siklus instruksi di dalam core CPU.",
+                                                         "Benar! DMA memungkinkan transfer paket jaringan langsung ke RAM utama dengan konsumsi siklus CPU yang minimal.",
+                                                         "Salah. Polling justru membebani CPU secara kontinu karena CPU harus mengecek status register perangkat secara berulang.",
+                                                         "Salah. Context switching adalah pergantian eksekusi thread oleh OS scheduler."
+                                                     ],
+                              "sectionRef":  "Alur Data I/O: Polling vs Interrupt vs Direct Memory Access (DMA)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-00-02",
+                               "title":  "CPU Deep Dive",
+                               "levelName":  "LEVEL 00",
+                               "context":  "Memahami komponen internal prosesor: ALU, CU, dan Register."
+                           },
+                           {
+                               "lessonId":  "lesson-00-03",
+                               "title":  "Hierarki Memori",
+                               "levelName":  "LEVEL 00",
+                               "context":  "Memahami gap kecepatan antara CPU registers, L1/L2/L3 cache, dan RAM."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Computer Organization and Design - Patterson \u0026 Hennessy",
+                           "url":  "https://www.elsevier.com/books/computer-organization-and-design-mips-edition/patterson/978-0-12-820109-1"
+                       },
+                       {
+                           "title":  "Intel 64 and IA-32 Architectures Software Developer Manuals",
+                           "url":  "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class MemoryArchitecture\n{\n    public static long CalculateMaxMemoryGb(int addressBits)\n    {\n        if (addressBits \u003c 30) return 0;\n        if (addressBits \u003e= 63) return long.MaxValue / (1024L * 1024L * 1024L);\n        return 1L \u003c\u003c (addressBits - 30);\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\"32-bit: {CalculateMaxMemoryGb(32)} GB\");\n        Console.WriteLine($\"36-bit: {CalculateMaxMemoryGb(36)} GB\");\n    }\n}"
+}

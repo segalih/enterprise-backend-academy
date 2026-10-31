@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-10-01",
+    "levelId":  "level-10",
+    "moduleId":  "mod-10-01",
+    "order":  1,
+    "title":  "ADO.NET \u0026 Parameterized Queries: Pencegahan SQL Injection dan Connection Pooling",
+    "slug":  "adonet-parameterized-queries-sql-injection-pooling",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  40,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mempelajari fondasi akses data terendah di .NET (ADO.NET): anatomi SqlConnection dan SqlCommand, mekanisme internal Connection Pooling, dan pertahanan mutlak terhadap serangan SQL Injection menggunakan Parameterized Queries.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-09-01",
+                              "title":  "Relational Modeling",
+                              "levelName":  "LEVEL 09",
+                              "context":  "Memahami struktur kueri SQL dasar."
+                          }
+                      ],
+    "introduces":  [
+                       "ADO.NET Architecture",
+                       "SqlConnection, SqlCommand, SqlDataReader",
+                       "SQL Injection Vulnerability",
+                       "Parameterized Queries (@Param)",
+                       "Connection Pooling (Min Pool Size, Max Pool Size)",
+                       "Connection Leaks \u0026 Exhaustion"
+                   ],
+    "learningObjectives":  [
+                               "Menjelaskan bagaimana string concatenation pada SQL membuka celah serangan SQL Injection.",
+                               "Menerapkan Parameterized Queries secara disiplin pada seluruh akses database.",
+                               "Menganalisis mekanisme kerja Connection Pool untuk mencegah TCP handshake overhead berulang ke database."
+                           ],
+    "markdownContent":  "# ADO.NET \u0026 Parameterized Queries: Pencegahan SQL Injection dan Connection Pooling\n\n## Fondasi Akses Data: Apa Itu ADO.NET?\nSemua teknologi akses data tingkat tinggi di .NETâ€”termasuk Entity Framework Core, Dapper, dan LINQ to SQLâ€”pada akhirnya hanyalah wrapper abstraksi di atas **ADO.NET (ActiveX Data Objects .NET)**.\n\nTiga objek inti ADO.NET:\n1. **`DbConnection`**: Membuka dan mengelola socket jaringan fisik ke server database.\n2. **`DbCommand`**: Membawa teks perintah SQL dan daftar parameter yang akan dieksekusi.\n3. **`DbDataReader`**: Mengalirkan baris hasil query secara sekuensial cepat (forward-only, read-only).\n\n---\n\n## 1. Bencana Terbesar Keamanan: SQL Injection (SQLi)\nPerhatikan kode autentikasi login berikut:\n\n```csharp\n// SANGAT BERBAHAYA! RAW STRING CONCATENATION:\nstring sql = \"SELECT * FROM Users WHERE Username = \u0027\" + inputUsername + \"\u0027 AND Password = \u0027\" + inputPassword + \"\u0027\";\n```\n\nJika peretas memasukkan input username:\n```text\nadmin\u0027 --\n```\nString SQL yang terbentuk di server menjadi:\n```sql\nSELECT * FROM Users WHERE Username = \u0027admin\u0027 --\u0027 AND Password = \u0027...\u0027\n```\nKarakter `--` adalah komentar SQL! Database **sepenuhnya mengabaikan pengecekan password**, dan peretas langsung berhasil login sebagai Admin utama tanpa password!\n\n---\n\n## Solusi Mutlak: Parameterized Queries\n**Jangan pernah menggabungkan variabel input pengguna ke dalam string SQL!** Gunakan **Parameterized Queries**:\n\n```csharp\n// AMAN 100%: Parameter dikirim terpisah dari pohon perintah SQL!\nusing var cmd = new SqlCommand(\"SELECT * FROM Users WHERE Username = @Username AND Password = @Password\", conn);\n\ncmd.Parameters.AddWithValue(\"@Username\", inputUsername);\ncmd.Parameters.AddWithValue(\"@Password\", inputPassword);\n```\n\n### Mengapa Ini Aman?\n1. Mesin database mengompilasi pohon eksekusi SQL terlebih dahulu (`sp_executesql`).\n2. Nilai parameter diperlakukan murni sebagai **data literal**, bukan sebagai token instruksi bahasa SQL. Meskipun peretas memasukkan `admin\u0027 --`, database mencari user yang nama fisiknya benar-benar bertuliskan `admin\u0027 --`.\n3. Membantu performa: Database dapat me-reuse **Compiled Execution Plan** untuk nilai parameter yang berbeda-beda!\n\n---\n\n## 2. Rahasia Performa: ADO.NET Connection Pooling\nMembuka koneksi TCP baru ke database membutuhkan:\n- 3-Way Handshake TCP (~1 ms)\n- Autentikasi kredensial pengguna database (~5-10 ms)\n- Alokasi buffer memory di server database\n\nJika setiap request HTTP membuka dan menutup koneksi fisik asli, database server akan langsung kolaps!\n\n### Mekanisme Connection Pool:\n- Ketika Anda memanggil `connection.Open()`, ADO.NET mengambil koneksi TCP yang **sudah dalam kondisi siap pakai (idle)** dari pool lokal.\n- Ketika Anda memanggil `connection.Close()` atau `Dispose()`, **koneksi fisik ke database TIDAK DIPUTUSKAN!** Koneksi hanya dikembalikan ke antrian pool untuk digunakan oleh request HTTP berikutnya.\n- *Aturan Emas: Selalu bungkus connection dalam blok `using` agar koneksi segera kembali ke pool dan tidak memicu Connection Pool Starvation (Timeout Expired).*",
+    "starterCode":  "using System;\nusing System.Data;\n\n// PROGRAM: Simulasi Pencegahan SQL Injection Menggunakan Parameterized Command\npublic class SecurityAuthenticationEngine\n{\n    public static void SimulateLogin(string username, string password)\n    {\n        Console.WriteLine($\"Mencoba login dengan username: {username}\");\n\n        // Simulasi pemeriksaan parameterisasi\n        if (username.Contains(\"\u0027\") || username.Contains(\"--\"))\n        {\n            Console.WriteLine(\"[ANALISIS RAW CONCAT]: Terdeteksi injeksi karakter SQL berbahaya!\");\n        }\n\n        // Dengan Parameterized Query: Nilai diperlakukan sebagai string literal utuh\n        Console.WriteLine($\"[PARAMETERIZED DB EXEC] Parameter @User=\u0027{username}\u0027 diperlakukan sebagai teks murni aman.\");\n        Console.WriteLine(\"Hasil: Percobaan bypass autentikasi SQL Injection GAGAL.\\n\");\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        SecurityAuthenticationEngine.SimulateLogin(\"budi\", \"password123\");\n        SecurityAuthenticationEngine.SimulateLogin(\"admin\u0027 --\", \"sembarang\");\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-09-05-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Mengapa penggunaan Parameterized Queries (seperti `WHERE Username = @Username`) kebal terhadap serangan SQL Injection?",
+                              "options":  [
+                                              "Karena parameter otomatis dienkripsi dengan algoritma AES-256",
+                                              "Karena mesin database mengompilasi struktur kueri terlebih dahulu, dan memperlakukan parameter murni sebagai data literal tanpa mengevaluasinya sebagai perintah sintaks SQL",
+                                              "Karena parameter dijalankan di sisi browser klien",
+                                              "Karena parameter menghapus seluruh tanda petik tunggal secara otomatis"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Dengan parameterized query, struktur sintaks SQL dipisahkan dari nilai data. Parser SQL tidak akan mengevaluasi input pengguna sebagai bagian dari perintah atau operator bahasa.",
+                              "optionExplanations":  [
+                                                         "Salah. Enkripsi parameter bukan penyebab utama imunitas SQL Injection.",
+                                                         "Benar! Pemisahan instruksi kode dan data literal mencegah manipulasi logika query.",
+                                                         "Salah. Kueri dieksekusi di database server.",
+                                                         "Salah. Nilai petik tunggal tetap dipertahankan sebagai data teks literal yang valid."
+                                                     ],
+                              "sectionRef":  "Solusi Mutlak: Parameterized Queries",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-09-05-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa yang sebenarnya terjadi pada koneksi fisik TCP ke server database ketika aplikasi memanggil `connection.Close()` atau `connection.Dispose()` pada koneksi ADO.NET yang menggunakan Connection Pooling?",
+                              "options":  [
+                                              "Koneksi TCP fisik diputus seketika melalui pengiriman paket FIN",
+                                              "Koneksi fisik tetap dipertahankan terbuka dan dikembalikan ke antrian Connection Pool agar dapat langsung digunakan oleh request berikutnya tanpa overhead handshake",
+                                              "Database server langsung me-restart layanannya",
+                                              "Seluruh tabel sementara di database dihapus permanen"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Connection pooling menjaga koneksi fisik tetap aktif di background. Memanggil Dispose hanya mereset status sesi dan mengembalikan socket ke pool untuk di-reuse.",
+                              "optionExplanations":  [
+                                                         "Salah. Memutus TCP fisik pada setiap request adalah anti-pattern yang dihindari oleh connection pool.",
+                                                         "Benar! Koneksi tetap hidup di pool untuk digunakan kembali (connection reuse).",
+                                                         "Salah. Database server tidak me-restart service.",
+                                                         "Salah. Tabel sementara lokal session dibersihkan, bukan tabel fisik database."
+                                                     ],
+                              "sectionRef":  "2. Rahasia Performa: ADO.NET Connection Pooling",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-10-02",
+                               "title":  "High-Performance Data Access dengan Dapper",
+                               "levelName":  "LEVEL 10",
+                               "context":  "Bagaimana Dapper mengotomatisasi pemetaan parameter ini secara instan."
+                           },
+                           {
+                               "lessonId":  "lesson-15-03",
+                               "title":  "OWASP Top 10 Backend Engineering",
+                               "levelName":  "LEVEL 15",
+                               "context":  "Mitigasi kerentanan Injection peringkat atas OWASP."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "ADO.NET Overview - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview"
+                       },
+                       {
+                           "title":  "SQL Server Connection Pooling (ADO.NET)",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class SqlBuilder\n{\n    public static string BuildSafeParameterizedQuery(string? tableName, string?[] columnNames)\n    {\n        if (string.IsNullOrWhiteSpace(tableName) || columnNames == null || columnNames.Length == 0)\n            return \"\";\n\n        var validCols = columnNames\n            .Where(c =\u003e !string.IsNullOrWhiteSpace(c))\n            .Select(c =\u003e c!.Trim())\n            .ToList();\n\n        if (validCols.Count == 0) return \"\";\n\n        string colsStr = string.Join(\", \", validCols);\n        string paramsStr = string.Join(\", \", validCols.Select(c =\u003e $\"@{c}\"));\n\n        return $\"INSERT INTO {tableName.Trim()} ({colsStr}) VALUES ({paramsStr})\";\n    }\n\n    public static void Main()\n    {\n        string[] cols = { \"Username\", \"Email\", \"Balance\" };\n        Console.WriteLine(BuildSafeParameterizedQuery(\"Users\", cols));\n    }\n}"
+}

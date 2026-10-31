@@ -1,0 +1,168 @@
+{
+  "id": "lesson-04-04",
+  "levelId": "level-04",
+  "moduleId": "mod-04-03",
+  "order": 4,
+  "title": "Reflection \u0026 Metadata: Inspeksi Tipe Dinamis dan Kompilasi Emisi",
+  "slug": "csharp-reflection-metadata-emit",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar kekuatan dan biaya Reflection di .NET: membaca metadata assembly saat runtime, dynamic method invocation, kustom atribut, serta solusi modern Source Generators untuk menghindari penalti performa reflection.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-01",
+      "title": "Eksekusi Kode: Metadata \u0026 IL",
+      "levelName": "LEVEL 01",
+      "context": "Memahami struktur manifest metadata dalam assembly .NET."
+    }
+  ],
+  "introduces": [
+    "System.Type \u0026 Assembly Metadata",
+    "Late Binding (Activator.CreateInstance)",
+    "Custom Attributes (AttributeUsage)",
+    "Reflection Performance Overhead",
+    "Roslyn Source Generators (Compile-Time Metaprogramming)"
+  ],
+  "learningObjectives": [
+    "Menginspeksi tipe, properti, dan atribut class secara dinamis menggunakan System.Reflection.",
+    "Mengukur penalti latensi pemanggilan method via Reflection vs Direct Invocation.",
+    "Menjelaskan bagaimana C# Source Generators menggantikan runtime reflection di .NET 8."
+  ],
+  "markdownContent": "# Reflection \u0026 Metadata: Inspeksi Tipe Dinamis dan Kompilasi Emisi\n\n## Apa Itu Reflection?\nSetiap file assembly .NET (\u0060.dll\u0060) tidak hanya memuat bytecode IL, tetapi juga tabel **Metadata lengkap** yang mendokumentasikan setiap class, interface, method, parameter, tipe data, dan atribut di dalamnya.\n\n**Reflection** adalah kemampuan program untuk menginspeksi, membaca, dan memanipulasi metadata tersebut saat aplikasi sedang berjalan (*runtime*):\n\n\u0060\u0060\u0060csharp\nType tipeNasabah = typeof(Customer);\nConsole.WriteLine($\u0022Nama Class: {tipeNasabah.FullName}\u0022);\n\nforeach (var prop in tipeNasabah.GetProperties())\n{\n    Console.WriteLine($\u0022Properti: {prop.Name} ({prop.PropertyType})\u0022);\n}\n\u0060\u0060\u0060\n\n---\n\n## Dua Sisi Mata Uang: Fleksibilitas vs Penalti Performa\nFramework besar (seperti ASP.NET Core DI Container, Entity Framework, dan Newtonsoft.Json lawas) sangat bergantung pada Reflection untuk memetakan controller dan database secara dinamis.\n\nNamun, **Reflection memiliki biaya komputasi yang sangat mahal**:\n1. **Late Binding Overhead**: Pemanggilan \u0060methodInfo.Invoke(obj, args)\u0060 membutuhkan waktu **100x hingga 500x lebih lambat** daripada pemanggilan method biasa karena CLR harus memvalidasi tipe parameter, membungkus argumen ke dalam array \u0060object[]\u0060 (memicu boxing!), dan memeriksa hak akses keamanan.\n2. **Menghalangi Optimasi JIT**: JIT compiler tidak bisa melakukan method inlining atau dead-code elimination pada pemanggilan refleksi.\n3. **Merusak Trimming \u0026 Native AOT**: Ketika Anda mem-publish aplikasi dengan pemangkasan binary (Trimming) untuk ukuran kontainer kecil, trimmer tidak tahu class mana yang dipanggil lewat refleksi dinamis, memicu runtime crash!\n\n---\n\n## Solusi Modern .NET 8: Roslyn Source Generators\nUntuk mengatasi kelemahan reflection, C# modern menghadirkan **Source Generators**:\n- Kode metaprogramming dieksekusi **saat kompilasi (Compile-Time)**, bukan saat runtime!\n- Roslyn membaca class dan atribut Anda saat build, lalu secara otomatis mengetikkan kode C# tambahan yang dikompilasi secara statis.\n- Contoh: \u0060System.Text.Json\u0060 Source Generator menghasilkan parser JSON tanpa reflection, membuat serialization 3x lebih cepat dan ramah Native AOT!",
+  "starterCode": "using System;\nusing System.Reflection;\n\n// PROGRAM: Eksperimen Custom Attribute dan Inspeksi Metadata\n[AttributeUsage(AttributeTargets.Property)]\npublic class AuditLogAttribute : Attribute\n{\n    public string Category { get; }\n    public AuditLogAttribute(string category) =\u003E Category = category;\n}\n\npublic class TransferRequest\n{\n    [AuditLog(\u0022FINANCIAL_CRITICAL\u0022)]\n    public string AccountNumber { get; set; } = \u0022123-456\u0022;\n\n    [AuditLog(\u0022FINANCIAL_CRITICAL\u0022)]\n    public decimal Amount { get; set; } = 500_000m;\n\n    public string ClientDevice { get; set; } = \u0022iPhone 15\u0022; // Tidak diaudit\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        Console.WriteLine(\u0022=== INSPEKSI ATRIBUT AUDIT VIA REFLECTION ===\u0022);\n        var req = new TransferRequest();\n        var props = typeof(TransferRequest).GetProperties();\n        \n        foreach (var p in props)\n        {\n            var auditAttr = p.GetCustomAttribute\u003CAuditLogAttribute\u003E();\n            if (auditAttr != null)\n            {\n                object? val = p.GetValue(req);\n                Console.WriteLine($\u0022[AUDIT TRACKED] Properti: {p.Name,-15} | Kategori: {auditAttr.Category,-20} | Nilai: {val}\u0022);\n            }\n        }\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-04-04-1",
+      "type": "MultipleChoice",
+      "question": "Mengapa pemanggilan method menggunakan \u0060MethodInfo.Invoke()\u0060 jauh lebih lambat daripada pemanggilan method langsung (direct call) di C#?",
+      "options": [
+        "Karena Reflection selalu merestart proses aplikasi di level OS",
+        "Karena runtime harus memvalidasi tipe parameter saat runtime, melakukan boxing/unboxing pada argumen, dan memeriksa izin hak akses keamanan pada setiap panggilan",
+        "Karena Reflection hanya bisa berjalan pada single-core CPU",
+        "Karena Reflection menghapus database SQLite lokal"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Late binding pada Reflection membutuhkan overhead dinamis: inspeksi metadata, validasi tipe argumen, array packing, boxing, dan pengecekan privilege keamanan.",
+      "optionExplanations": [
+        "Salah. Reflection tidak me-restart proses OS.",
+        "Benar! Validasi dinamis dan boxing array argumen menimbulkan overhead komputasi yang masif.",
+        "Salah. Reflection berjalan di thread aktif apa pun.",
+        "Salah. Reflection tidak memodifikasi database."
+      ],
+      "sectionRef": "Dua Sisi Mata Uang: Fleksibilitas vs Penalti Performa",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-04-04-2",
+      "type": "MultipleChoice",
+      "question": "Teknologi modern apakah di .NET yang menggantikan penggunaan Reflection saat runtime dengan membangkitkan kode C# statis saat tahap kompilasi?",
+      "options": [
+        "Roslyn Source Generators",
+        "Garbage Collector Generational",
+        "Dynamic PGO",
+        "Docker BuildKit"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "Roslyn Source Generators menginspeksi kode saat proses build dan menghasilkan file C# tambahan secara otomatis, menghilangkan kebutuhan runtime reflection secara total.",
+      "optionExplanations": [
+        "Benar! Source Generators memindahkan metaprogramming ke tahap kompilasi.",
+        "Salah. GC mengelola alokasi memori heap.",
+        "Salah. PGO mengoptimalkan machine code JIT berdasarkan profiling eksekusi.",
+        "Salah. Docker BuildKit adalah build backend untuk container image."
+      ],
+      "sectionRef": "Solusi Modern .NET 8: Roslyn Source Generators",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-04-04",
+    "Title": "Inspeksi Properti Objek Dinamis Menggunakan Reflection",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat method refleksi \u0060InspectProperties(object obj)\u0060 yang membaca seluruh public instance properties dari sebuah objek.\nUrutkan properti secara alfabetis berdasarkan nama, lalu cetak dalam format: \u0027\u003CNamaProperti\u003E=\u003CNilai\u003E\u0027 dipisahkan tanda pipa \u0027|\u0027.\nJika nilai properti bernilai null, cetak \u0027NULL\u0027.\nUji dengan kelas DTO yang memuat properti: \u0060Id (int)\u0060, \u0060Name (string)\u0060, \u0060Role (string)\u0060 yang dibaca dari stdin.",
+    "InputFormat": "Satu baris: \u0027\u003CId\u003E \u003CName\u003E \u003CRole\u003E\u0027.",
+    "OutputFormat": "Satu baris: properti berurutan dipisahkan \u0027|\u0027.",
+    "Constraints": "Id integer, Name dan Role string.",
+    "Examples": [
+      {
+        "Input": "101 Alice Admin",
+        "Output": "Id=101|Name=Alice|Role=Admin",
+        "Explanation": "Properti Id, Name, Role diurutkan alfabetis."
+      },
+      {
+        "Input": "202 Bob Developer",
+        "Output": "Id=202|Name=Bob|Role=Developer",
+        "Explanation": "Inspeksi refleksi berhasil mengekstrak nilai."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Reflection;\n\npublic class UserDto\n{\n    public int Id { get; set; }\n    public string? Name { get; set; }\n    public string? Role { get; set; }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Gunakan typeof(UserDto).GetProperties() dan PropertyInfo.GetValue(obj).\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nusing System.Reflection;\n\npublic class UserDto\n{\n    public int Id { get; set; }\n    public string? Name { get; set; }\n    public string? Role { get; set; }\n}\n\npublic class Solution\n{\n    public static string InspectProperties(object obj)\n    {\n        var props = obj.GetType()\n            .GetProperties(BindingFlags.Public | BindingFlags.Instance)\n            .OrderBy(p =\u003E p.Name, StringComparer.Ordinal);\n\n        var list = new List\u003Cstring\u003E();\n        foreach (var p in props)\n        {\n            var val = p.GetValue(obj);\n            string valStr = val != null ? val.ToString()! : \u0022NULL\u0022;\n            list.Add($\u0022{p.Name}={valStr}\u0022);\n        }\n        return string.Join(\u0022|\u0022, list);\n    }\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var parts = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (parts.Length \u003C 3) return;\n\n        var dto = new UserDto\n        {\n            Id = int.Parse(parts[0]),\n            Name = parts[1],\n            Role = parts[2]\n        };\n\n        Console.WriteLine(InspectProperties(dto));\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Alice)",
+        "Description": "Contoh 1 (Alice): input \u0027101 Alice Admin\u0027 -\u003E expected \u0027Id=101|Name=Alice|Role=Admin\u0027",
+        "Input": "101 Alice Admin",
+        "ExpectedOutput": "Id=101|Name=Alice|Role=Admin",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Bob)",
+        "Description": "Contoh 2 (Bob): input \u0027202 Bob Developer\u0027 -\u003E expected \u0027Id=202|Name=Bob|Role=Developer\u0027",
+        "Input": "202 Bob Developer",
+        "ExpectedOutput": "Id=202|Name=Bob|Role=Developer",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Role Kosong/Null",
+        "Description": "Role Kosong/Null: input \u0027303 Charlie NULL\u0027 -\u003E expected \u0027Id=303|Name=Charlie|Role=NULL\u0027",
+        "Input": "303 Charlie NULL",
+        "ExpectedOutput": "Id=303|Name=Charlie|Role=NULL",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Angka Negatif",
+        "Description": "Angka Negatif: input \u0027-1 Guest Anonymous\u0027 -\u003E expected \u0027Id=-1|Name=Guest|Role=Anonymous\u0027",
+        "Input": "-1 Guest Anonymous",
+        "ExpectedOutput": "Id=-1|Name=Guest|Role=Anonymous",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan typeof(UserDto).GetProperties(BindingFlags.Public | BindingFlags.Instance).",
+      "Gunakan OrderBy(p =\u003E p.Name) untuk pengurutan alfabetis yang konsisten."
+    ],
+    "Explanation": "Reflection menyediakan kapabilitas runtime type introspection yang menjadi fondasi ORM (Entity Framework) dan JSON serializer dalam memetakan metadata objek C#."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-04-05",
+      "title": "Modern Serialization: System.Text.Json",
+      "levelName": "LEVEL 04",
+      "context": "Bagaimana System.Text.Json memanfaatkan Source Generators sebagai alternatif reflection."
+    },
+    {
+      "lessonId": "lesson-11-03",
+      "title": "Dependency Injection Deep Dive",
+      "levelName": "LEVEL 11",
+      "context": "Pemanfaatan reflection pada container IoC untuk mendeteksi constructor dependencies."
+    }
+  ],
+  "references": [
+    {
+      "title": "Reflection in .NET - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/framework/reflection-and-codedom/reflection"
+    },
+    {
+      "title": "Source Generators Overview - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/source-generators-overview"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Reflection;\nusing System.Linq;\nusing System.Text;\n\npublic class ObjectInspector\n{\n    public static string InspectPublicProperties(object? target)\n    {\n        if (target == null) return \u0022\u0022;\n\n        var props = target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)\n            .OrderBy(p =\u003E p.Name, StringComparer.Ordinal);\n\n        var sb = new StringBuilder();\n        foreach (var p in props)\n        {\n            object? val = p.GetValue(target);\n            string valStr = val == null ? \u0022null\u0022 : val.ToString()!;\n            sb.Append($\u0022{p.Name}={valStr};\u0022);\n        }\n\n        return sb.ToString();\n    }\n\n    public static void Main()\n    {\n        var data = new { B_Status = \u0022Active\u0022, A_Id = 101 };\n        Console.WriteLine(InspectPublicProperties(data));\n    }\n}"
+}

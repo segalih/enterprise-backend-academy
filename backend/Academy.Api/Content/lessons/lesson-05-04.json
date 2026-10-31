@@ -1,0 +1,175 @@
+{
+  "id": "lesson-05-04",
+  "levelId": "level-05",
+  "moduleId": "mod-05-03",
+  "order": 4,
+  "title": "Graph Algorithms: BFS, DFS, Topological Sorting, dan Shortest Path Dijkstra",
+  "slug": "graph-algorithms-bfs-dfs-dijkstra-topological",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami struktur data graf dan aplikasinya dalam backend enterprise: pelacakan dependensi kompilasi (Topological Sort / DAG), pencarian rute terpendek dengan Dijkstra, deteksi siklus sirkular, dan Breadth-First Search (BFS) untuk perutean jaringan.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-05-01",
+      "title": "Analisis Kompleksitas Big O",
+      "levelName": "LEVEL 05",
+      "context": "Memahami kompleksitas O(V \u002B E) pada algoritma graf."
+    },
+    {
+      "lessonId": "lesson-02-08",
+      "title": "Koleksi Data C#: Queue, Stack, Dictionary",
+      "levelName": "LEVEL 02",
+      "context": "Penggunaan Queue untuk BFS dan Stack untuk DFS."
+    }
+  ],
+  "introduces": [
+    "Graph (Vertices \u0026 Edges)",
+    "Directed Acyclic Graph (DAG)",
+    "Breadth-First Search (BFS - Queue)",
+    "Depth-First Search (DFS - Stack/Recursion)",
+    "Topological Sorting (Kahn\u0027s Algorithm)",
+    "Dijkstra\u0027s Shortest Path (PriorityQueue)"
+  ],
+  "learningObjectives": [
+    "Merepresentasikan struktur graf di C# menggunakan Adjacency List berbasis Dictionary.",
+    "Menerapkan Topological Sorting untuk menyelesaikan urutan build dependensi dan eksekusi task berantai.",
+    "Mengimplementasikan algoritma Dijkstra untuk menemukan rute latensi jaringan terendah."
+  ],
+  "markdownContent": "# Graph Algorithms: BFS, DFS, Topological Sorting, dan Shortest Path Dijkstra\n\n## Mengapa Graf Adalah Inti dari Arsitektur Sistem Terdistribusi?\nDalam rekayasa backend, data tidak selalu berbentuk tabel dua dimensi yang rapi:\n- **Dependency Graph**: Bagaimana MSBuild atau container Docker tahu urutan proyek mana yang harus di-build terlebih dahulu agar tidak error? (Directed Acyclic Graph / DAG).\n- **Network Routing**: Bagaimana paket data menemukan rute terpendek dengan latensi paling rendah melintasi router internet? (Algoritma Dijkstra).\n- **Fraud Ring Detection**: Bagaimana sistem perbankan mendeteksi sindikat pencucian uang yang memutar saldo antar-rekening dalam satu lingkaran tertutup (*Circular Dependency / Cycle Detection*)?\n\n---\n\n## 1. Representasi Graf di C#: Adjacency List\nStruktur data graf terdiri dari kumpulan simpul (**Vertices / Nodes**) yang dihubungkan oleh sisi (**Edges**):\n\n\u0060\u0060\u0060csharp\n// Adjacency List di C#: Memetakan setiap Node ke daftar tetangganya\npublic class Graph\n{\n    private readonly Dictionary\u003Cstring, List\u003Cstring\u003E\u003E _adjacencyList = new();\n\n    public void AddEdge(string from, string to)\n    {\n        if (!_adjacencyList.ContainsKey(from)) _adjacencyList[from] = new List\u003Cstring\u003E();\n        _adjacencyList[from].Add(to);\n    }\n\n    public IEnumerable\u003Cstring\u003E GetNeighbors(string node) =\u003E \n        _adjacencyList.TryGetValue(node, out var neighbors) ? neighbors : Enumerable.Empty\u003Cstring\u003E();\n}\n\u0060\u0060\u0060\n\n---\n\n## 2. BFS vs DFS: Kapan Menggunakan yang Mana?\n\n| Karakteristik | Breadth-First Search (BFS) | Depth-First Search (DFS) |\n| :--- | :--- | :--- |\n| **Struktur Data Penunjang**| **\u0060Queue\u003CT\u003E\u0060** (FIFO) | **\u0060Stack\u003CT\u003E\u0060** atau Rekursi Call Stack |\n| **Pola Penelusuran** | Menelusuri seluruh tetangga terdekat lapis demi lapis (*level-by-level*) | Menyelam sedalam mungkin hingga ujung cabang sebelum backtrack |\n| **Kasus Penggunaan Terbaik**| Mencari rute terpendek pada graf tanpa bobot (*Shortest Path*) | Mencari seluruh kemungkinan rute, maze solver, deteksi siklus |\n\n---\n\n## 3. Topological Sorting (Menyelesaikan Urutan Dependensi)\nPada Directed Acyclic Graph (DAG), **Topological Sorting** menghasilkan urutan linear simpul di mana untuk setiap edge \u0060U \u2192 V\u0060, simpul \u0060U\u0060 dijamin muncul sebelum simpul \u0060V\u0060.\n\n### Algoritma Kahn (In-Degree):\n1. Hitung **In-Degree** (berapa banyak panah yang masuk) untuk setiap node.\n2. Masukkan seluruh node yang memiliki \u0060in-degree == 0\u0060 (tidak punya dependensi) ke dalam antrian \u0060Queue\u0060.\n3. Selama antrian tidak kosong:\n   - Ambil node dari antrian, tambahkan ke hasil urutan eksekusi.\n   - Kurangi in-degree seluruh tetangga yang bergantung padanya sebanyak 1.\n   - Jika tetangga kini memiliki \u0060in-degree == 0\u0060, masukkan ke antrian.\n4. **Jika jumlah elemen hasil \u003C total simpul: BERARTI TERDAPAT CIRCULAR DEPENDENCY (DEADLOCK)!**\n\n---\n\n## 4. Algoritma Dijkstra (Shortest Path dengan Bobot)\nUntuk graf berbobot positif (misal latensi jaringan dalam milidetik):\n- Menggunakan **\u0060PriorityQueue\u003CTElement, TPriority\u003E\u0060** bawaan C# 10\u002B.\n- Selalu mengeksplorasi simpul dengan estimasi jarak terpendek kumulatif terlebih dahulu, menjamin rute optimal ditemukan dalam kompleksitas \u0060O((V \u002B E) log V)\u0060.",
+  "starterCode": "using System;\nusing System.Collections.Generic;\n\n// PROGRAM: Implementasi Breadth-First Search (BFS) Sederhana\npublic class SimpleGraph\n{\n    private readonly Dictionary\u003Cstring, List\u003Cstring\u003E\u003E _adj = new();\n\n    public void AddEdge(string u, string v)\n    {\n        if (!_adj.ContainsKey(u)) _adj[u] = new List\u003Cstring\u003E();\n        _adj[u].Add(v);\n    }\n\n    public List\u003Cstring\u003E TraverseBfs(string startNode)\n    {\n        var visited = new HashSet\u003Cstring\u003E();\n        var queue = new Queue\u003Cstring\u003E();\n        var result = new List\u003Cstring\u003E();\n\n        visited.Add(startNode);\n        queue.Enqueue(startNode);\n\n        while (queue.Count \u003E 0)\n        {\n            string current = queue.Dequeue();\n            result.Add(current);\n\n            if (_adj.TryGetValue(current, out var neighbors))\n            {\n                foreach (var neighbor in neighbors)\n                {\n                    if (visited.Add(neighbor)) // Jika belum pernah dikunjungi\n                    {\n                        queue.Enqueue(neighbor);\n                    }\n                }\n            }\n        }\n\n        return result;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var g = new SimpleGraph();\n        g.AddEdge(\u0022API Gateway\u0022, \u0022Auth Service\u0022);\n        g.AddEdge(\u0022API Gateway\u0022, \u0022Order Service\u0022);\n        g.AddEdge(\u0022Order Service\u0022, \u0022Payment Service\u0022);\n        g.AddEdge(\u0022Order Service\u0022, \u0022Inventory Service\u0022);\n        \n        var traversal = g.TraverseBfs(\u0022API Gateway\u0022);\n        Console.WriteLine(\u0022Urutan Penelusuran Layanan (BFS):\u0022);\n        Console.WriteLine(string.Join(\u0022 -\u003E \u0022, traversal));\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-05-04-1",
+      "type": "MultipleChoice",
+      "question": "Struktur data penunjang apakah yang WAJIB digunakan untuk mengimplementasikan penelusuran Breadth-First Search (BFS) secara iteratif?",
+      "options": [
+        "Stack\u003CT\u003E (LIFO)",
+        "Queue\u003CT\u003E (FIFO)",
+        "BinaryTree\u003CT\u003E",
+        "LinkedList\u003CT\u003E"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "BFS menggunakan antrian \u0060Queue\u003CT\u003E\u0060 (First-In, First-Out) untuk menelusuri simpul lapis demi lapis berdasarkan jarak terdekat dari titik awal.",
+      "optionExplanations": [
+        "Salah. Stack digunakan untuk Depth-First Search (DFS).",
+        "Benar! Queue menjamin penelusuran tingkat demi tingkat secara adil (FIFO).",
+        "Salah. BinaryTree bukan struktur antrian iteratif.",
+        "Salah. Meskipun bisa, Queue adalah abstraksi antrian formal."
+      ],
+      "sectionRef": "2. BFS vs DFS: Kapan Menggunakan yang Mana?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-05-04-2",
+      "type": "MultipleChoice",
+      "question": "Kondisi apakah yang terdeteksi jika algoritma Topological Sorting (seperti Algoritma Kahn) selesai namun jumlah elemen pada urutan hasil kurang dari jumlah seluruh simpul graf?",
+      "options": [
+        "Graf memiliki bobot negatif",
+        "Graf memiliki Circular Dependency (Ketergantungan Siklik / Loop tertutup) yang mustahil diselesaikan urutannya",
+        "Semua simpul terhubung secara sempurna",
+        "Kapasitas memori RAM habis"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Topological Sort hanya dapat diterapkan pada DAG (Directed Acyclic Graph). Jika ada siklus sirkular (A butuh B, B butuh A), in-degree kedua simpul tidak akan pernah mencapai 0, menandakan adanya circular dependency.",
+      "optionExplanations": [
+        "Salah. Topological sorting tidak memperhitungkan bobot sisi.",
+        "Benar! Adanya siklus (cycle) mencegah in-degree mencapai nol, mengindikasikan circular dependency.",
+        "Salah. Kegagalan topological sort justru menunjukkan anomali siklus ketergantungan.",
+        "Salah. Ini adalah properti logis algoritma, bukan kekurangan memori fisik."
+      ],
+      "sectionRef": "3. Topological Sorting (Menyelesaikan Urutan Dependensi)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-05-04",
+    "Title": "Deteksi Ketergantungan Siklus Modul Sistem (Cycle Detection)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Diberikan daftar dependensi antar modul sistem dari stdin dalam format \u0027A-\u003EB, B-\u003EC, ...\u0027 (artinya modul A bergantung pada B).\nTentukan apakah grafik dependensi memiliki ketergantungan siklus (circular dependency / dead lock loop).\nCetak \u0027CIRCULAR_DEPENDENCY\u0027 jika terdeteksi siklus, atau \u0027DAG_VALID\u0027 jika grafik merupakan Directed Acyclic Graph yang aman.",
+    "InputFormat": "Satu baris string dependensi dipisahkan koma.",
+    "OutputFormat": "Satu baris: \u0027CIRCULAR_DEPENDENCY\u0027 atau \u0027DAG_VALID\u0027.",
+    "Constraints": "Jumlah relasi dependensi \u003C= 50.",
+    "Examples": [
+      {
+        "Input": "A-\u003EB, B-\u003EC, C-\u003EA",
+        "Output": "CIRCULAR_DEPENDENCY",
+        "Explanation": "A bergantung B, B bergantung C, C bergantung A membentuk siklus."
+      },
+      {
+        "Input": "A-\u003EB, A-\u003EC, B-\u003ED, C-\u003ED",
+        "Output": "DAG_VALID",
+        "Explanation": "Grafik asiklik tanpa siklus tertutup."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Gunakan DFS dengan 3-state coloring (Unvisited, Visiting, Visited).\n        Console.WriteLine(\u0022DAG_VALID\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022DAG_VALID\u0022); return; }\n\n        var adj = new Dictionary\u003Cstring, List\u003Cstring\u003E\u003E();\n        var nodes = new HashSet\u003Cstring\u003E();\n\n        var edges = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var e in edges)\n        {\n            var p = e.Trim().Split(new[] { \u0022-\u003E\u0022 }, StringSplitOptions.RemoveEmptyEntries);\n            if (p.Length == 2)\n            {\n                string u = p[0].Trim();\n                string v = p[1].Trim();\n                nodes.Add(u);\n                nodes.Add(v);\n                if (!adj.ContainsKey(u)) adj[u] = new List\u003Cstring\u003E();\n                adj[u].Add(v);\n            }\n        }\n\n        // 0: Unvisited, 1: Visiting, 2: Visited\n        var state = new Dictionary\u003Cstring, int\u003E();\n        foreach (var n in nodes) state[n] = 0;\n\n        bool hasCycle = false;\n        bool Dfs(string u)\n        {\n            state[u] = 1; // Visiting\n            if (adj.TryGetValue(u, out var neighbors))\n            {\n                foreach (var v in neighbors)\n                {\n                    if (state[v] == 1) return true; // Cycle detected\n                    if (state[v] == 0 \u0026\u0026 Dfs(v)) return true;\n                }\n            }\n            state[u] = 2; // Visited\n            return false;\n        }\n\n        foreach (var n in nodes)\n        {\n            if (state[n] == 0)\n            {\n                if (Dfs(n)) { hasCycle = true; break; }\n            }\n        }\n\n        Console.WriteLine(hasCycle ? \u0022CIRCULAR_DEPENDENCY\u0022 : \u0022DAG_VALID\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Siklus 3 Simpul)",
+        "Description": "Contoh 1 (Siklus 3 Simpul): input \u0027A-\u003EB, B-\u003EC, C-\u003EA\u0027 -\u003E expected \u0027CIRCULAR_DEPENDENCY\u0027",
+        "Input": "A-\u003EB, B-\u003EC, C-\u003EA",
+        "ExpectedOutput": "CIRCULAR_DEPENDENCY",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Valid DAG Diamond)",
+        "Description": "Contoh 2 (Valid DAG Diamond): input \u0027A-\u003EB, A-\u003EC, B-\u003ED, C-\u003ED\u0027 -\u003E expected \u0027DAG_VALID\u0027",
+        "Input": "A-\u003EB, A-\u003EC, B-\u003ED, C-\u003ED",
+        "ExpectedOutput": "DAG_VALID",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Dua Komponen Lepas Aman",
+        "Description": "Dua Komponen Lepas Aman: input \u0027A-\u003EB, C-\u003ED\u0027 -\u003E expected \u0027DAG_VALID\u0027",
+        "Input": "A-\u003EB, C-\u003ED",
+        "ExpectedOutput": "DAG_VALID",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Self Loop Siklus",
+        "Description": "Self Loop Siklus: input \u0027ServiceA-\u003EServiceA\u0027 -\u003E expected \u0027CIRCULAR_DEPENDENCY\u0027",
+        "Input": "ServiceA-\u003EServiceA",
+        "ExpectedOutput": "CIRCULAR_DEPENDENCY",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan algoritma pewarnaan 3 status (Depth-First Search): 0 = Unvisited, 1 = Visiting (sedang dalam recursion call stack), 2 = Visited.",
+      "Jika simpul tetangga berstatus 1 (Visiting), maka terdapat siklus (back-edge)."
+    ],
+    "Explanation": "Dependency Injection container (seperti Microsoft.Extensions.DependencyInjection) melakukan cycle detection saat kompilasi graf layanan guna mencegah stack overflow saat service resolution."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-05-01",
+      "title": "Analisis Kompleksitas Big O",
+      "levelName": "LEVEL 05",
+      "context": "Analisis kompleksitas O(V \u002B E) pada penelusuran graf."
+    },
+    {
+      "lessonId": "lesson-11-03",
+      "title": "Dependency Injection Deep Dive",
+      "levelName": "LEVEL 11",
+      "context": "Bagaimana container DI mendeteksi circular service dependencies."
+    }
+  ],
+  "references": [
+    {
+      "title": "Topological sorting - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Topological_sorting"
+    },
+    {
+      "title": "Algorithms (Sedgewick \u0026 Wayne) - Directed Graphs",
+      "url": "https://algs4.cs.princeton.edu/42digraph/"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class DependencyCycleDetector\n{\n    public static bool HasCircularDependency(string[] dependencies)\n    {\n        if (dependencies == null || dependencies.Length == 0) return false;\n\n        var adj = new Dictionary\u003Cstring, List\u003Cstring\u003E\u003E();\n        var inDegree = new Dictionary\u003Cstring, int\u003E();\n        var allNodes = new HashSet\u003Cstring\u003E();\n\n        foreach (var dep in dependencies)\n        {\n            if (string.IsNullOrWhiteSpace(dep)) continue;\n            var parts = dep.Split(\u0022-\u003E\u0022, StringSplitOptions.RemoveEmptyEntries);\n            if (parts.Length != 2) continue;\n\n            string u = parts[0].Trim();\n            string v = parts[1].Trim();\n\n            allNodes.Add(u);\n            allNodes.Add(v);\n\n            if (!adj.ContainsKey(u)) adj[u] = new List\u003Cstring\u003E();\n            adj[u].Add(v);\n\n            inDegree[v] = inDegree.GetValueOrDefault(v, 0) \u002B 1;\n            if (!inDegree.ContainsKey(u)) inDegree[u] = 0;\n        }\n\n        if (allNodes.Count == 0) return false;\n\n        var queue = new Queue\u003Cstring\u003E();\n        foreach (var node in allNodes)\n        {\n            if (inDegree.GetValueOrDefault(node, 0) == 0)\n            {\n                queue.Enqueue(node);\n            }\n        }\n\n        int processedCount = 0;\n        while (queue.Count \u003E 0)\n        {\n            string curr = queue.Dequeue();\n            processedCount\u002B\u002B;\n\n            if (adj.TryGetValue(curr, out var neighbors))\n            {\n                foreach (var next in neighbors)\n                {\n                    inDegree[next]--;\n                    if (inDegree[next] == 0)\n                    {\n                        queue.Enqueue(next);\n                    }\n                }\n            }\n        }\n\n        return processedCount \u003C allNodes.Count;\n    }\n\n    public static void Main()\n    {\n        string[] safeDeps = { \u0022App-\u003ECore\u0022, \u0022Core-\u003EData\u0022 };\n        Console.WriteLine($\u0022Siklus (Aman): {HasCircularDependency(safeDeps)}\u0022);\n\n        string[] cycleDeps = { \u0022A-\u003EB\u0022, \u0022B-\u003EC\u0022, \u0022C-\u003EA\u0022 };\n        Console.WriteLine($\u0022Siklus (Bahaya): {HasCircularDependency(cycleDeps)}\u0022);\n    }\n}"
+}

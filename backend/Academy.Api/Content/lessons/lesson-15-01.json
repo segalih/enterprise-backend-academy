@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-15-01",
+    "levelId":  "level-15",
+    "moduleId":  "mod-15-01",
+    "order":  1,
+    "title":  "Otentikasi Aman: Password Hashing (Argon2id), JWT Token Hardening, dan Refresh Token Rotation",
+    "slug":  "authentication-argon2-jwt-hardening",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membangun sistem otentikasi enterprise yang tahan uji: algoritma Argon2id vs PBKDF2/BCrypt, mitigasi serangan JWT (None algorithm, key confusion), dan Refresh Token Rotation dengan pendeteksian pencurian token.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-06",
+                              "reason":  "Representasi Karakter \u0026 Byte Array"
+                          },
+                          {
+                              "lessonId":  "lesson-11-01",
+                              "reason":  "Middleware Pipeline \u0026 HttpContext"
+                          }
+                      ],
+    "introduces":  [
+                       "Memory-hard password hashing with Argon2id",
+                       "JSON Web Token (JWT) structure \u0026 validation parameters",
+                       "JWT security vulnerabilities (\u0027alg: none\u0027, signature stripping)",
+                       "Refresh Token Rotation (RTR) \u0026 reuse detection",
+                       "Token revocation strategies in stateless backends"
+                   ],
+    "learningObjectives":  [
+                               "Menjelaskan mengapa MD5/SHA256 dilarang keras untuk password dan mengapa Argon2id kebal terhadap serangan GPU/ASIC",
+                               "Mengonfigurasi `TokenValidationParameters` di ASP.NET Core untuk memvalidasi Issuer, Audience, SigningKey, dan Lifetime",
+                               "Menerapkan pola Refresh Token Rotation (RTR) dengan invalidasi otomatis seluruh keluarga token saat terdeteksi token reuse",
+                               "Menyimpan token autentikasi di client secara aman (HttpOnly, SameSite, Secure cookie vs LocalStorage)"
+                           ],
+    "markdownContent":  "# Otentikasi Aman: Password Hashing (Argon2id), JWT Token Hardening, dan Refresh Token Rotation\n\nDalam rekayasa sistem backend, sistem otentikasi adalah pintu gerbang utama pertahanan data perusahaan. Kesalahan implementasi terkecilâ€”seperti salah memilih fungsi hash password atau salah mengonfigurasi validasi JWTâ€”dapat menyebabkan kebocoran massal kredensial nasabah.\n\nMateri ini membahas standar keamanan industri modern untuk otentikasi: **Argon2id**, **JWT Hardening**, dan **Refresh Token Rotation**.\n\n---\n\n## 1. Password Hashing: Mengapa SHA-256 Haram Digunakan untuk Password?\n\nBanyak developer pemula beranggapan bahwa `SHA256(password + salt)` sudah aman. **Ini adalah kesalahan fatal.**\n\nFungsi SHA (Secure Hash Algorithm) dirancang untuk memverifikasi integritas file dengan **kecepatan maksimal**. Kartu grafis modern (GPU cluster) atau perangkat keras ASIC mampu menghitung **miliaran hash SHA-256 per detik**. Dengan kecepatan ini, hacker dapat melakukan serangan brute-force / cracking pada database password yang bocor dalam hitungan menit!\n\n### Jawaban Modern: Memory-Hard Functions (Argon2id)\nPemenang kompetisi *Password Hashing Competition (PHC)* internasional adalah **Argon2id**.\n\nArgon2id bukan hanya membutuhkan komputasi CPU (**Time Cost**), melainkan sengaja mewajibkan alokasi memori RAM yang besar (**Memory Cost**, misal 64 MB per hash) serta multi-threading (**Parallelism**). Karena memori GPU sangat mahal dan terbatas, serangan cracking menggunakan hardware akselerator GPU/ASIC menjadi mustahil secara ekonomis!\n\n```csharp\n// Parameter Standar OWASP untuk Argon2id:\n// - Memory: 64 MB (65,536 KB)\n// - Iterations: 3\n// - Parallelism: 4 threads\n// - Salt: Minimal 16 bytes acak kriptografis (RandomNumberGenerator)\n```\n\n---\n\n## 2. JWT (JSON Web Token) Hardening di ASP.NET Core\n\nJWT adalah token terdesentralisasi yang membungkus klaim identitas pengguna. Token terdiri dari 3 bagian yang dipisahkan titik: `Header.Payload.Signature`.\n\n```text\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTYiLCJuYW1lIjoiQWxpY2UifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c\n      [ Header: Algoritma ]           [ Payload: Claims Data ]         [ Cryptographic Signature ]\n```\n\n### Celah Bahaya JWT \u0026 Mitigasinya:\n1. **The \"none\" Algorithm Attack**: Hacker mengubah header menjadi `{\"alg\": \"none\"}` dan menghapus signature. Jika server tidak memvalidasi algoritma secara ketat, server menganggap token valid!\n2. **Key Confusion (HMAC vs RSA)**: Server mengharapkan public key RSA, namun hacker menandatangani token menggunakan HMAC-SHA256 dengan string public key tersebut sebagai secret key!\n\n### Konfigurasi Baku `TokenValidationParameters`:\n```csharp\nbuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)\n    .AddJwtBearer(options =\u003e\n    {\n        options.TokenValidationParameters = new TokenValidationParameters\n        {\n            ValidateIssuer = true,\n            ValidIssuer = \"https://identity.enterprise.com\",\n            \n            ValidateAudience = true,\n            ValidAudience = \"https://api.enterprise.com\",\n            \n            ValidateIssuerSigningKey = true,\n            IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes),\n            \n            ValidateLifetime = true,\n            ClockSkew = TimeSpan.Zero, // Matikan toleransi 5 menit default untuk token berumur pendek!\n            \n            RequireSignedTokens = true,\n            RequireExpirationTime = true\n        };\n    });\n```\n\n---\n\n## 3. Refresh Token Rotation (RTR) \u0026 Reuse Detection\n\nAccess Token sebaiknya berumur sangat pendek (misal **15 menit**) untuk meminimalkan dampak jika token dicuri. Untuk memperpanjang sesi tanpa meminta password ulang, client menggunakan **Refresh Token** (berumur misal 7 hari).\n\nNamun jika Refresh Token disimpan selamanya di database tanpa rotasi, pencuri token dapat memperpanjang akses tanpa batas.\n\n### Standar Enterprise: Refresh Token Rotation (RTR)\n1. Setiap kali Refresh Token digunakan untuk meminta Access Token baru, **Refresh Token lama LANGSUNG DIHANGUSKAN (revoked)**, dan diterbitkan satu pasang Access Token + Refresh Token BARU.\n2. **Reuse Detection (Deteksi Pencurian)**: Jika server menerima Refresh Token yang *sudah pernah digunakan sebelumnya*, ini indikasi kuat bahwa token telah dicuri!\n3. **Tindakan Otomatis**: Server langsung **mencabut (revoke) seluruh keluarga token pengguna tersebut** dan memaksa login ulang di semua perangkat.\n\n```mermaid\nsequenceDiagram\n    autonumber\n    actor U as User Normal\n    actor H as Hacker / Pencuri\n    participant Auth as Auth Server\n\n    rect rgb(20, 80, 40)\n        Note over U,Auth: Skenario 1: Rotasi Token Normal\n        U-\u003e\u003eAuth: Kirim RT_1\n        Auth--\u003e\u003eU: Terbitkan RT_2 (RT_1 dihanguskan / Revoked)\n    end\n    rect rgb(80, 20, 20)\n        Note over H,Auth: Skenario 2: Token Reuse Attack\n        H-\u003e\u003eAuth: Kirim RT_1 yang Sudah Terpakai!\n        Auth-\u003e\u003eAuth: ALARM: Reuse Detected!\n        Auth--\u003e\u003eH: Akses Ditolak (401 Unauthorized)\n        Note over Auth: Revoke RT_2, RT_1, dan seluruh sesi user seketika!\n    end\n```\n\n---\n\n## 4. Ringkasan \u0026 Aturan Keamanan Backend\n\n1. **Gunakan Argon2id** untuk hashing kredensial baru. Jangan pernah menulis fungsi enkripsi/hashing sendiri (*Never roll your own crypto*).\n2. **Pasang ClockSkew = TimeSpan.Zero**: Jangan biarkan token kadaluarsa tetap diterima oleh server karena toleransi waktu default framework.\n3. **Terapkan Refresh Token Rotation**: Selalu rotasi refresh token di setiap siklus perpanjangan sesi dan pantau pelanggaran reuse.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// Simulasi Refresh Token Rotation dengan Reuse Detection\npublic class UserSession\n{\n    public string UserId { get; set; } = \"user_42\";\n    public string CurrentActiveToken { get; set; } = \"token_v1\";\n    public HashSet\u003cstring\u003e RevokedTokens { get; } = new();\n}\n\npublic class AuthService\n{\n    private readonly UserSession _session = new();\n\n    public (bool success, string? newToken, string message) RotateRefreshToken(string incomingToken)\n    {\n        // TODO:\n        // 1. Cek apakah incomingToken ada di _session.RevokedTokens.\n        //    Jika ADA: PENCURIAN TERDETEKSI!\n        //    Reset _session.CurrentActiveToken = null (hanguskan seluruh sesi),\n        //    kembalikan (false, null, \"SECURITY ALERT: Token reuse detected! All sessions terminated.\").\n        // 2. Cek apakah incomingToken != _session.CurrentActiveToken.\n        //    Jika beda: kembalikan (false, null, \"Invalid token.\").\n        // 3. Jika valid:\n        //    Masukkan incomingToken ke _session.RevokedTokens.\n        //    Buat token baru (misal: \"token_v\" + Guid.NewGuid().ToString(\"N\")[..6]).\n        //    Set _session.CurrentActiveToken = tokenBaru.\n        //    Kembalikan (true, tokenBaru, \"Token rotated successfully.\").\n        \n        return (false, null, \"Belum diimplementasikan\");\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var auth = new AuthService();\n\n        // 1. User normal menukar token_v1\n        Console.WriteLine(\"--- Pertukaran Sesi 1 (User Sah) ---\");\n        var res1 = auth.RotateRefreshToken(\"token_v1\");\n        Console.WriteLine($\"Sukses: {res1.success} | Token Baru: {res1.newToken} | Pesan: {res1.message}\");\n\n        // 2. Hacker menemukan token_v1 bekas di traffic dump dan mencoba memakainya\n        Console.WriteLine(\"\\n--- Hacker Mencoba Memakai Ulang token_v1 ---\");\n        var resHack = auth.RotateRefreshToken(\"token_v1\");\n        Console.WriteLine($\"Sukses: {resHack.success} | Pesan: {resHack.message}\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class UserSession\n{\n    public string UserId { get; set; } = \"user_42\";\n    public string? CurrentActiveToken { get; set; } = \"token_v1\";\n    public HashSet\u003cstring\u003e RevokedTokens { get; } = new();\n}\n\npublic class AuthService\n{\n    private readonly UserSession _session = new();\n\n    public (bool success, string? newToken, string message) RotateRefreshToken(string incomingToken)\n    {\n        if (_session.RevokedTokens.Contains(incomingToken))\n        {\n            _session.CurrentActiveToken = null; // Hanguskan seluruh sesi aktif!\n            return (false, null, \"SECURITY ALERT: Token reuse detected! All sessions terminated.\");\n        }\n\n        if (incomingToken != _session.CurrentActiveToken)\n        {\n            return (false, null, \"Invalid token.\");\n        }\n\n        _session.RevokedTokens.Add(incomingToken);\n        var newToken = \"token_v\" + Guid.NewGuid().ToString(\"N\")[..6];\n        _session.CurrentActiveToken = newToken;\n\n        return (true, newToken, \"Token rotated successfully.\");\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var auth = new AuthService();\n\n        Console.WriteLine(\"--- Pertukaran Sesi 1 (User Sah) ---\");\n        var res1 = auth.RotateRefreshToken(\"token_v1\");\n        Console.WriteLine($\"Sukses: {res1.success} | Token Baru: {res1.newToken} | Pesan: {res1.message}\");\n\n        Console.WriteLine(\"\\n--- Hacker Mencoba Memakai Ulang token_v1 ---\");\n        var resHack = auth.RotateRefreshToken(\"token_v1\");\n        Console.WriteLine($\"Sukses: {resHack.success} | Pesan: {resHack.message}\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-15-01-1",
+                              "type":  "single_choice",
+                              "question":  "Mengapa algoritma Argon2id dinobatkan sebagai standar terbaik untuk password hashing dibandingkan SHA-256 murni?",
+                              "options":  [
+                                              "Karena Argon2id mengubah password menjadi file gambar BMP.",
+                                              "Karena Argon2id adalah algoritma memory-hard yang sengaja membutuhkan memori RAM besar dan multi-threading, membuat serangan brute-force massal menggunakan akselerator hardware GPU/ASIC menjadi tidak praktis secara finansial.",
+                                              "Karena Argon2id tidak membutuhkan kunci password sama sekali.",
+                                              "Karena Argon2id otomatis menghapus database jika salah password 3 kali."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "SHA-256 dapat dihitung miliaran kali per detik pada GPU cluster. Argon2id dirancang memory-hard: setiap iterasi membutuhkan puluhan megabyte RAM, melumpuhkan kapabilitas komputasi paralel GPU yang memiliki bandwidth dan cache memori terbatas.",
+                              "optionExplanations":  [
+                                                         "Salah. Argon2id menghasilkan string representasi hash terenkapsulasi, bukan file gambar.",
+                                                         "Benar! Desain memory-hard melindungi dari serangan akselerator hardware GPU dan ASIC.",
+                                                         "Salah. Password tetap merupakan input utama.",
+                                                         "Salah. Penghapusan database bukan bagian dari fungsi hash kriptografi."
+                                                     ],
+                              "sectionRef":  "1. Password Hashing: Mengapa SHA-256 Haram Digunakan untuk Password?",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-15-01-2",
+                              "type":  "single_choice",
+                              "question":  "Apa tindakan keamanan yang harus diambil oleh server otentikasi ketika mendeteksi Refresh Token lama yang sudah pernah dihanguskan (revoked) dikirimkan kembali?",
+                              "options":  [
+                                              "Mengabaikan request dan menerbitkan token baru tanpa syarat.",
+                                              "Mendeteksi reuse sebagai indikasi pencurian token (token theft), segera mencabut seluruh keluarga token aktif pengguna tersebut, dan memaksa login ulang.",
+                                              "Mengirim email ucapan selamat kepada pengirim token.",
+                                              "Mematikan server web Kestrel secara permanen."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Pada pola Refresh Token Rotation, token lama yang dikirim kembali menandakan bahwa token sah telah disalin oleh peretas atau client telah dikompromikan. Sistem wajib mencabut seluruh refresh token milik pengguna tersebut (revoke token family) demi mencegah pembajakan akun.",
+                              "optionExplanations":  [
+                                                         "Salah. Ini membiarkan hacker menguasai akun selamanya.",
+                                                         "Benar! Deteksi reuse adalah pilar mitigasi token theft pada Refresh Token Rotation.",
+                                                         "Salah. Ini adalah insiden keamanan serius.",
+                                                         "Salah. Tidak perlu mematikan seluruh server web."
+                                                     ],
+                              "sectionRef":  "3. Refresh Token Rotation (RTR) \u0026 Reuse Detection",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-00-06",
+                           "lesson-11-01",
+                           "lesson-15-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "OWASP Password Storage Cheat Sheet",
+                           "url":  "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "RFC 7519: JSON Web Token (JWT)",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc7519",
+                           "type":  "documentation"
+                       }
+                   ]
+}

@@ -1,0 +1,180 @@
+{
+  "id": "lesson-15-03",
+  "levelId": "level-15",
+  "moduleId": "mod-15-02",
+  "order": 3,
+  "title": "OWASP Top 10 Backend Engineering: Mitigasi SQLi, SSRF, IDOR, dan Insecure Deserialization",
+  "slug": "owasp-top-10-backend-defense",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 60,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mempertahankan aplikasi backend dari 4 serangan paling merusak dalam OWASP Top 10: SQL Injection (SQLi), Server-Side Request Forgery (SSRF), Insecure Direct Object References (IDOR/BOLA), dan Insecure Deserialization.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-10-01",
+      "reason": "ADO.NET \u0026 Parameterized Queries"
+    },
+    {
+      "lessonId": "lesson-04-05",
+      "reason": "JSON Serialization \u0026 Type Handling"
+    }
+  ],
+  "introduces": [
+    "OWASP Top 10 Backend Threat Landscape",
+    "SQL Injection \u0026 dynamic query pitfalls in EF Core / Dapper",
+    "Server-Side Request Forgery (SSRF) \u0026 AWS IMDSv2 protection",
+    "IDOR / Broken Object-Level Authorization (BOLA)",
+    "Insecure Deserialization \u0026 TypeNameHandling RCE"
+  ],
+  "learningObjectives": [
+    "Mendeteksi pola query dinamis rentan SQLi pada Dapper dan raw SQL EF Core",
+    "Mencegah serangan SSRF dengan memvalidasi IP private (RFC 1918) dan memblokir akses ke cloud metadata (169.254.169.254)",
+    "Menerapkan pemeriksaan otorisasi berbasis kepemilikan tenant/user untuk memberantas bug IDOR/BOLA",
+    "Menghindari penggunaan \u0060TypeNameHandling.All\u0060 pada Newtonsoft.Json yang memicu Remote Code Execution (RCE)"
+  ],
+  "markdownContent": "# OWASP Top 10 Backend Engineering: Mitigasi SQLi, SSRF, IDOR, dan Insecure Deserialization\n\nBagi seorang backend engineer di lingkungan enterprise (terutama perbankan, e-commerce, dan fintech), keamanan bukan fitur tambahan opsional\u2014keamanan adalah bagian fundamental dari kualitas kode.\n\nEmpat kerentanan dari **OWASP Top 10** yang paling sering dieksploitasi oleh peretas untuk membobol backend server adalah:\n1. **SQL Injection (SQLi)**\n2. **Server-Side Request Forgery (SSRF)**\n3. **Insecure Direct Object References (IDOR / BOLA)**\n4. **Insecure Deserialization (Remote Code Execution)**\n\n---\n\n## 1. SQL Injection: Masih Hidup di Balik ORM Modern\n\nBanyak developer mengira bahwa menggunakan Entity Framework Core atau Dapper otomatis membuat mereka kebal SQLi. Ini adalah ilusi berbahaya.\n\n### Di mana SQLi Sering Terjadi?\nSQLi terjadi setiap kali developer **menggabungkan input user menggunakan konkatenasi string** ke dalam query mentah:\n\n\u0060\u0060\u0060csharp\n// CELAH FATAL: SQL INJECTION DI DAPPER / EF CORE!\nstring query = $\u0022SELECT * FROM Invoices WHERE CustomerId = \u0027{userInput}\u0027\u0022;\nvar data = await connection.QueryAsync\u003CInvoice\u003E(query);\n\u0060\u0060\u0060\nJika peretas mengirimkan input: \u0060\u0027 OR \u00271\u0027=\u00271\u0060 atau \u0060\u0027; DROP TABLE Invoices; --\u0060, database akan mengeksekusi perintah tersebut!\n\n### Mitigasi Mutlak: Parameterized Queries\n\u0060\u0060\u0060csharp\n// AMAN: Nilai diperlakukan sebagai literal data murni oleh database engine\nstring query = \u0022SELECT * FROM Invoices WHERE CustomerId = @CustomerId\u0022;\nvar data = await connection.QueryAsync\u003CInvoice\u003E(query, new { CustomerId = userInput });\n\u0060\u0060\u0060\n\n---\n\n## 2. Server-Side Request Forgery (SSRF)\n\n**SSRF** terjadi ketika server backend mengambil data dari URL eksternal yang dikirimkan oleh pengguna (misalnya fitur \u0022Import Avatar dari URL\u0022 atau \u0022Webhook Verification\u0022).\n\n\u0060\u0060\u0060csharp\n// CELAH FATAL SSRF:\napp.MapPost(\u0022/api/webhook/test\u0022, async (string targetUrl, HttpClient client) =\u003E\n{\n    // Server memanggil URL tanpa validasi!\n    var response = await client.GetAsync(targetUrl);\n    return Results.Ok(await response.Content.ReadAsStringAsync());\n});\n\u0060\u0060\u0060\n\n### Eksploitasi Cloud Metadata:\nJika backend berjalan di AWS atau Azure, hacker mengirim target URL:\n\u0060http://169.254.169.254/latest/meta-data/iam/security-credentials/\u0060\nServer backend akan menghubungi IP metadata internal cloud miliknya sendiri dan mengembalikan **AWS Secret Access Keys** milik server ke hacker!\n\n### Mitigasi SSRF:\n1. **Validasi Skema**: Hanya izinkan \u0060http\u0060 dan \u0060https\u0060. Tolak \u0060file://\u0060, \u0060ftp://\u0060, atau \u0060gopher://\u0060.\n2. **IP Whitelisting \u0026 Filter Private IP**: Resolve hostname ke IP address, lalu tolak request jika IP tersebut berada di range private IP (RFC 1918: \u006010.0.0.0/8\u0060, \u0060172.16.0.0/12\u0060, \u0060192.168.0.0/16\u0060, \u0060127.0.0.1\u0060, dan Link-Local \u0060169.254.169.254\u0060).\n\n---\n\n## 3. IDOR / BOLA (Broken Object-Level Authorization)\n\nKerentanan API nomor 1 menurut OWASP API Security Top 10 adalah **BOLA (Broken Object-Level Authorization)**.\n\n\u0060\u0060\u0060csharp\n// CELAH IDOR:\napp.MapGet(\u0022/api/invoices/{invoiceId:guid}\u0022, async (Guid invoiceId, AppDbContext db) =\u003E\n{\n    // Hanya memeriksa apakah invoice ada di database,\n    // TIDAK MEMERIKSA apakah user yang sedang login adalah PEMILIK invoice ini!\n    var invoice = await db.Invoices.FindAsync(invoiceId);\n    return invoice is not null ? Results.Ok(invoice) : Results.NotFound();\n});\n\u0060\u0060\u0060\nHacker cukup mengganti \u0060invoiceId\u0060 di URL untuk mengintip transaksi keuangan nasabah lain!\n\n### Mitigasi IDOR:\n\u0060\u0060\u0060csharp\napp.MapGet(\u0022/api/invoices/{invoiceId:guid}\u0022, async (\n    Guid invoiceId, \n    ClaimsPrincipal user, \n    AppDbContext db) =\u003E\n{\n    var currentUserId = user.GetUserId();\n\n    // Pastikan filter mencakup kepemilikan (Ownership Filter)!\n    var invoice = await db.Invoices\n        .FirstOrDefaultAsync(x =\u003E x.Id == invoiceId \u0026\u0026 x.UserId == currentUserId);\n\n    return invoice is not null ? Results.Ok(invoice) : Results.NotFound();\n});\n\u0060\u0060\u0060\n\n---\n\n## 4. Insecure Deserialization \u0026 RCE\n\nDi library JSON lawas (seperti Newtonsoft.Json), developer sering mengaktifkan:\n\u0060\u0060\u0060csharp\n// BAHAYA EKSTREM: MENGIZINKAN REMOTE CODE EXECUTION (RCE)!\nvar settings = new JsonSerializerSettings\n{\n    TypeNameHandling = TypeNameHandling.All // DILARANG KERAS!\n};\n\u0060\u0060\u0060\nFitur ini mengizinkan payload JSON menyertakan tipe class C# yang akan diinstansiasi secara otomatis (\u0060$type: \u0022System.Diagnostics.Process...\u0022\u0060). Hacker dapat mengirim payload JSON yang mengeksekusi perintah shell berbahaya di server Anda!\n\nGunakan **\u0060System.Text.Json\u0060** bawaan .NET 8 yang secara desain aman dari eksploitasi tipe polimorfik sembarangan.\n\n---\n\n## 5. Ringkasan \u0026 Aturan Audit OWASP\n\n1. **Parameterize Everything**: Jangan pernah menyusun perintah SQL dengan penggabungan string.\n2. **Never Trust URLs from Users**: Selalu validasi IP target sebelum memanggil \u0060HttpClient.GetAsync\u0060 untuk memblokir SSRF ke jaringan intranet atau cloud metadata.\n3. **Enforce Ownership Boundaries**: Setiap query data spesifik entitas harus menyertakan Tenant ID / User ID pemilik data yang sedang terotentikasi.",
+  "starterCode": "using System;\nusing System.Net;\n\n// Simulasi SSRF IP Validator\npublic class SsrfGuard\n{\n    public static bool IsSafePublicUrl(string urlString)\n    {\n        if (!Uri.TryCreate(urlString, UriKind.Absolute, out var uri))\n            return false;\n\n        // Hanya izinkan skema HTTP / HTTPS\n        if (uri.Scheme != Uri.UriSchemeHttp \u0026\u0026 uri.Scheme != Uri.UriSchemeHttps)\n            return false;\n\n        // TODO:\n        // 1. Dapatkan IP address dari uri.Host menggunakan Dns.GetHostAddresses(uri.Host).\n        // 2. Periksa apakah IP tersebut adalah loopback (IPAddress.IsLoopback), \n        //    atau link-local metadata (169.254.169.254), atau private network (10.x, 192.168.x).\n        //    Jika masuk ke range berbahaya, kembalikan FALSE.\n        // 3. Jika IP publik aman, kembalikan TRUE.\n\n        return true;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        string safeUrl = \u0022https://api.github.com/users/octocat\u0022;\n        string maliciousSsrfUrl = \u0022http://127.0.0.1:8080/admin/delete\u0022;\n        string cloudMetadataUrl = \u0022http://169.254.169.254/latest/meta-data/\u0022;\n\n        Console.WriteLine($\u0022Github URL Aman?         : {SsrfGuard.IsSafePublicUrl(safeUrl)} (Ekspektasi: True)\u0022);\n        Console.WriteLine($\u0022Localhost SSRF Diblokir? : {!SsrfGuard.IsSafePublicUrl(maliciousSsrfUrl)} (Ekspektasi: True)\u0022);\n        Console.WriteLine($\u0022Cloud Metadata Diblokir? : {!SsrfGuard.IsSafePublicUrl(cloudMetadataUrl)} (Ekspektasi: True)\u0022);\n    }\n}",
+  "solutionCode": "using System;\nusing System.Net;\n\npublic class SsrfGuard\n{\n    public static bool IsSafePublicUrl(string urlString)\n    {\n        if (!Uri.TryCreate(urlString, UriKind.Absolute, out var uri))\n            return false;\n\n        if (uri.Scheme != Uri.UriSchemeHttp \u0026\u0026 uri.Scheme != Uri.UriSchemeHttps)\n            return false;\n\n        try\n        {\n            var addresses = Dns.GetHostAddresses(uri.Host);\n            foreach (var ip in addresses)\n            {\n                if (IPAddress.IsLoopback(ip)) return false;\n\n                byte[] bytes = ip.GetAddressBytes();\n                if (bytes.Length == 4) // IPv4 check\n                {\n                    // 10.0.0.0/8\n                    if (bytes[0] == 10) return false;\n\n                    // 172.16.0.0/12\n                    if (bytes[0] == 172 \u0026\u0026 (bytes[1] \u003E= 16 \u0026\u0026 bytes[1] \u003C= 31)) return false;\n\n                    // 192.168.0.0/16\n                    if (bytes[0] == 192 \u0026\u0026 bytes[1] == 168) return false;\n\n                    // 169.254.0.0/16 (Link Local / Cloud Metadata)\n                    if (bytes[0] == 169 \u0026\u0026 bytes[1] == 254) return false;\n                }\n            }\n            return true;\n        }\n        catch\n        {\n            return false;\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        string safeUrl = \u0022https://api.github.com/users/octocat\u0022;\n        string maliciousSsrfUrl = \u0022http://127.0.0.1:8080/admin/delete\u0022;\n        string cloudMetadataUrl = \u0022http://169.254.169.254/latest/meta-data/\u0022;\n\n        Console.WriteLine($\u0022Github URL Aman?         : {SsrfGuard.IsSafePublicUrl(safeUrl)} (Ekspektasi: True)\u0022);\n        Console.WriteLine($\u0022Localhost SSRF Diblokir? : {!SsrfGuard.IsSafePublicUrl(maliciousSsrfUrl)} (Ekspektasi: True)\u0022);\n        Console.WriteLine($\u0022Cloud Metadata Diblokir? : {!SsrfGuard.IsSafePublicUrl(cloudMetadataUrl)} (Ekspektasi: True)\u0022);\n    }\n}",
+  "quizQuestions": [
+    {
+      "id": "q-15-03-1",
+      "type": "single_choice",
+      "question": "Mengapa IP \u0027169.254.169.254\u0027 menjadi target serangan paling favorit bagi peretas saat mengeksploitasi celah SSRF (Server-Side Request Forgery) di lingkungan cloud?",
+      "options": [
+        "Karena IP tersebut adalah server game online terpopuler.",
+        "Karena itu adalah link-local address untuk Cloud Instance Metadata Service (AWS/Azure/GCP) yang menyediakan kredensial token IAM peran sementara milik server.",
+        "Karena IP tersebut otomatis memformat seluruh harddisk cloud provider.",
+        "Karena IP tersebut berisi database kartu kredit seluruh dunia."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Cloud provider (seperti AWS EC2, GCP Compute Engine, Azure VM) menggunakan IP 169.254.169.254 sebagai Instance Metadata Service (IMDS). Jika server backend dapat diperintahkan mengambil data dari IP ini via SSRF, penyerang dapat mengekstrak secret access keys IAM yang digunakan oleh instance tersebut.",
+      "optionExplanations": [
+        "Salah. Tidak berkaitan dengan game server.",
+        "Benar! Cloud Instance Metadata Service membocorkan token kredensial IAM backend jika diakses via SSRF.",
+        "Salah. Tidak ada fungsi penghapusan harddisk otomatis.",
+        "Salah. Ini adalah endpoint konfigurasi infrastruktur cloud internal."
+      ],
+      "sectionRef": "2. Server-Side Request Forgery (SSRF)",
+      "difficulty": "Advanced"
+    },
+    {
+      "id": "q-15-03-2",
+      "type": "single_choice",
+      "question": "Apa definisi dari kerentanan IDOR / BOLA (Broken Object-Level Authorization)?",
+      "options": [
+        "Ketika server kehabisan memori RAM saat memproses gambar.",
+        "Ketika endpoint API menerima ID objek (misal /api/orders/55) dan langsung mengembalikan datanya tanpa memvalidasi apakah pengguna yang sedang login memiliki hak kepemilikan atas objek tersebut.",
+        "Ketika kabel jaringan terputus akibat tikus.",
+        "Ketika pengguna salah memasukkan password sebanyak 3 kali berturut-turut."
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "IDOR/BOLA terjadi ketika aplikasi mengandalkan ID objek yang disediakan oleh user secara langsung tanpa memeriksa apakah pengguna yang membuat request memiliki otoritas/kepemilikan atas entitas target.",
+      "optionExplanations": [
+        "Salah. Itu adalah masalah resource allocation.",
+        "Benar! Kegagalan memvalidasi hak kepemilikan objek menyebabkan pengguna dapat mengintip/mengubah data pengguna lain.",
+        "Salah. Itu adalah kerusakan fisik kabel.",
+        "Salah. Itu adalah kebijakan lockout otentikasi."
+      ],
+      "sectionRef": "3. IDOR / BOLA (Broken Object-Level Authorization)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "cc-15-03",
+    "Title": "Pencegah Serangan Server-Side Request Forgery (SSRF Private IP Guard)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat firewall pemvalidasi alamat IP target outgoing HTTP request untuk mencegah serangan SSRF.\nBaca satu alamat IPv4 dari stdin (misal \u0027127.0.0.1\u0027 atau \u00278.8.8.8\u0027).\nBlokir (\u0027BLOCKED_SSRF\u0027) jika IP termasuk dalam rentang jaringan privat atau loopback:\n- Loopback: \u0060127.0.0.0/8\u0060 (dimulai 127.)\n- Private Class A: \u006010.0.0.0/8\u0060 (dimulai 10.)\n- Private Class B: \u0060172.16.0.0/12\u0060 (172.16.x.x s/d 172.31.x.x)\n- Private Class C: \u0060192.168.0.0/16\u0060 (dimulai 192.168.)\n- Link-Local: \u0060169.254.0.0/16\u0060 (dimulai 169.254.)\nJika di luar rentang di atas, cetak \u0027ALLOWED_PUBLIC\u0027.",
+    "InputFormat": "Satu baris alamat string IPv4.",
+    "OutputFormat": "Satu baris: \u0027BLOCKED_SSRF\u0027 atau \u0027ALLOWED_PUBLIC\u0027.",
+    "Constraints": "Format IPv4 4 oktet integer.",
+    "Examples": [
+      {
+        "Input": "127.0.0.1",
+        "Output": "BLOCKED_SSRF",
+        "Explanation": "Loopback internal dilarang diakses."
+      },
+      {
+        "Input": "93.184.216.34",
+        "Output": "ALLOWED_PUBLIC",
+        "Explanation": "IP publik aman diakses."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Net;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? ipStr = Console.ReadLine();\n        // TODO: Periksa subnet privat dan loopback IPv4.\n        Console.WriteLine(\u0022BLOCKED_SSRF\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Net;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? ipStr = Console.ReadLine()?.Trim();\n        if (string.IsNullOrEmpty(ipStr) || !IPAddress.TryParse(ipStr, out var ip))\n        {\n            Console.WriteLine(\u0022BLOCKED_SSRF\u0022);\n            return;\n        }\n\n        byte[] b = ip.GetAddressBytes();\n        if (b.Length != 4)\n        {\n            Console.WriteLine(\u0022BLOCKED_SSRF\u0022);\n            return;\n        }\n\n        bool isPrivate =\n            b[0] == 127 ||\n            b[0] == 10 ||\n            (b[0] == 172 \u0026\u0026 b[1] \u003E= 16 \u0026\u0026 b[1] \u003C= 31) ||\n            (b[0] == 192 \u0026\u0026 b[1] == 168) ||\n            (b[0] == 169 \u0026\u0026 b[1] == 254) ||\n            b[0] == 0;\n\n        Console.WriteLine(isPrivate ? \u0022BLOCKED_SSRF\u0022 : \u0022ALLOWED_PUBLIC\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Loopback)",
+        "Description": "Contoh 1 (Loopback): input \u0027127.0.0.1\u0027 -\u003E expected \u0027BLOCKED_SSRF\u0027",
+        "Input": "127.0.0.1",
+        "ExpectedOutput": "BLOCKED_SSRF",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Publik)",
+        "Description": "Contoh 2 (Publik): input \u002793.184.216.34\u0027 -\u003E expected \u0027ALLOWED_PUBLIC\u0027",
+        "Input": "93.184.216.34",
+        "ExpectedOutput": "ALLOWED_PUBLIC",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Private Class A",
+        "Description": "Private Class A: input \u002710.0.1.5\u0027 -\u003E expected \u0027BLOCKED_SSRF\u0027",
+        "Input": "10.0.1.5",
+        "ExpectedOutput": "BLOCKED_SSRF",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Private Class B",
+        "Description": "Private Class B: input \u0027172.20.0.1\u0027 -\u003E expected \u0027BLOCKED_SSRF\u0027",
+        "Input": "172.20.0.1",
+        "ExpectedOutput": "BLOCKED_SSRF",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Private Class C",
+        "Description": "Private Class C: input \u0027192.168.1.1\u0027 -\u003E expected \u0027BLOCKED_SSRF\u0027",
+        "Input": "192.168.1.1",
+        "ExpectedOutput": "BLOCKED_SSRF",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Public Google DNS",
+        "Description": "Public Google DNS: input \u00278.8.8.8\u0027 -\u003E expected \u0027ALLOWED_PUBLIC\u0027",
+        "Input": "8.8.8.8",
+        "ExpectedOutput": "ALLOWED_PUBLIC",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan IPAddress.GetAddressBytes() untuk mengecek 4 byte oktet IP.",
+      "Uji oktet: b[0] == 127 (loopback), b[0] == 10, (b[0] == 172 \u0026\u0026 b[1] \u003E= 16 \u0026\u0026 b[1] \u003C= 31), dll."
+    ],
+    "Explanation": "Proteksi SSRF wajib diterapkan pada backend yang melakukan panggilan HTTP keluar berdasarkan input URL pengguna untuk mencegah akses tidak sah ke metadata server cloud (169.254.169.254) atau intranet database internal."
+  },
+  "relatedLessons": [
+    "lesson-10-01",
+    "lesson-04-05",
+    "lesson-15-01"
+  ],
+  "references": [
+    {
+      "title": "OWASP Top 10 Web Application Security Risks",
+      "url": "https://owasp.org/www-project-top-ten/",
+      "type": "documentation"
+    },
+    {
+      "title": "OWASP Server-Side Request Forgery Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "type": "article"
+    }
+  ]
+}

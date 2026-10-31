@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-03",
+  "levelId": "level-02",
+  "moduleId": "mod-02-01",
+  "order": 3,
+  "title": "Sistem Tipe C#: Integer, Floating Point, Decimal, Boolean, dan Char",
+  "slug": "csharp-primitive-type-system",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membedah sistem tipe data primitif C#: ukuran memori, rentang nilai, bahaya binary floating point (double/float) pada kalkulasi uang, dan alasan mutlak menggunakan decimal 128-bit untuk saldo finansial.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-05",
+      "title": "Aritmatika Biner \u0026 Two\u0027s Complement",
+      "levelName": "LEVEL 00",
+      "context": "Memahami representasi biner signed integer."
+    }
+  ],
+  "introduces": [
+    "Integral Types (sbyte, byte, short, int, long)",
+    "IEEE 754 Floating Point (float, double)",
+    "Base-10 Decimal (128-bit)",
+    "Precision vs Range",
+    "Floating Point Rounding Errors",
+    "Nullable Types (int?)"
+  ],
+  "learningObjectives": [
+    "Memilih tipe data numerik yang tepat berdasarkan rentang nilai dan kebutuhan ruang memori.",
+    "Menganalisis mengapa operasi 0.1 \u002B 0.2 != 0.3 pada tipe double di C#.",
+    "Menerapkan tipe decimal secara disiplin untuk seluruh entitas finansial dan perbankan."
+  ],
+  "markdownContent": "# Sistem Tipe C#: Integer, Floating Point, Decimal, Boolean, dan Char\n\n## Peta Lengkap Tipe Primitif C#\nC# adalah bahasa yang **Statically Typed (Tipe Statis)** dan **Type-Safe**. Setiap variabel memiliki tipe terdefinisi yang divalidasi oleh compiler sebelum kode dijalankan.\n\n### 1. Tipe Bilangan Bulat (Integral Types)\n| Alias C# | Tipe .NET | Ukuran Memori | Rentang Nilai |\n| :--- | :--- | :---: | :--- |\n| \u0060byte\u0060 | \u0060System.Byte\u0060 | 1 Byte (8 bit) | 0 sampai 255 (Unsigned) |\n| \u0060sbyte\u0060 | \u0060System.SByte\u0060 | 1 Byte (8 bit) | -128 sampai 127 (Signed Two\u0027s Complement) |\n| \u0060short\u0060 | \u0060System.Int16\u0060 | 2 Byte (16 bit) | -32.768 sampai 32.767 |\n| \u0060int\u0060 | \u0060System.Int32\u0060 | 4 Byte (32 bit) | **-2,14 Miliar sampai \u002B2,14 Miliar** (Default C#) |\n| \u0060long\u0060 | \u0060System.Int64\u0060 | 8 Byte (64 bit) | -9,22 Triliun Miliar sampai \u002B9,22 Triliun Miliar |\n\n---\n\n## Bencana Finansial: Mengapa Dilarang Pakai \u0060double\u0060 untuk Uang?\nPerhatikan eksperimen sederhana berikut:\n\u0060\u0060\u0060csharp\ndouble a = 0.1;\ndouble b = 0.2;\nConsole.WriteLine(a \u002B b == 0.3); // MENCETAK: FALSE!\nConsole.WriteLine(a \u002B b);        // MENCETAK: 0.30000000000000004\n\u0060\u0060\u0060\n\n### Mengapa Hal Ini Terjadi?\nProsesor menggunakan standar **IEEE 754 Floating Point** (Basis 2 / Biner):\n- Sebagaimana angka \u2153 (1/3 = 0.33333...) tidak dapat ditulis secara presisi dalam desimal basis 10, angka desimal \u00600.1\u0060 (sepersepuluh) **tidak memiliki representasi biner terhingga dalam basis 2** (\u00600.0001100110011...\u0060).\n- Akibatnya terjadi kesalahan pembulatan fraksional kecil (*floating-point rounding error*).\n- Jika sistem perbankan menghitung bunga harian jutaan nasabah menggunakan \u0060double\u0060, saldo pembukuan (*ledger balance*) akan selisih dan gagal audit finansial!\n\n---\n\n## Solusi Enterprise: Tipe \u0060decimal\u0060 (128-Bit Base-10)\nUntuk transaksi finansial, C# menyediakan tipe **\u0060decimal\u0060 (16 Byte / 128 bit)**:\n- Beroperasi dalam **Basis 10**, bukan basis 2!\n- Memiliki presisi hingga **28-29 digit desimal signifikan tanpa ada rounding error** pada angka pecahan desimal seperti 0.1 atau 0.2.\n\n\u0060\u0060\u0060csharp\ndecimal uangA = 0.1m; // Suffix \u0027m\u0027 wajib untuk literal decimal\ndecimal uangB = 0.2m;\nConsole.WriteLine(uangA \u002B uangB == 0.3m); // MENCETAK: TRUE! Tepat 100%!\n\u0060\u0060\u0060\n\n---\n\n## Nullable Value Types (\u0060T?\u0060)\nSecara default, tipe primitif (seperti \u0060int\u0060, \u0060bool\u0060, \u0060decimal\u0060) tidak boleh bernilai \u0060null\u0060.\nNamun di database, kolom seperti \u0060TanggalLahir\u0060 atau \u0060NomorKredit\u0060 dapat bernilai NULL. C# menyediakan **Nullable Value Types**:\n\u0060\u0060\u0060csharp\nint? kuponDiskon = null; // Valid! Merepresentasikan ketiadaan nilai di database.\nif (kuponDiskon.HasValue)\n{\n    Console.WriteLine($\u0022Diskon: {kuponDiskon.Value}%\u0022);\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Pembuktian Ilmiah Double vs Decimal pada Kasus Finansial\nConsole.WriteLine(\u0022=== EKSPERIMEN FLOATING POINT IEEE 754 ===\u0022);\n\n// 1. Menggunakan DOUBLE (Floating Point Biner)\ndouble saldoDouble = 0.0;\nfor (int i = 0; i \u003C 10; i\u002B\u002B)\n{\n    saldoDouble \u002B= 0.1;\n}\nConsole.WriteLine($\u0022Hasil akumulasi 10 x 0.1 dengan DOUBLE : {saldoDouble:R}\u0022);\nConsole.WriteLine($\u0022Apakah tepat sama dengan 1.0? : {saldoDouble == 1.0}\u0022);\n\n// 2. Menggunakan DECIMAL (Base-10 Fixed Precision)\ndecimal saldoDecimal = 0.0m;\nfor (int i = 0; i \u003C 10; i\u002B\u002B)\n{\n    saldoDecimal \u002B= 0.1m;\n}\nConsole.WriteLine($\u0022\\nHasil akumulasi 10 x 0.1 dengan DECIMAL: {saldoDecimal}\u0022);\nConsole.WriteLine($\u0022Apakah tepat sama dengan 1.0m?: {saldoDecimal == 1.0m}\u0022);\n\n// TODO: Perhatikan mengapa tipe decimal adalah keharusan mutlak di sistem backend perbankan!",
+  "quizQuestions": [
+    {
+      "id": "q-02-03-1",
+      "type": "MultipleChoice",
+      "question": "Tipe data numerik manakah di C# yang WAJIB digunakan untuk kalkulasi moneter/finansial untuk mencegah bug floating-point rounding error?",
+      "options": [
+        "float",
+        "double",
+        "decimal",
+        "long"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Tipe \u0060decimal\u0060 beroperasi pada aritmatika basis 10 dengan 128 bit, memberikan presisi 28-29 digit bebas dari kesalahan representasi biner IEEE 754.",
+      "optionExplanations": [
+        "Salah. Float menggunakan IEEE 754 32-bit basis 2 dengan presisi sangat rendah (~7 digit).",
+        "Salah. Double menggunakan IEEE 754 64-bit basis 2 dan rentan terhadap akumulasi rounding error.",
+        "Benar! Decimal dirancang khusus untuk perhitungan finansial dan moneter.",
+        "Salah. Long hanya untuk bilangan bulat dan tidak dapat menyimpan nilai pecahan sen/rupiah."
+      ],
+      "sectionRef": "Bencana Finansial: Mengapa Dilarang Pakai double untuk Uang?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-03-2",
+      "type": "MultipleChoice",
+      "question": "Berapa ukuran alokasi memori fisik untuk satu variabel bertipe \u0060int\u0060 (System.Int32) di C#?",
+      "options": [
+        "2 Byte (16 bit)",
+        "4 Byte (32 bit)",
+        "8 Byte (64 bit)",
+        "16 Byte (128 bit)"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060int\u0060 di C# adalah alias dari \u0060System.Int32\u0060 yang selalu menempati tepat 4 byte (32 bit) memori.",
+      "optionExplanations": [
+        "Salah. 2 byte adalah ukuran tipe short (Int16).",
+        "Benar! int menempati 4 byte (32 bit) memori.",
+        "Salah. 8 byte adalah ukuran tipe long (Int64).",
+        "Salah. 16 byte adalah ukuran tipe decimal."
+      ],
+      "sectionRef": "Peta Lengkap Tipe Primitif C#",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-03",
+    "Title": "Kalkulator Bunga Majemuk Finansial Presisi Decimal",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca tiga nilai dari stdin: Pokok (decimal), SukuBungaTahunanDalamPersen (decimal), dan JumlahTahun (int).\nHitung total saldo akhir bunga majemuk tahunan menggunakan tipe \u0027decimal\u0027 dengan rumus:\nSaldo = Pokok * (1 \u002B SukuBunga / 100)^JumlahTahun.\nBulatkan hasil akhir ke 2 digit desimal (banker\u0027s rounding MidpointRounding.ToEven) dan cetak hasilnya.",
+    "InputFormat": "Satu baris: Pokok SukuBunga Tahun (misal: \u00271000000 10 2\u0027).",
+    "OutputFormat": "Satu baris angka desimal 2 digit di belakang koma (misal: \u00271210000.00\u0027).",
+    "Constraints": "Pokok \u003E= 0, Bunga \u003E= 0, Tahun \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "1000000 10 2",
+        "Output": "1210000.00",
+        "Explanation": "1.000.000 * (1.1)^2 = 1.210.000,00."
+      },
+      {
+        "Input": "500000 5 1",
+        "Output": "525000.00",
+        "Explanation": "500.000 * 1.05 = 525.000,00."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        // TODO: Hitung akumulasi saldo dengan tipe decimal dan format N2.\n        Console.WriteLine(\u00220.00\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 3) return;\n\n        decimal principal = decimal.Parse(p[0], CultureInfo.InvariantCulture);\n        decimal rate = decimal.Parse(p[1], CultureInfo.InvariantCulture) / 100m;\n        int years = int.Parse(p[2]);\n\n        decimal total = principal;\n        for (int i = 0; i \u003C years; i\u002B\u002B)\n        {\n            total *= (1m \u002B rate);\n        }\n\n        total = Math.Round(total, 2, MidpointRounding.ToEven);\n        Console.WriteLine(total.ToString(\u00220.00\u0022, CultureInfo.InvariantCulture));\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (2 Tahun 10%)",
+        "Description": "Contoh 1 (2 Tahun 10%): input \u00271000000 10 2\u0027 -\u003E expected \u00271210000.00\u0027",
+        "Input": "1000000 10 2",
+        "ExpectedOutput": "1210000.00",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (1 Tahun 5%)",
+        "Description": "Contoh 2 (1 Tahun 5%): input \u0027500000 5 1\u0027 -\u003E expected \u0027525000.00\u0027",
+        "Input": "500000 5 1",
+        "ExpectedOutput": "525000.00",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "0 Tahun (Pokok Tetap)",
+        "Description": "0 Tahun (Pokok Tetap): input \u0027750000 12 0\u0027 -\u003E expected \u0027750000.00\u0027",
+        "Input": "750000 12 0",
+        "ExpectedOutput": "750000.00",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Bunga Desimal",
+        "Description": "Bunga Desimal: input \u002710000 7.5 3\u0027 -\u003E expected \u002712423.00\u0027",
+        "Input": "10000 7.5 3",
+        "ExpectedOutput": "12423.00",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Selalu gunakan tipe data decimal untuk komputasi finansial demi mencegah rounding error biner float/double.",
+      "Format string desimal persis dengan ToString(\u00220.00\u0022, CultureInfo.InvariantCulture)."
+    ],
+    "Explanation": "Tipe decimal di C# memiliki presisi 128-bit berbasis desimal, wajib digunakan untuk sistem perbankan guna menghindari selisih floating point."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Bagaimana tipe primitif dialokasikan di memori Stack."
+    },
+    {
+      "lessonId": "lesson-18-01",
+      "title": "Arsitektur Double-Entry Ledger",
+      "levelName": "LEVEL 18",
+      "context": "Penerapan tipe decimal pada sistem akuntansi perbankan berskala besar."
+    }
+  ],
+  "references": [
+    {
+      "title": "Integral numeric types - C# reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/integral-numeric-types"
+    },
+    {
+      "title": "Why Floating Point Numbers Lead to Rounding Errors",
+      "url": "https://floating-point-gui.de/"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class FinancialInterestCalculator\n{\n    public static decimal CalculateSimpleInterest(decimal saldoAwal, decimal bungaPersenTahunan, int durasiBulan)\n    {\n        if (saldoAwal \u003C= 0 || bungaPersenTahunan \u003C= 0 || durasiBulan \u003C= 0)\n            return 0m;\n\n        decimal interestRate = bungaPersenTahunan / 100m;\n        decimal timeInYears = (decimal)durasiBulan / 12m;\n        decimal totalInterest = saldoAwal * interestRate * timeInYears;\n        decimal totalAmount = saldoAwal \u002B totalInterest;\n\n        return Math.Round(totalAmount, 2, MidpointRounding.AwayFromZero);\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(CalculateSimpleInterest(1000000m, 12m, 6));\n    }\n}"
+}

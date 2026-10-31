@@ -1,0 +1,169 @@
+{
+  "id": "lesson-01-04",
+  "levelId": "level-01",
+  "moduleId": "mod-01-02",
+  "order": 4,
+  "title": "Logika Boolean, Tabel Kebenaran, dan Ekspresi Kondisional",
+  "slug": "boolean-logic-truth-tables",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 35,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami fondasi aljabar Boolean (AND, OR, NOT, XOR), hukum De Morgan untuk menyederhanakan ekspresi kondisional bersarang yang rumit, dan mekanisme Short-Circuit Evaluation pada backend.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-04",
+      "title": "Sistem Biner \u0026 Heksadesimal",
+      "levelName": "LEVEL 00",
+      "context": "Memahami kondisi logika 0 (False) dan 1 (True)."
+    }
+  ],
+  "introduces": [
+    "Boolean Algebra",
+    "Truth Tables",
+    "Short-Circuit Evaluation (\u0026\u0026 vs \u0026)",
+    "De Morgan\u0027s Laws",
+    "Ternary Operator (? :)",
+    "Null-Coalescing Operator (??)"
+  ],
+  "learningObjectives": [
+    "Menganalisis tabel kebenaran untuk operator logika AND, OR, XOR, dan NOT.",
+    "Menerapkan Hukum De Morgan untuk merapikan kondisi if yang berantakan.",
+    "Menjelaskan risiko bug keamanan akibat evaluasi Short-Circuit pada autentikasi backend."
+  ],
+  "markdownContent": "# Logika Boolean, Tabel Kebenaran, dan Ekspresi Kondisional\n\n## Aljabar Boolean: Otak dari Seluruh Keputusan Backend\nSetiap aturan bisnis di backend perbankan\u2014apakah seorang pengguna diizinkan menarik uang, apakah pesanan berhak menerima diskon promo, atau apakah request API lolos firewall\u2014pada akhirnya dievaluasi menjadi nilai **Boolean tunggal: \u0060true\u0060 atau \u0060false\u0060**.\n\nDiciptakan oleh George Boole pada tahun 1847, aljabar Boolean bertumpu pada 4 operasi logika dasar:\n\n| Input A | Input B | A AND B (\u0060\u0026\u0026\u0060) | A OR B (\u0060||\u0060) | A XOR B (\u0060^\u0060) | NOT A (\u0060!\u0060) |\n| :---: | :---: | :---: | :---: | :---: | :---: |\n| False | False | **False** | **False** | **False** | **True** |\n| False | True | **False** | **True** | **True** | **True** |\n| True | False | **False** | **True** | **True** | **False** |\n| True | True | **True** | **True** | **False** | **False** |\n\n---\n\n## Mekanisme Kritis: Short-Circuit Evaluation\nDi C#, terdapat perbedaan fundamental antara operator logika ganda (\u0060\u0026\u0026\u0060, \u0060||\u0060) dan operator logika tunggal (\u0060\u0026\u0060, \u0060|\u0060):\n\n\u0060\u0060\u0060csharp\n// SHORT-CIRCUIT EVALUATION (\u0026\u0026):\n// Jika ekspresi kiri bernilai FALSE, ekspresi kanan TIDAK AKAN PERNAH DIEKSEKUSI!\nif (user != null \u0026\u0026 user.IsActive)\n{\n    // Aman 100%! user.IsActive tidak akan dipanggil jika user bernilai null.\n}\n\n// NON-SHORT-CIRCUIT (\u0026):\n// Kedua ekspresi WAJIB dievaluasi apapun hasil ekspresi kiri!\nif (user != null \u0026 user.IsActive)\n{\n    // BAHAYA FATAL! Jika user == null, runtime melempar NullReferenceException!\n}\n\u0060\u0060\u0060\n\n---\n\n## Hukum De Morgan: Senjata Rahasia Clean Code\nBanyak developer junior menulis kondisi negasi yang sulit dibaca dan rentan bug:\n\u0060\u0060\u0060csharp\n// KODE SULIT DIBACA (Negasi di luar):\nif (!(isWeekend || isHoliday)) { ... }\n\u0060\u0060\u0060\n\nBerdasarkan **Hukum De Morgan (De Morgan\u0027s Laws)**:\n1. \u0060!(A || B)\u0060 identik dengan \u0060!A \u0026\u0026 !B\u0060\n   *(Bukan akhir pekan DAN bukan hari libur)*\n2. \u0060!(A \u0026\u0026 B)\u0060 identik dengan \u0060!A || !B\u0060\n\nDengan menerapkan hukum ini, Anda dapat menyederhanakan ekspresi kompleks:\n\u0060\u0060\u0060csharp\n// BERSIH DAN INTUITIF:\nif (!isWeekend \u0026\u0026 !isHoliday)\n{\n    ProsesTransaksiKliring();\n}\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Short-Circuit Evaluation dan Hukum De Morgan\nbool CekKoneksiDatabase()\n{\n    Console.WriteLine(\u0022[LOG] Memeriksa koneksi database... (Operasi Mahal)\u0022);\n    return true;\n}\n\nbool isCacheValid = false;\n\nConsole.WriteLine(\u0022=== UJI 1: Short-Circuit (||) ===\u0022);\n// Karena isCacheValid bernilai FALSE, sisi kanan WAJIB dievaluasi\nif (isCacheValid || CekKoneksiDatabase())\n{\n    Console.WriteLine(\u0022Hasil: Data berhasil diambil.\u0022);\n}\n\nConsole.WriteLine(\u0022\\n=== UJI 2: Short-Circuit saat Kiri TRUE ===\u0022);\nisCacheValid = true;\n// Karena sisi kiri bernilai TRUE, method CekKoneksiDatabase() TIDAK AKAN DIPANGGIL sama sekali!\nif (isCacheValid || CekKoneksiDatabase())\n{\n    Console.WriteLine(\u0022Hasil: Data diambil instan dari cache!\u0022);\n}\n\n// TODO: Perhatikan di terminal bahwa baris log koneksi database kedua tidak muncul!",
+  "quizQuestions": [
+    {
+      "id": "q-01-04-1",
+      "type": "MultipleChoice",
+      "question": "Berdasarkan Hukum De Morgan, ekspresi logika \u0060!(isVIP || hasCoupon)\u0060 setara dengan ekspresi mana?",
+      "options": [
+        "!isVIP || !hasCoupon",
+        "!isVIP \u0026\u0026 !hasCoupon",
+        "isVIP \u0026\u0026 hasCoupon",
+        "!isVIP \u0026\u0026 hasCoupon"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Hukum De Morgan menyatakan bahwa negasi dari disjungsi \u0060!(A || B)\u0060 setara dengan konjungsi dari negasi-negasinya \u0060!A \u0026\u0026 !B\u0060.",
+      "optionExplanations": [
+        "Salah. Tanda OR (||) harus berubah menjadi AND (\u0026\u0026).",
+        "Benar! \u0060!(A || B)\u0060 ekuivalen dengan \u0060!A \u0026\u0026 !B\u0060.",
+        "Salah. Negasi pada kedua variabel hilang.",
+        "Salah. Hanya variabel pertama yang dinegasi."
+      ],
+      "sectionRef": "Hukum De Morgan: Senjata Rahasia Clean Code",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-01-04-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa operator \u0060\u0026\u0026\u0060 (Short-Circuit) lebih disukai daripada operator \u0060\u0026\u0060 ketika memeriksa objek nullable (seperti \u0060user != null \u0026\u0026 user.IsActive\u0060)?",
+      "options": [
+        "Karena operator \u0060\u0026\u0060 tidak valid di C#",
+        "Karena operator \u0060\u0026\u0026\u0060 menghentikan evaluasi jika sisi kiri bernilai false, sehingga mencegah NullReferenceException pada sisi kanan",
+        "Karena \u0060\u0026\u0026\u0060 mengalokasikan memori di stack sedangkan \u0060\u0026\u0060 di heap",
+        "Karena \u0060\u0026\u0026\u0060 otomatis membuat method menjadi asynchronous"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Short-circuit evaluation menjamin jika \u0060user != null\u0060 menghasilkan false, maka \u0060user.IsActive\u0060 tidak akan pernah dieksekusi, melindungi kode dari crash akibat null pointer.",
+      "optionExplanations": [
+        "Salah. Operator \u0060\u0026\u0060 adalah operator bitwise / non-short-circuit boolean yang valid di C#.",
+        "Benar! Menghindari evaluasi sisi kanan ketika sisi kiri sudah menentukan hasil akhir.",
+        "Salah. Operator logika tidak mengalokasikan memori heap.",
+        "Salah. Operator logika tidak berhubungan dengan task async."
+      ],
+      "sectionRef": "Mekanisme Kritis: Short-Circuit Evaluation",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-01-04",
+    "Title": "Evaluator Kelayakan Kredit Perbankan Berbasis Logika Proposisi",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca tiga nilai dari stdin dipisahkan spasi: PendapatanBulanan (int), SkorKredit (int), dan RasioUtang (persen desimal float).\nSyarat disetujui (\u0027APPROVED\u0027):\n(Pendapatan \u003E= 5000000 AND SkorKredit \u003E= 700 AND RasioUtang \u003C= 0.40)\nATAU\n(Pendapatan \u003E= 15000000 AND SkorKredit \u003E= 650 AND RasioUtang \u003C= 0.50).\nJika tidak memenuhi, cetak \u0027REJECTED\u0027.",
+    "InputFormat": "Satu baris: Pendapatan (int) SkorKredit (int) RasioUtang (float).",
+    "OutputFormat": "Satu baris: \u0027APPROVED\u0027 atau \u0027REJECTED\u0027.",
+    "Constraints": "Pendapatan \u003E 0, SkorKredit 300..850, RasioUtang 0.0..1.0.",
+    "Examples": [
+      {
+        "Input": "6000000 720 0.35",
+        "Output": "APPROVED",
+        "Explanation": "Memenuhi aturan pertama: Pendapatan \u003E= 5jt, Skor \u003E= 700, Rasio \u003C= 40%."
+      },
+      {
+        "Input": "4000000 750 0.20",
+        "Output": "REJECTED",
+        "Explanation": "Pendapatan di bawah 5 juta."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        // TODO: Evaluasi proposisi logika perbankan.\n        Console.WriteLine(\u0022APPROVED\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var parts = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (parts.Length \u003C 3) return;\n\n        int income = int.Parse(parts[0]);\n        int score = int.Parse(parts[1]);\n        double dti = double.Parse(parts[2], CultureInfo.InvariantCulture);\n\n        bool cond1 = (income \u003E= 5000000 \u0026\u0026 score \u003E= 700 \u0026\u0026 dti \u003C= 0.40001);\n        bool cond2 = (income \u003E= 15000000 \u0026\u0026 score \u003E= 650 \u0026\u0026 dti \u003C= 0.50001);\n\n        Console.WriteLine((cond1 || cond2) ? \u0022APPROVED\u0022 : \u0022REJECTED\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Lolos Aturan 1)",
+        "Description": "Contoh 1 (Lolos Aturan 1): input \u00276000000 720 0.35\u0027 -\u003E expected \u0027APPROVED\u0027",
+        "Input": "6000000 720 0.35",
+        "ExpectedOutput": "APPROVED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Gagal Pendapatan)",
+        "Description": "Contoh 2 (Gagal Pendapatan): input \u00274000000 750 0.20\u0027 -\u003E expected \u0027REJECTED\u0027",
+        "Input": "4000000 750 0.20",
+        "ExpectedOutput": "REJECTED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Lolos Aturan High Income",
+        "Description": "Lolos Aturan High Income: input \u002720000000 660 0.45\u0027 -\u003E expected \u0027APPROVED\u0027",
+        "Input": "20000000 660 0.45",
+        "ExpectedOutput": "APPROVED",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "DTI Terlalu Tinggi",
+        "Description": "DTI Terlalu Tinggi: input \u002710000000 750 0.45\u0027 -\u003E expected \u0027REJECTED\u0027",
+        "Input": "10000000 750 0.45",
+        "ExpectedOutput": "REJECTED",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan operator logika C# \u0026\u0026 (AND) dan || (OR).",
+      "Gunakan CultureInfo.InvariantCulture saat membaca angka desimal titik."
+    ],
+    "Explanation": "Aturan bisnis enterprise perbankan dibangun dari proposisi logika majemuk deterministik untuk memitigasi risiko kredit nasabah."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-06",
+      "title": "Struktur Kontrol: If/Else \u0026 Pattern Matching",
+      "levelName": "LEVEL 02",
+      "context": "Penerapan ekspresi kondisional modern di C#."
+    },
+    {
+      "lessonId": "lesson-15-02",
+      "title": "Role-Based Access Control (RBAC)",
+      "levelName": "LEVEL 15",
+      "context": "Evaluasi izin keamanan multi-faktor menggunakan aljabar Boolean."
+    }
+  ],
+  "references": [
+    {
+      "title": "Boolean Logical Operators - C# Reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/operators/boolean-logical-operators"
+    },
+    {
+      "title": "De Morgan\u0027s Laws in Computer Science",
+      "url": "https://en.wikipedia.org/wiki/De_Morgan%27s_laws"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class LoanApprovalEngine\n{\n    public static bool IsLoanApproved(int age, decimal monthlyIncome, bool hasBadCredit, bool isPriorityCustomer)\n    {\n        if (age \u003C 21) return false;\n        if (hasBadCredit) return false;\n\n        decimal minIncome = isPriorityCustomer ? 3_000_000m : 5_000_000m;\n        return monthlyIncome \u003E= minIncome;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(IsLoanApproved(25, 6000000, false, false));\n        Console.WriteLine(IsLoanApproved(22, 4000000, false, true));\n        Console.WriteLine(IsLoanApproved(30, 10000000, true, false));\n    }\n}"
+}

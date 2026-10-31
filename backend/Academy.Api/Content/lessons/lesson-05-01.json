@@ -1,0 +1,110 @@
+{
+    "id":  "lesson-05-01",
+    "levelId":  "level-05",
+    "moduleId":  "mod-05-01",
+    "order":  1,
+    "title":  "Analisis Kompleksitas Big O: Waktu, Ruang, dan Trade-Off Sistem Skala Besar",
+    "slug":  "big-o-complexity-time-space-tradeoffs",
+    "difficulty":  "Intermediate",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menguasai notasi asimptotik Big O: mengukur laju pertumbuhan waktu eksekusi (Time Complexity) dan konsumsi memori (Space Complexity), analisis Best/Average/Worst Case, serta trade-off Time vs Space pada arsitektur caching enterprise.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-01-03",
+                              "title":  "Merancang Algoritma",
+                              "levelName":  "LEVEL 01",
+                              "context":  "Memahami struktur loop dan percabangan dalam algoritma."
+                          }
+                      ],
+    "introduces":  [
+                       "Big O Asymptotic Notation",
+                       "Time Complexity vs Space Complexity",
+                       "O(1) Constant",
+                       "O(log N) Logarithmic",
+                       "O(N) Linear",
+                       "O(N log N) Linearithmic",
+                       "O(N^2) Quadratic Catastrophe",
+                       "Time-Space Trade-off"
+                   ],
+    "learningObjectives":  [
+                               "Menganalisis kompleksitas asimptotik dari cuplikan kode C# berdasarkan pertumbuhan input N.",
+                               "Mengidentifikasi jebakan O(N^2) pada loop bersarang yang melumpuhkan performa database dan API.",
+                               "Menerapkan prinsip Time-Space Trade-off (mengorbankan RAM melalui caching untuk memangkas latensi waktu)."
+                           ],
+    "markdownContent":  "# Analisis Kompleksitas Big O: Waktu, Ruang, dan Trade-Off Sistem Skala Besar\n\n## Mengapa Big O Sangat Penting bagi Backend Engineer?\nDi laptop developer dengan data dummy 50 baris, algoritma yang buruk sekalipun akan terasa instan (\u003c 1 milidetik).\nNamun ketika sistem go-live di perbankan dengan **10.000.000 transaksi**:\n- Algoritma `O(N)` membutuhkan ~10.000.000 operasi (selesai dalam hitungan milidetik).\n- Algoritma `O(NÂ²)` membutuhkan 10Â¹â´ operasiâ€”**membutuhkan waktu berminggu-minggu dan melumpuhkan seluruh server produksi!**\n\n**Big O Notation** adalah bahasa universal computer science untuk mengukur **bagaimana kebutuhan waktu atau memori suatu algoritma tumbuh seiring bertambahnya ukuran input (`N`) menuju tak terhingga**.\n\n---\n\n## Spektrum Kurva Kompleksitas Big O\n\n```text\nWAKTU\n  ^\n  |                                        O(2^N) / O(N!) [BENCANA EKSPONENSIAL]\n  |                                 |\n  |                           |     |      O(N^2) [KUADRATIK - HINDARI PADA HOT PATH]\n  |                     |     |     |\n  |               |     |     |     |      O(N log N) [QUICKSORT, MERGESORT]\n  |         |     |     |     |     |\n  |   |     |     |     |     |     |      O(N) [LINEAR SCAN]\n  |--------------------------------------  O(log N) [BINARY SEARCH, B-TREE INDEX]\n  |======================================  O(1) [CONSTANT HASH LOOKUP]\n  +--------------------------------------\u003e UKURAN DATA (N)\n```\n\n---\n\n## Membedah Kasus Nyata di Kode C#\n\n### 1. O(1) - Constant Time (Waktu Konstan)\nWaktu eksekusi sama persis, tidak peduli apakah data berjumlah 10 elemen atau 10 miliar elemen:\n```csharp\nint item = array[0]; // Akses indeks array langsung via offset alamat\nbool exists = dictionary.ContainsKey(\"ACC-99\"); // Hash table lookup\n```\n\n### 2. O(log N) - Logarithmic Time (Sangat Efisien)\nSetiap langkah membagi sisa data pencarian menjadi setengah:\n```csharp\n// Binary Search pada data terurut:\n// Untuk 1.000.000 data, hanya butuh maksimal 20 kali perbandingan! (log2(1.000.000) ~= 20)\nint idx = Array.BinarySearch(sortedArray, target);\n```\n\n### 3. O(NÂ²) - Quadratic Time (Bencana Loop Bersarang)\n```csharp\n// ANTI-PATTERN: Menemukan duplikat dengan loop ganda\nfor (int i = 0; i \u003c list.Count; i++)\n{\n    for (int j = i + 1; j \u003c list.Count; j++)\n    {\n        if (list[i] == list[j]) { ... }\n    }\n}\n```\nUntuk 100.000 transaksi, loop di atas berjalan **5 miliar kali**!\nDengan mengubahnya menggunakan `HashSet\u003cT\u003e`, kompleksitas anjlok menjadi **`O(N)`**â€”selesai dalam 5 milidetik!\n\n---\n\n## Time-Space Trade-off di Arsitektur Enterprise\nDalam rekayasa sistem terdistribusi, kita selalu menghadapi trade-off:\n- Ingin kueri profil nasabah instan `O(1)` tanpa menyentuh disk database (`O(log N)` disk seek)?\n- **Korbankan Space (RAM)**: Simpan seluruh profil nasabah di Redis Distributed Cache!",
+    "starterCode":  "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Eksperimen Empiris Big O: O(N) vs O(N^2)\nconst int N = 10_000;\nint[] data = new int[N];\nfor (int i = 0; i \u003c N; i++) data[i] = i;\n\n// 1. Uji Kompleksitas O(N) - Linear Scan\nvar swLinear = Stopwatch.StartNew();\nlong counterLinear = 0;\nfor (int i = 0; i \u003c N; i++)\n{\n    counterLinear += data[i];\n}\nswLinear.Stop();\nConsole.WriteLine($\"[O(N) Linear] N={N:N0} selesai dalam: {swLinear.ElapsedMilliseconds} ms ({swLinear.ElapsedTicks} ticks)\");\n\n// 2. Uji Kompleksitas O(N^2) - Nested Loop\nvar swQuad = Stopwatch.StartNew();\nlong counterQuad = 0;\nfor (int i = 0; i \u003c N; i++)\n{\n    for (int j = 0; j \u003c N; j++)\n    {\n        counterQuad += (data[i] ^ data[j]);\n    }\n}\nswQuad.Stop();\nConsole.WriteLine($\"[O(N^2) Kuadratik] N={N:N0} selesai dalam: {swQuad.ElapsedMilliseconds} ms ({counterQuad})\");\n\n// TODO: Perhatikan bagaimana perbedaan waktu melonjak ribuan kali lipat hanya dengan 10.000 elemen!",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-05-01-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Berapa banyak operasi perbandingan maksimum yang dibutuhkan algoritma Binary Search (O(log2 N)) untuk mencari satu data di antara 1.048.576 elemen terurut?",
+                              "options":  [
+                                              "1.048.576 operasi",
+                                              "524.288 operasi",
+                                              "Tepat 20 operasi",
+                                              "1 operasi"
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Karena 2Â²â° = 1.048.576, maka logâ‚‚(1.048.576) = 20. Binary Search hanya membutuhkan maksimal 20 kali pembagian interval untuk menemukan data.",
+                              "optionExplanations":  [
+                                                         "Salah. Itu adalah jumlah perbandingan terburuk untuk Linear Search O(N).",
+                                                         "Salah. Itu adalah setengah dari N.",
+                                                         "Benar! log2(1.048.576) tepat bernilai 20 operasi perbandingan.",
+                                                         "Salah. 1 operasi hanya jika data tepat berada di indeks tengah pada tebakan pertama (Best Case)."
+                                                     ],
+                              "sectionRef":  "2. O(log N) - Logarithmic Time (Sangat Efisien)",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-05-01-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa arti konsep \u0027Time-Space Trade-off\u0027 dalam optimasi rekayasa backend?",
+                              "options":  [
+                                              "Waktu server harus disinkronkan dengan jam luar angkasa via GPS",
+                                              "Kita dapat mempercepat waktu pemrosesan CPU (Time) dengan mengorbankan konsumsi memori RAM/Disk (Space) yang lebih besar, atau sebaliknya",
+                                              "Database harus selalu dikosongkan setiap tengah malam",
+                                              "Mengurangi ukuran file program akan otomatis mempercepat bandwidth internet"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Time-Space trade-off adalah prinsip di mana waktu respons komputasi dapat dipangkas dengan menyimpan hasil kalkulasi sebelumnya di memori (seperti Cache atau Index), yang mengonsumsi ruang penyimpanan lebih besar.",
+                              "optionExplanations":  [
+                                                         "Salah. Bukan tentang jam satelit fisik.",
+                                                         "Benar! Menukar alokasi ruang memori untuk menghemat siklus komputasi waktu.",
+                                                         "Salah. Data enterprise harus persisten dan aman.",
+                                                         "Salah. Bandwidth internet tidak bergantung pada ukuran file binary di server."
+                                                     ],
+                              "sectionRef":  "Time-Space Trade-off di Arsitektur Enterprise",
+                              "difficulty":  "Beginner"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-05-02",
+                               "title":  "Hash Table Internals",
+                               "levelName":  "LEVEL 05",
+                               "context":  "Memahami mengapa HashSet lookup beroperasi dalam waktu O(1)."
+                           },
+                           {
+                               "lessonId":  "lesson-09-02",
+                               "title":  "Database Storage \u0026 Indexing",
+                               "levelName":  "LEVEL 09",
+                               "context":  "Bagaimana B-Tree index memangkas O(N) full table scan menjadi O(log N) index seek."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Big-O Cheat Sheet",
+                           "url":  "https://www.bigocheatsheet.com/"
+                       },
+                       {
+                           "title":  "Introduction to Algorithms (CLRS) - Growth of Functions",
+                           "url":  "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class TwoSumFinder\n{\n    public static int[] FindPairWithSum(int[] numbers, int targetSum)\n    {\n        if (numbers == null || numbers.Length \u003c 2) return Array.Empty\u003cint\u003e();\n\n        var visited = new HashSet\u003cint\u003e();\n        foreach (var n in numbers)\n        {\n            int complement = targetSum - n;\n            if (visited.Contains(complement))\n            {\n                return new[] { Math.Min(n, complement), Math.Max(n, complement) };\n            }\n            visited.Add(n);\n        }\n\n        return Array.Empty\u003cint\u003e();\n    }\n\n    public static void Main()\n    {\n        int[] data = { 10, 15, 3, 7 };\n        var pair = FindPairWithSum(data, 17);\n        Console.WriteLine(string.Join(\", \", pair));\n    }\n}"
+}

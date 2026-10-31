@@ -1,0 +1,169 @@
+{
+  "id": "lesson-00-06",
+  "levelId": "level-00",
+  "moduleId": "mod-00-02",
+  "order": 6,
+  "title": "Encoding Karakter: ASCII, Unicode, UTF-8, dan Endianness",
+  "slug": "character-encoding-utf8",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 35,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mempelajari evolusi encoding karakter dari ASCII 7-bit hingga standar global Unicode UTF-8, multi-byte encoding, Byte Order Mark (BOM), dan Little Endian vs Big Endian.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-04",
+      "title": "Sistem Biner \u0026 Heksadesimal",
+      "levelName": "LEVEL 00",
+      "context": "Memahami representasi byte dalam heksadesimal."
+    }
+  ],
+  "introduces": [
+    "ASCII",
+    "Unicode Code Points",
+    "UTF-8 Variable-Length Encoding",
+    "UTF-16 \u0026 System.Char C#",
+    "Little Endian vs Big Endian",
+    "Byte Order Mark (BOM)"
+  ],
+  "learningObjectives": [
+    "Menjelaskan keterbatasan ASCII dan mengapa Unicode diciptakan.",
+    "Menguraikan mekanisme Variable-Length Encoding pada UTF-8 (1 hingga 4 byte).",
+    "Menganalisis perbedaan Little Endian vs Big Endian saat membaca binary stream di jaringan."
+  ],
+  "markdownContent": "# Encoding Karakter: ASCII, Unicode, UTF-8, dan Endianness\n\n## Sejarah dan Keterbatasan ASCII\nDi era awal komputasi Amerika (1963), standar **ASCII (American Standard Code for Information Interchange)** diciptakan:\n- Menggunakan **7 bit** (128 karakter unik, \u00600x00\u0060 sampai \u00600x7F\u0060).\n- Mencakup huruf alfabet Inggris (\u0060A-Z\u0060, \u0060a-z\u0060), angka (\u00600-9\u0060), tanda baca, dan karakter kontrol (\u0060CR\u0060, \u0060LF\u0060, \u0060NUL\u0060).\n\nMasalah besar muncul ketika komputer digunakan secara global di Eropa, Asia, dan Timur Tengah:\n- Karakter aksen (*\u00E4, \u00E9, \u00E7*), huruf Arab, Cyrillic, Kanji, hingga emoji tidak muat dalam 128 slot.\n- Lahir ratusan **Code Page** saling bertentangan (misal Windows-1252, ISO-8859-1). File teks yang dikirim dari satu negara menjadi karakter acak tak terbaca (*Mojibake*) di negara lain.\n\n---\n\n## Solusi Global: Unicode \u0026 UTF-8\n**Unicode** adalah konsorsium universal yang memberikan nomor identitas unik (**Code Point**, ditulis \u0060U\u002BXXXX\u0060) untuk setiap karakter di seluruh dunia.\nContoh:\n- Huruf \u0060A\u0060 \u2192 \u0060U\u002B0041\u0060\n- Huruf Arab \u0060\u0628\u0060 \u2192 \u0060U\u002B0628\u0060\n- Emoji \u0060\uD83D\uDE80\u0060 \u2192 \u0060U\u002B1F680\u0060\n\nNamun, bagaimana menyimpan Code Point tersebut ke dalam deretan byte fisik?\nInilah fungsi **UTF-8 (Unicode Transformation Format - 8 bit)**, standar dominan di 98% web dan API modern:\n\n| Rentang Code Point | Pola Byte Biner UTF-8 | Jumlah Byte | Karakter yang Dicakup |\n| :--- | :--- | :---: | :--- |\n| \u0060U\u002B0000\u0060 - \u0060U\u002B007F\u0060 | \u00600xxxxxxx\u0060 | **1 Byte** | Kompatibel 100% dengan ASCII standar |\n| \u0060U\u002B0080\u0060 - \u0060U\u002B07FF\u0060 | \u0060110xxxxx 10xxxxxx\u0060 | **2 Byte** | Aksara Latin bertanda, Yunani, Arab, Ibrani |\n| \u0060U\u002B0800\u0060 - \u0060U\u002BFFFF\u0060 | \u00601110xxxx 10xxxxxx 10xxxxxx\u0060 | **3 Byte** | Karakter Asia Timur (Cina, Jepang, Korea) |\n| \u0060U\u002B10000\u0060 - \u0060U\u002B10FFFF\u0060 | \u006011110xxx 10xxxxxx 10xxxxxx 10xxxxxx\u0060 | **4 Byte** | Simbol matematis langka, hieroglif, Emoji |\n\n### Kejeniusan Desain UTF-8:\n1. **Backward Compatibility**: Teks ASCII lama adalah teks UTF-8 yang valid tanpa perlu konversi 1 byte pun.\n2. **Self-Synchronizing**: Jika beberapa byte korup saat transmisi jaringan, decoder dapat menemukan awal karakter berikutnya dengan mencari pola awalan byte \u00600xxxxxxx\u0060 atau \u006011xxxxxx\u0060.\n\n---\n\n## C# String: Waspadai Ilusi \u0060string.Length\u0060\nDi C#, tipe \u0060string\u0060 secara internal disimpan sebagai rangkaian **UTF-16 code units (masing-masing 2 byte / \u0060char\u0060)**.\nKonsekuensi penting:\n\u0060\u0060\u0060csharp\nstring text = \u0022\uD83D\uDE80\u0022; // Emoji roket\nConsole.WriteLine(text.Length); // Mencetak 2! Bukan 1!\n\u0060\u0060\u0060\nEmoji roket membutuhkan 4 byte di UTF-8, dan membutuhkan sepasang **Surrogate Pair (2 char)** di UTF-16. Untuk menghitung jumlah karakter nyata dari sudut pandang manusia, gunakan \u0060StringInfo.LengthInTextElements\u0060.\n\n---\n\n## Endianness: Little Endian vs Big Endian\nKetika menyimpan angka multi-byte (seperti integer 4-byte \u00600x12345678\u0060) ke RAM:\n- **Little Endian** (Arsitektur Intel x86 dan AMD64): Byte terendah (*Least Significant Byte*) disimpan di alamat memori paling awal:\n  \u0060[0x78] [0x56] [0x34] [0x12]\u0060\n- **Big Endian** (Network Byte Order standar TCP/IP): Byte tertinggi disimpan di alamat paling awal:\n  \u0060[0x12] [0x34] [0x56] [0x78]\u0060\n\nKetika membaca raw packet di backend C#, selalu gunakan \u0060BinaryPrimitives.ReverseEndianness\u0060 atau \u0060IPAddress.NetworkToHostOrder\u0060 untuk menghindari angka port/panjang paket terbalik!",
+  "starterCode": "using System;\nusing System.Text;\n\n// PROGRAM: Eksperimen Encoding UTF-8 dan Perhitungan Byte\nstring english = \u0022Hello\u0022;\nstring indonesian = \u0022Halo Dunia\u0022;\nstring emoji = \u0022\uD83D\uDE80\u0022;\n\nConsole.WriteLine($\u0022Teks: \u0027{english}\u0027 | Karakter: {english.Length} | UTF-8 Bytes: {Encoding.UTF8.GetByteCount(english)}\u0022);\nConsole.WriteLine($\u0022Teks: \u0027{emoji}\u0027   | Karakter (UTF-16 Chars): {emoji.Length} | UTF-8 Bytes: {Encoding.UTF8.GetByteCount(emoji)}\u0022);\n\nbyte[] emojiBytes = Encoding.UTF8.GetBytes(emoji);\nConsole.Write(\u0022Byte Hex UTF-8 dari Rocket Emoji: \u0022);\nforeach (var b in emojiBytes)\n{\n    Console.Write($\u00220x{b:X2} \u0022);\n}\nConsole.WriteLine();\n\n// TODO: Periksa apa yang terjadi saat teks mengandung karakter aksen seperti \u0027Caf\u00E9\u0027!",
+  "quizQuestions": [
+    {
+      "id": "q-00-06-1",
+      "type": "MultipleChoice",
+      "question": "Berapa banyak byte yang digunakan oleh UTF-8 untuk menyimpan karakter ASCII standar (U\u002B0000 sampai U\u002B007F)?",
+      "options": [
+        "1 Byte",
+        "2 Byte",
+        "3 Byte",
+        "4 Byte"
+      ],
+      "correctOptionIndex": 0,
+      "explanation": "UTF-8 dirancang agar 100% backward compatible dengan ASCII. Karakter di bawah 128 dikodekan tepat dalam 1 byte dengan format \u00600xxxxxxx\u0060.",
+      "optionExplanations": [
+        "Benar! Karakter ASCII hanya membutuhkan 1 byte di UTF-8.",
+        "Salah. 2 byte digunakan untuk aksara non-Latin seperti Arab dan Yunani.",
+        "Salah. 3 byte digunakan untuk karakter CJK (Cina, Jepang, Korea).",
+        "Salah. 4 byte digunakan untuk simbol khusus dan emoji."
+      ],
+      "sectionRef": "Solusi Global: Unicode \u0026 UTF-8",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-00-06-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana urutan byte dari bilangan 16-bit \u00600xABCD\u0060 disimpan di RAM pada prosesor arsitektur Little Endian (x86-64)?",
+      "options": [
+        "0xAB diikuti oleh 0xCD",
+        "0xCD diikuti oleh 0xAB",
+        "0xBA diikuti oleh 0xDC",
+        "Tergantung sistem operasi (Windows vs Linux)"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Pada arsitektur Little Endian, Least Significant Byte (LSB yaitu 0xCD) disimpan di alamat memori terendah terlebih dahulu, baru diikuti oleh Most Significant Byte (0xAB).",
+      "optionExplanations": [
+        "Salah. Urutan 0xAB lalu 0xCD adalah Big Endian (Network Order).",
+        "Benar! Little Endian menyimpan byte terkecil (0xCD) di alamat memori pertama.",
+        "Salah. Nibble di dalam 1 byte tidak dibalik.",
+        "Salah. Endianness ditentukan oleh hardware CPU (x86-64 adalah Little Endian), bukan oleh OS."
+      ],
+      "sectionRef": "Endianness: Little Endian vs Big Endian",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-00-06",
+    "Title": "Validator Leading Byte Header Karakter UTF-8",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca sebuah byte (dalam format hex, misal \u00270x41\u0027 atau \u002741\u0027) dari stdin yang merepresentasikan byte pertama (leading byte) suatu karakter UTF-8.\nTentukan kategori panjang sequence karakter tersebut:\n- \u00271-BYTE\u0027 bila bit pola adalah 0xxxxxxx (0x00 - 0x7F)\n- \u00272-BYTE\u0027 bila bit pola adalah 110xxxxx (0xC0 - 0xDF)\n- \u00273-BYTE\u0027 bila bit pola adalah 1110xxxx (0xE0 - 0xEF)\n- \u00274-BYTE\u0027 bila bit pola adalah 11110xxx (0xF0 - 0xF7)\n- \u0027INVALID\u0027 untuk nilai lainnya (misal byte kelanjutan 10xxxxxx atau di atas 0xF7).",
+    "InputFormat": "Satu baris string berisi representasi heksadesimal byte (0x00..0xFF).",
+    "OutputFormat": "Satu baris berisi kategori UTF-8 (\u00271-BYTE\u0027, \u00272-BYTE\u0027, \u00273-BYTE\u0027, \u00274-BYTE\u0027, atau \u0027INVALID\u0027).",
+    "Constraints": "Input adalah byte 8-bit [0x00, 0xFF].",
+    "Examples": [
+      {
+        "Input": "0x41",
+        "Output": "1-BYTE",
+        "Explanation": "0x41 (ASCII \u0027A\u0027) bernilai biner 01000001 diawali bit 0."
+      },
+      {
+        "Input": "0xC3",
+        "Output": "2-BYTE",
+        "Explanation": "0xC3 diawali bit 110xxxxx."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022INVALID\u0022); return; }\n        // TODO: Parse byte dan uji bitwise prefix UTF-8.\n        Console.WriteLine(\u00221-BYTE\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022INVALID\u0022); return; }\n        string clean = line.Trim();\n        if (clean.StartsWith(\u00220x\u0022, StringComparison.OrdinalIgnoreCase)) clean = clean.Substring(2);\n        if (!byte.TryParse(clean, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))\n        {\n            Console.WriteLine(\u0022INVALID\u0022);\n            return;\n        }\n\n        if ((b \u0026 0x80) == 0x00) Console.WriteLine(\u00221-BYTE\u0022);\n        else if ((b \u0026 0xE0) == 0xC0) Console.WriteLine(\u00222-BYTE\u0022);\n        else if ((b \u0026 0xF0) == 0xE0) Console.WriteLine(\u00223-BYTE\u0022);\n        else if ((b \u0026 0xF8) == 0xF0) Console.WriteLine(\u00224-BYTE\u0022);\n        else Console.WriteLine(\u0022INVALID\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (ASCII)",
+        "Description": "Contoh 1 (ASCII): input \u00270x41\u0027 -\u003E expected \u00271-BYTE\u0027",
+        "Input": "0x41",
+        "ExpectedOutput": "1-BYTE",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (2-Byte UTF-8)",
+        "Description": "Contoh 2 (2-Byte UTF-8): input \u00270xC3\u0027 -\u003E expected \u00272-BYTE\u0027",
+        "Input": "0xC3",
+        "ExpectedOutput": "2-BYTE",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "3-Byte UTF-8",
+        "Description": "3-Byte UTF-8: input \u00270xE2\u0027 -\u003E expected \u00273-BYTE\u0027",
+        "Input": "0xE2",
+        "ExpectedOutput": "3-BYTE",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Continuation Byte Invalid Header",
+        "Description": "Continuation Byte Invalid Header: input \u00270x80\u0027 -\u003E expected \u0027INVALID\u0027",
+        "Input": "0x80",
+        "ExpectedOutput": "INVALID",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Gunakan operator bitwise AND: (b \u0026 0x80) == 0x00 untuk 1 byte.",
+      "Untuk 2-byte: (b \u0026 0xE0) == 0xC0."
+    ],
+    "Explanation": "Spesifikasi UTF-8 RFC 3629 mengkodekan jumlah byte urutan karakter pada bit-bit paling signifikan (MSB) dari byte pembuka."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-03",
+      "title": "Sistem Tipe C#: Char dan String",
+      "levelName": "LEVEL 02",
+      "context": "Representasi internal string C# menggunakan UTF-16 code units."
+    },
+    {
+      "lessonId": "lesson-11-04",
+      "title": "Standar REST Enterprise: JSON Payload",
+      "levelName": "LEVEL 11",
+      "context": "Spesifikasi RFC 8259 yang mewajibkan seluruh JSON di-encode dengan UTF-8."
+    }
+  ],
+  "references": [
+    {
+      "title": "The Absolute Minimum Every Software Developer Must Know About Unicode - Joel Spolsky",
+      "url": "https://www.joelonsoftware.com/2003/10/08/the-absolute-minimum-every-software-developer-absolutely-positively-must-know-about-unicode-and-character-sets-no-excuses/"
+    },
+    {
+      "title": "RFC 3629 - UTF-8, a transformation format of ISO 10646",
+      "url": "https://datatracker.ietf.org/doc/html/rfc3629"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class Utf8Inspector\n{\n    public static int GetUtf8SequenceLength(byte leadByte)\n    {\n        if ((leadByte \u0026 0b1000_0000) == 0) return 1;\n        if ((leadByte \u0026 0b1110_0000) == 0b1100_0000) return 2;\n        if ((leadByte \u0026 0b1111_0000) == 0b1110_0000) return 3;\n        if ((leadByte \u0026 0b1111_1000) == 0b1111_0000) return 4;\n        return -1; // Continuation byte atau format ilegal\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u0022\u0027A\u0027 (0x41): {GetUtf8SequenceLength(0x41)}\u0022);\n        Console.WriteLine($\u0022Emoji (0xF0): {GetUtf8SequenceLength(0xF0)}\u0022);\n    }\n}"
+}

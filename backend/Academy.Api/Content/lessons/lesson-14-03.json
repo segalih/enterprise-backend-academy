@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-14-03",
+    "levelId":  "level-14",
+    "moduleId":  "mod-14-03",
+    "order":  3,
+    "title":  "Transactional Outbox \u0026 Saga Pattern: Menghindari Dual-Write dan Menjamin Konsistensi Transaksi",
+    "slug":  "outbox-pattern-saga-transactions",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menyelesaikan masalah dual-write di microservices: kegagalan database vs message broker, Transactional Outbox Pattern, Change Data Capture (Debezium), dan Orkestrasi vs Koreografi Saga Pattern.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-09-03",
+                              "reason":  "ACID Database Transactions"
+                          },
+                          {
+                              "lessonId":  "lesson-14-02",
+                              "reason":  "Message Brokers \u0026 Idempotent Consumers"
+                          }
+                      ],
+    "introduces":  [
+                       "The Dual-Write Problem (Database commit vs Broker publish)",
+                       "Transactional Outbox Pattern architecture",
+                       "Change Data Capture (CDC) with Debezium / Polling Publisher",
+                       "Saga Pattern: Choreography vs Orchestration",
+                       "Compensating Transactions for eventual consistency"
+                   ],
+    "learningObjectives":  [
+                               "Mendiagnosa bug inkonsistensi fatal akibat \u0027Dual-Write\u0027 (menyimpan data ke database dan memanggil broker pesan secara berurutan)",
+                               "Merancang tabel \u0027Outbox\u0027 yang diisi di dalam boundary transaksi database SQL lokal yang sama dengan data bisnis",
+                               "Membangun background worker atau CDC connector untuk menerbitkan pesan dari tabel Outbox ke message broker",
+                               "Menerapkan Saga Pattern dengan Compensating Transactions untuk membatalkan langkah-langkah transaksi terdistribusi yang gagal di tengah jalan"
+                           ],
+    "markdownContent":  "# Transactional Outbox \u0026 Saga Pattern: Menghindari Dual-Write dan Menjamin Konsistensi Transaksi\n\nDalam arsitektur microservices, transaksi ACID klasik yang mengunci beberapa tabel di satu database tidak lagi tersedia ketika data tersebar di berbagai service dan database independen (*Database-per-Service*).\n\nDua tantangan terbesar yang sering membuat data transaksi finansial rusak di microservices adalah:\n1. **The Dual-Write Problem**\n2. **Koordinasi Transaksi Terdistribusi Lintas-Service**\n\nMateri ini membahas dua solusi standar industri untuk mengatasinya: **Transactional Outbox Pattern** dan **Saga Pattern**.\n\n---\n\n## 1. Bencana \"Dual-Write\": Mengapa Kode Ini Sangat Berbahaya?\n\nPerhatikan kode yang sering ditulis oleh backend engineer pemula berikut:\n```csharp\n// ANTI-PATTERN SANGAT BERBAHAYA: THE DUAL-WRITE TRAP!\npublic async Task CreateOrderAsync(Order order)\n{\n    // Langkah 1: Simpan order ke Database SQL\n    await _dbContext.Orders.AddAsync(order);\n    await _dbContext.SaveChangesAsync();\n\n    // Langkah 2: Publikasikan event ke Kafka / RabbitMQ\n    await _messageBus.PublishAsync(new OrderCreatedEvent(order.Id));\n}\n```\n\n### Mengapa Kode di Atas Pasti Rusak di Produksi?\n- **Skenario A**: Database berhasil menyimpan order, tetapi tepat sebelum baris `PublishAsync` dieksekusi, **server crash atau listrik mati**. Akibatnya: Order tersimpan di database, tetapi event tidak pernah dikirim ke Kafka. Service inventory tidak pernah menyiapkan barang!\n- **Skenario B**: Bagaimana jika urutan dibalik (kirim ke Kafka dulu, baru simpan ke database)? Jika database gagal menyimpan data (misal disk penuh), pesan sudah terlanjur terkirim ke Kafka. Service inventory memotong stok barang untuk pesanan yang sebenarnya tidak pernah ada di database!\n\nTidak ada mekanisme bawaan jaringan yang dapat menjamin dua sistem independen (Database + Broker) sukses secara serentak tanpa koordinasi khusus.\n\n---\n\n## 2. Solusi: Transactional Outbox Pattern\n\nTransactional Outbox menyelesaikan Dual-Write dengan memanfaatkan **transaksi ACID lokal database yang sama**:\n\n```mermaid\nflowchart TD\n    subgraph DB[\"Database Transaksional Lokal (ACID)\"]\n        Tx[\"BEGIN TRANSACTION\"]\n        Ins1[\"1. INSERT INTO Orders\"]\n        Ins2[\"2. INSERT INTO OutboxMessages\u003cbr/\u003e(Status: \u0027Pending\u0027)\"]\n        Com[\"COMMIT TRANSACTION\"]\n        Tx --\u003e Ins1 --\u003e Ins2 --\u003e Com\n    end\n    Com --\u003e|Background Polling / CDC| Pub[\"Outbox Publisher / Debezium CDC\"]\n    Pub --\u003e|Publish Event| Broker[\"Message Broker (Kafka / RabbitMQ)\"]\n```\n\nKarena penulisan ke tabel `Orders` dan tabel `OutboxMessages` berada dalam **satu transaksi database lokal**, dijamin 100% **keduanya berhasil bersama atau keduanya batal bersama**.\n\nSebuah proses background (seperti `BackgroundService` di .NET atau tool CDC seperti Debezium yang membaca transaction log) secara berkala membaca tabel `OutboxMessages`, mengirimkannya ke broker Kafka, dan menandai statusnya sebagai `Published`.\n\n---\n\n## 3. Saga Pattern: Transaksi Terdistribusi Lintas Microservices\n\nJika transaksi belanja melibatkan 3 service berbeda (Order Service, Payment Service, Inventory Service), kita tidak bisa menggunakan Two-Phase Commit (2PC) karena performanya lambat dan mengunci resource.\n\n**Saga Pattern** memecah transaksi besar menjadi rangkaian transaksi lokal yang dieksekusi berurutan:\n```mermaid\nflowchart LR\n    O[\"Order Created\"] --\u003e R[\"Reserve Inventory\"] --\u003e P[\"Process Payment\"]\n```\n\n### Apa yang Terjadi Jika Langkah Ketiga Gagal?\nSaga menggunakan **Compensating Transactions (Transaksi Kompensasi)** untuk membatalkan langkah-langkah sebelumnya secara terbalik:\n```mermaid\nflowchart LR\n    F[\"Process Payment GAGAL\"] --\u003e Comp1[\"Compensate: Release Inventory\"] --\u003e Comp2[\"Compensate: Mark Order Cancelled\"]\n```\n\n### Dua Gaya Saga:\n1. **Choreography (Koreografi)**: Setiap service mendengarkan event dari service lain dan langsung mengambil tindakan tanpa koordinator pusat (bagus untuk alur sederhana 2-3 langkah).\n2. **Orchestration (Orkestrasi)**: Sebuah service koordinator (Saga Orchestrator) secara eksplisit memberi perintah langkah demi langkah dan menangani alur kompensasi jika terjadi error (wajib untuk alur bisnis kompleks).\n\n---\n\n## 4. Ringkasan \u0026 Prinsip Keamanan Transaksi\n\n1. **Haramkan Dual-Write**: Jangan pernah menulis ke database dan message broker secara berurutan dalam method yang sama tanpa Outbox pattern.\n2. **Pola Outbox Menjamin At-Least-Once Publishing**: Pastikan consumer Kafka Anda idempotent karena outbox processor bisa saja mengirim ulang pesan jika terjadi crash sebelum status di-update.\n3. **Desain Kompensasi Sejak Awal**: Setiap kali Anda mendesain transaksi Saga, selalu tanyakan: *\"Bagaimana cara membatalkan operasi ini jika downstream service meledak?\"*",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Simulasi Mini Transactional Outbox\npublic class OutboxMessage\n{\n    public Guid Id { get; set; } = Guid.NewGuid();\n    public string EventType { get; set; } = \"\";\n    public string Payload { get; set; } = \"\";\n    public bool IsPublished { get; set; }\n}\n\npublic class LocalDatabaseContext\n{\n    public List\u003cstring\u003e Orders { get; } = new();\n    public List\u003cOutboxMessage\u003e Outbox { get; } = new();\n\n    public void CommitTransaction(string orderData, string eventPayload)\n    {\n        // TODO: Simulasikan atomic commit di database lokal:\n        // Masukkan orderData ke list Orders DAN masukkan OutboxMessage baru ke list Outbox.\n        Console.WriteLine(\"[Database] Transaksi ACID lokal berhasil di-commit.\");\n    }\n}\n\npublic class OutboxPublisher\n{\n    public async Task PublishPendingMessagesAsync(LocalDatabaseContext db)\n    {\n        // TODO: Cari seluruh pesan di db.Outbox yang IsPublished == false.\n        // Kirim ke broker (simulasi console log) dan ubah IsPublished = true.\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var db = new LocalDatabaseContext();\n        var publisher = new OutboxPublisher();\n\n        // 1. Simpan order + outbox event dalam satu transaksi lokal\n        db.CommitTransaction(\"Order #9901 - Total Rp 500.000\", \"{\\\"OrderId\\\": 9901, \\\"Amount\\\": 500000}\");\n\n        // 2. Background Outbox Publisher memproses antrean outbox ke broker\n        Console.WriteLine(\"\\n--- Menjalankan Outbox Publisher Worker ---\");\n        await publisher.PublishPendingMessagesAsync(db);\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nusing System.Threading.Tasks;\n\npublic class OutboxMessage\n{\n    public Guid Id { get; set; } = Guid.NewGuid();\n    public string EventType { get; set; } = \"\";\n    public string Payload { get; set; } = \"\";\n    public bool IsPublished { get; set; }\n}\n\npublic class LocalDatabaseContext\n{\n    public List\u003cstring\u003e Orders { get; } = new();\n    public List\u003cOutboxMessage\u003e Outbox { get; } = new();\n\n    public void CommitTransaction(string orderData, string eventPayload)\n    {\n        Orders.Add(orderData);\n        Outbox.Add(new OutboxMessage\n        {\n            EventType = \"OrderCreated\",\n            Payload = eventPayload,\n            IsPublished = false\n        });\n\n        Console.WriteLine(\"[Database] Transaksi ACID lokal berhasil di-commit (Order + Outbox tersimpan serentak).\");\n    }\n}\n\npublic class OutboxPublisher\n{\n    public async Task PublishPendingMessagesAsync(LocalDatabaseContext db)\n    {\n        var pending = db.Outbox.Where(m =\u003e !m.IsPublished).ToList();\n        foreach (var msg in pending)\n        {\n            Console.WriteLine($\"[BROKER PUBLISH] Menerbitkan {msg.EventType}: {msg.Payload}\");\n            await Task.Delay(10);\n            msg.IsPublished = true;\n        }\n\n        Console.WriteLine($\"[Outbox Worker] Berhasil menerbitkan {pending.Count} pesan.\");\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var db = new LocalDatabaseContext();\n        var publisher = new OutboxPublisher();\n\n        db.CommitTransaction(\"Order #9901 - Total Rp 500.000\", \"{\\\"OrderId\\\": 9901, \\\"Amount\\\": 500000}\");\n\n        Console.WriteLine(\"\\n--- Menjalankan Outbox Publisher Worker ---\");\n        await publisher.PublishPendingMessagesAsync(db);\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-14-03-1",
+                              "type":  "single_choice",
+                              "question":  "Apa risiko paling fatal dari masalah \u0027Dual-Write\u0027 saat menyimpan data bisnis ke database lalu memanggil broker pesan secara berurutan?",
+                              "options":  [
+                                              "Aplikasi akan membutuhkan daya listrik 200% lebih banyak.",
+                                              "Jika aplikasi mati atau koneksi putus tepat di antara kedua operasi, salah satu sistem berhasil sementara sistem lainnya tidak pernah menerima data, menyebabkan kerusakan data permanen lintas-service.",
+                                              "Kode program C# akan otomatis berubah menjadi bahasa JavaScript.",
+                                              "File database akan otomatis terhapus oleh anti-virus."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Dual-write tidak memiliki atomic boundary. Jika server crash tepat setelah commit database tetapi sebelum publish ke message broker, sistem downstream tidak akan pernah tahu adanya order baru, merusak integritas sistem secara permanen.",
+                              "optionExplanations":  [
+                                                         "Salah. Daya listrik server tidak terpengaruh.",
+                                                         "Benar! Inilah akar masalah perlunya Transactional Outbox: menjamin konsistensi antara state database dan pesan broker.",
+                                                         "Salah. Bahasa pemrograman tidak berubah.",
+                                                         "Salah. Anti-virus tidak menghapus database karena dual-write."
+                                                     ],
+                              "sectionRef":  "1. Bencana \u0027Dual-Write\u0027: Mengapa Kode Ini Sangat Berbahaya?",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-14-03-2",
+                              "type":  "single_choice",
+                              "question":  "Bagaimana cara Saga Pattern menangani kegagalan pada salah satu langkah transaksi terdistribusi?",
+                              "options":  [
+                                              "Dengan mengeksekusi Transaksi Kompensasi (Compensating Transactions) untuk membatalkan langkah-langkah sebelumnya secara terbalik.",
+                                              "Dengan memutar kembali waktu server menggunakan NTP.",
+                                              "Dengan mengabaikan error dan menganggap transaksi tetap berhasil.",
+                                              "Dengan memformat ulang harddisk server."
+                                          ],
+                              "correctOptionIndex":  0,
+                              "explanation":  "Karena transaksi ACID global tidak tersedia pada database terdistribusi independen, Saga mengatasi kegagalan dengan menjalankan Compensating Transactions (misalnya melepaskan kembali reservasi inventori atau membatalkan pesanan) untuk mengembalikan sistem ke status konsisten.",
+                              "optionExplanations":  [
+                                                         "Benar! Transaksi kompensasi adalah mekanisme undo semantik pada arsitektur Saga.",
+                                                         "Salah. Jam NTP tidak bisa membatalkan transaksi data.",
+                                                         "Salah. Mengabaikan error akan merusak data finansial.",
+                                                         "Salah. Memformat harddisk bukan solusi penanganan error transaksi."
+                                                     ],
+                              "sectionRef":  "3. Saga Pattern: Transaksi Terdistribusi Lintas Microservices",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-09-03",
+                           "lesson-14-02",
+                           "lesson-18-01"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Pattern: Transactional Outbox - Chris Richardson",
+                           "url":  "https://microservices.io/patterns/data/transactional-outbox.html",
+                           "type":  "article"
+                       },
+                       {
+                           "title":  "Pattern: Saga - Microservices Architecture",
+                           "url":  "https://microservices.io/patterns/data/saga.html",
+                           "type":  "article"
+                       }
+                   ]
+}

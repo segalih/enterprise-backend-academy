@@ -1,0 +1,104 @@
+{
+    "id":  "lesson-16-01",
+    "levelId":  "level-16",
+    "moduleId":  "mod-16-01",
+    "order":  1,
+    "title":  "Strategi Pengujian xUnit: Unit Testing Komprehensif, Mocking, dan Assertion Patterns",
+    "slug":  "xunit-testing-strategies-mocking",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  55,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membangun suite automated testing enterprise dengan xUnit: Fact vs Theory, inline vs MemberData, FluentAssertions, isolasi dependensi dengan NSubstitute/Moq, dan arsitektur testable code.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-03-04",
+                              "reason":  "Interfaces \u0026 Inversion of Control"
+                          },
+                          {
+                              "lessonId":  "lesson-13-01",
+                              "reason":  "Prinsip SOLID \u0026 Single Responsibility"
+                          }
+                      ],
+    "introduces":  [
+                       "Test Pyramid \u0026 Unit Testing boundaries",
+                       "xUnit core attributes ([Fact], [Theory], [InlineData], [MemberData])",
+                       "Test Doubles: Dummy, Stub, Spy, Mock, Fake",
+                       "Mocking with NSubstitute / Moq",
+                       "FluentAssertions \u0026 readable error reports",
+                       "Mutation testing \u0026 code coverage fallacies"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan fungsi atribut `[Fact]` (tes invarian tunggal) dengan `[Theory]` (tes berbasis variasi data input)",
+                               "Membedakan jenis-jenis Test Doubles (Stubs vs Mocks vs Fakes) dan menghindari pengujian internal state yang rapuh (*mocking anti-pattern*)",
+                               "Menggunakan NSubstitute untuk mensimulasikan kegagalan dependensi I/O eksternal tanpa memanggil jaringan",
+                               "Menerapkan pola AAA (Arrange, Act, Assert) secara konsisten pada automated test suite"
+                           ],
+    "markdownContent":  "# Strategi Pengujian xUnit: Unit Testing Komprehensif, Mocking, dan Assertion Patterns\n\nBanyak developer menganggap pengujian otomatis (*automated testing*) sebagai beban yang memperlambat penulisan fitur. Namun bagi tim enterprise berskala besar, test suite yang komprehensif adalah satu-satunya jaminan bahwa perubahan kode yang dilakukan hari ini tidak akan merusak 50 fitur perbankan yang sudah berjalan di produksi.\n\nDi ekosistem .NET modern, **xUnit** adalah test framework standar industri yang digunakan secara resmi oleh tim arsitek Microsoft untuk menguji runtime .NET itu sendiri.\n\n---\n\n## 1. Piramida Pengujian \u0026 Batasan Unit Test\n\nPiramida Pengujian (Mike Cohn) membagi tes menjadi tiga lapisan:\n\n```text\n       /       / E2E        (Lambat, Rapuh, Mahal, Menguji browser/jaringan)\n     /-------    / Integrasi     (Menguji kolaborasi komponen nyata: API + DB)\n   /-------------  /   Unit Tests     (Cepat [milidetik], Terisolasi, Menutupi seluruh cabang logika)\n /-----------------```\n\n### Ciri Khas Unit Test Berkualitas Tinggi:\n1. **Terisolasi Sepenuhnya**: Tidak boleh memanggil database SQL nyata, internet, disk filesystem, atau jam OS langsung.\n2. **Deterministic (Pasti)**: Jika dijalankan 10.000 kali, hasilnya harus selalu sama. Tidak boleh ada tes yang kadang lolos kadang gagal (*flaky tests*).\n3. **Cepat**: Ribuan unit test harus selesai dieksekusi dalam hitungan detik.\n\n---\n\n## 2. Fitur Kunci xUnit: `[Fact]` vs `[Theory]`\n\n### `[Fact]`: Pengujian Skenario Tunggal\nDigunakan untuk menguji aturan invarian yang selalu berlaku tanpa parameter input dinamis:\n```csharp\n[Fact]\npublic void CalculateDiscount_ThrowsException_WhenOrderAmountIsNegative()\n{\n    // Arrange\n    var calculator = new DiscountCalculator();\n\n    // Act \u0026 Assert\n    Assert.Throws\u003cArgumentException\u003e(() =\u003e calculator.CalculateDiscount(-500));\n}\n```\n\n### `[Theory]` + `[InlineData]`: Data-Driven Testing\nMenjalankan logika pengujian yang sama berulang kali dengan berbagai kombinasi input data dan ekspektasi:\n```csharp\n[Theory]\n[InlineData(0, 0)]\n[InlineData(100_000, 0)]        // Belanja \u003c 500k -\u003e Diskon 0%\n[InlineData(500_000, 25_000)]    // Belanja 500k -\u003e Diskon 5% (25k)\n[InlineData(1_000_000, 100_000)] // Belanja 1jt -\u003e Diskon 10% (100k)\npublic void CalculateDiscount_ReturnsExpectedAmount(decimal amount, decimal expectedDiscount)\n{\n    var calculator = new DiscountCalculator();\n    var discount = calculator.CalculateDiscount(amount);\n    Assert.Equal(expectedDiscount, discount);\n}\n```\n\n---\n\n## 3. Test Doubles: Mocking dengan NSubstitute\n\nDalam C# modern, **NSubstitute** menjadi library mocking terpopuler karena sintaksnya yang sangat bersih dan alami dibandingkan Moq klasik:\n\n```csharp\n[Fact]\npublic async Task ProcessOrder_SendsEmail_WhenPaymentSucceeds()\n{\n    // Arrange: Buat mock interface menggunakan NSubstitute\n    var paymentGateway = Substitute.For\u003cIPaymentGateway\u003e();\n    var emailService = Substitute.For\u003cIEmailService\u003e();\n\n    // Konfigurasi perilaku stub: paymentGateway selalu berhasil jika dipanggil\n    paymentGateway.ChargeAsync(Arg.Any\u003cdecimal\u003e()).Returns(Task.FromResult(true));\n\n    var orderService = new OrderProcessor(paymentGateway, emailService);\n\n    // Act\n    await orderService.CheckoutAsync(new Order(100_000));\n\n    // Assert: Verifikasi bahwa emailService.SendNotificationAsync dipanggil tepat 1 kali!\n    await emailService.Received(1).SendNotificationAsync(Arg.Any\u003cstring\u003e());\n}\n```\n\n\u003e [!WARNING]\n\u003e **Anti-Pattern: Over-Mocking**\n\u003e Jangan mem-mock semua class! Jangan pernah mem-mock entitas domain internal, Value Objects, atau DTO. Hanya mock dependensi I/O eksternal yang lambat atau tidak pasti (seperti Web API pihak ketiga, SMTP server, atau antrean pesan).\n\n---\n\n## 4. FluentAssertions untuk Laporan Kegagalan yang Ekspresif\n\nAssert bawaan xUnit (`Assert.Equal(a, b)`) sering memberikan pesan error yang membingungkan jika objek yang diuji berukuran besar. **FluentAssertions** mengubah cara penulisan assertion menjadi kalimat bahasa Inggris yang alami:\n\n```csharp\n// Menggunakan FluentAssertions:\norder.Status.Should().Be(OrderStatus.Completed);\norder.Items.Should().HaveCount(3)\n     .And.Contain(x =\u003e x.Price \u003e 100);\n     \nresult.Should().BeEquivalentTo(expectedCustomer, options =\u003e \n    options.Excluding(x =\u003e x.CreatedAt));\n```\n\n---\n\n## 5. Ringkasan \u0026 Aturan Pengujian Enterprise\n\n1. **Struktur AAA (Arrange, Act, Assert)**: Jaga agar kode pengujian terpisah dengan jelas menjadi tiga blok: persiapan data (*Arrange*), pemanggilan fungsi (*Act*), dan verifikasi hasil (*Assert*).\n2. **Satu Konsep Per-Tes**: Jangan menggabungkan pengujian 10 fitur ke dalam satu method unit test. Buat method tes kecil yang fokus pada satu perilaku spesifik.\n3. **Waspadai False Sense of Security Coverage**: Code coverage 100% tidak menjamin kode bebas bug jika assertion-nya tidak memvalidasi kondisi batas (*edge cases*).",
+    "starterCode":  "using System;\n\n// Skenario Unit Testing: DiscountCalculator\npublic class DiscountEngine\n{\n    public decimal Calculate(decimal totalSpend)\n    {\n        if (totalSpend \u003c 0) throw new ArgumentOutOfRangeException(nameof(totalSpend), \"Total belanja tidak boleh negatif!\");\n        if (totalSpend \u003e= 1_000_000) return totalSpend * 0.10m; // 10% diskon\n        if (totalSpend \u003e= 500_000) return totalSpend * 0.05m;   // 5% diskon\n        return 0;\n    }\n}\n\n// Simulasi Mini Test Runner\npublic class Program\n{\n    public static void Main()\n    {\n        var engine = new DiscountEngine();\n        int passed = 0;\n        int failed = 0;\n\n        void AssertEqual(decimal expected, decimal actual, string testName)\n        {\n            if (expected == actual)\n            {\n                Console.WriteLine($\"[PASS] {testName}\");\n                passed++;\n            }\n            else\n            {\n                Console.WriteLine($\"[FAIL] {testName} - Ekspektasi: {expected}, Nyata: {actual}\");\n                failed++;\n            }\n        }\n\n        // Test 1: Belanja 200k -\u003e Diskon 0\n        AssertEqual(0, engine.Calculate(200_000), \"Belanja 200k Diskon 0\");\n\n        // Test 2: Belanja 500k -\u003e Diskon 25k (5%)\n        AssertEqual(25_000, engine.Calculate(500_000), \"Belanja 500k Diskon 5%\");\n\n        // TODO: Tambahkan Test 3: Belanja 1.000.000 -\u003e Diskon 100.000 (10%)\n        // Panggil AssertEqual dengan nilai yang sesuai.\n\n        Console.WriteLine($\"\\nHasil Tes: {passed} Lulus, {failed} Gagal\");\n    }\n}",
+    "solutionCode":  "using System;\n\npublic class DiscountEngine\n{\n    public decimal Calculate(decimal totalSpend)\n    {\n        if (totalSpend \u003c 0) throw new ArgumentOutOfRangeException(nameof(totalSpend), \"Total belanja tidak boleh negatif!\");\n        if (totalSpend \u003e= 1_000_000) return totalSpend * 0.10m;\n        if (totalSpend \u003e= 500_000) return totalSpend * 0.05m;\n        return 0;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var engine = new DiscountEngine();\n        int passed = 0;\n        int failed = 0;\n\n        void AssertEqual(decimal expected, decimal actual, string testName)\n        {\n            if (expected == actual)\n            {\n                Console.WriteLine($\"[PASS] {testName}\");\n                passed++;\n            }\n            else\n            {\n                Console.WriteLine($\"[FAIL] {testName} - Ekspektasi: {expected}, Nyata: {actual}\");\n                failed++;\n            }\n        }\n\n        AssertEqual(0, engine.Calculate(200_000), \"Belanja 200k Diskon 0\");\n        AssertEqual(25_000, engine.Calculate(500_000), \"Belanja 500k Diskon 5%\");\n        AssertEqual(100_000, engine.Calculate(1_000_000), \"Belanja 1jt Diskon 10%\");\n\n        Console.WriteLine($\"\\nHasil Tes: {passed} Lulus, {failed} Gagal\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-16-01-1",
+                              "type":  "single_choice",
+                              "question":  "Apa perbedaan mendasar antara atribut [Fact] dan [Theory] dalam framework pengujian xUnit?",
+                              "options":  [
+                                              "[Fact] hanya bisa dijalankan di komputer Mac, sedangkan [Theory] di Windows.",
+                                              "[Fact] menguji satu skenario invariant tanpa parameter, sedangkan [Theory] menjalankan logika pengujian yang sama berulang kali dengan parameter input berbeda (data-driven testing via [InlineData] atau [MemberData]).",
+                                              "[Fact] selalu menghasilkan nilai true, sedangkan [Theory] selalu gagal.",
+                                              "[Fact] digunakan untuk integration testing, sedangkan [Theory] untuk database SQL."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "[Fact] mendefinisikan tes invarian tunggal tanpa argumen. [Theory] mendefinisikan tes berparameter yang dieksekusi berulang kali untuk setiap baris data yang disuplai oleh atribut pendukung data seperti [InlineData], [ClassData], atau [MemberData].",
+                              "optionExplanations":  [
+                                                         "Salah. xUnit berjalan cross-platform pada semua OS.",
+                                                         "Benar! [Theory] memungkinkan pengujian data-driven komprehensif pada berbagai variasi input edge-case.",
+                                                         "Salah. Status kelulusan tes ditentukan oleh hasil eksekusi assertion di dalamnya.",
+                                                         "Salah. Keduanya dapat digunakan untuk unit test maupun integration test."
+                                                     ],
+                              "sectionRef":  "2. Fitur Kunci xUnit: [Fact] vs [Theory]",
+                              "difficulty":  "Intermediate"
+                          },
+                          {
+                              "id":  "q-16-01-2",
+                              "type":  "single_choice",
+                              "question":  "Mengapa praktik \u0027Over-Mocking\u0027 (mem-mock seluruh class termasuk entity internal dan Value Objects) dianggap sebagai anti-pattern berbahaya dalam Unit Testing?",
+                              "options":  [
+                                              "Karena library mock memakan bandwidth kuota internet.",
+                                              "Karena tes menjadi sangat terikat pada detail implementasi internal (tightly coupled), sehingga refactoring kecil pada kode internal akan mematahkan puluhan tes meskipun perilaku bisnisnya tidak berubah.",
+                                              "Karena C# melarang pembuatan lebih dari 2 mock object.",
+                                              "Karena compiler C# akan otomatis menghapus file mock."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Over-mocking menguji \u0027bagaimana\u0027 kode ditulis, bukan \u0027apa\u0027 hasilnya. Hal ini membuat tes menjadi sangat rapuh (brittle): refactoring nama method privat atau restrukturisasi internal mematahkan tes, mematikan produktivitas tim.",
+                              "optionExplanations":  [
+                                                         "Salah. Mocking bekerja sepenuhnya di memori lokal.",
+                                                         "Benar! Mock hanya boleh digunakan pada batasan arsitektur (I/O eksternal, jaringan, API pihak ketiga).",
+                                                         "Salah. Tidak ada batasan jumlah mock di C#.",
+                                                         "Salah. Compiler tidak menghapus file mock."
+                                                     ],
+                              "sectionRef":  "3. Test Doubles: Mocking dengan NSubstitute",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-03-04",
+                           "lesson-13-01",
+                           "lesson-16-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Unit Testing Best Practices with .NET Core and .NET Standard - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Working with xUnit - Brad Wilson",
+                           "url":  "https://xunit.net/",
+                           "type":  "documentation"
+                       }
+                   ]
+}

@@ -1,0 +1,168 @@
+{
+  "id": "lesson-03-01",
+  "levelId": "level-03",
+  "moduleId": "mod-03-01",
+  "order": 1,
+  "title": "Kelas, Objek \u0026 Enkapsulasi: Constructor, Init-Only Properties, dan Invariant",
+  "slug": "classes-objects-encapsulation-invariants",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami pilar enkapsulasi: perlindungan status internal objek (invariants), primary constructors C# 12, init-only setters, dan menghindari anemic domain model pada rekayasa backend.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami bagaimana instance class dialokasikan di Managed Heap."
+    }
+  ],
+  "introduces": [
+    "Encapsulation \u0026 Information Hiding",
+    "Domain Invariant Protection",
+    "Init-Only Setters (init)",
+    "Primary Constructors (C# 12)",
+    "Anemic Domain Model vs Rich Domain Model"
+  ],
+  "learningObjectives": [
+    "Menerapkan enkapsulasi ketat untuk mencegah status objek korup (invalid state).",
+    "Menggunakan init-only properties dan primary constructor C# 12 untuk imutabilitas parsial.",
+    "Mengubah Anemic Domain Model menjadi Rich Domain Model dengan validasi bisnis terpusat."
+  ],
+  "markdownContent": "# Kelas, Objek \u0026 Enkapsulasi: Constructor, Init-Only Properties, dan Invariant\n\n## Enkapsulasi Bukan Sekadar Getter dan Setter\nBanyak developer mengira enkapsulasi hanyalah membungkus field privat dengan getter dan setter otomatis:\n\u0060\u0060\u0060csharp\n// ANTI-PATTERN: ANEMIC DOMAIN MODEL (TIDAK ADA ENKAPSULASI SEJATI)\npublic class RekeningBank\n{\n    public decimal Saldo { get; set; } // Siapapun dari luar bebas mengubah saldo menjadi -999999999!\n}\n\u0060\u0060\u0060\nIni **bukan** enkapsulasi. Kode di atas membiarkan status internal (*state*) telanjang tanpa perlindungan. Kode luar dapat memasukkan nilai saldo negatif yang merusak integritas sistem akuntansi.\n\n---\n\n## Menjaga Invariant Domain\n**Invariant** adalah aturan bisnis mutlak yang harus selalu bernilai benar sepanjang masa hidup suatu objek.\nContoh Invariant Rekening Bank:\n- Saldo tidak boleh negatif tanpa izin fasilitas cerukan (*overdraft*).\n- Setiap pengurangan saldo harus memiliki alasan audit transaksi yang valid.\n\n### Rich Domain Model dengan Proteksi Invariant:\n\u0060\u0060\u0060csharp\npublic class RekeningBank\n{\n    public string NomorRekening { get; }\n    public decimal Saldo { get; private set; } // Hanya method di dalam kelas yang bisa mengubah saldo!\n\n    public RekeningBank(string nomorRekening, decimal saldoAwal)\n    {\n        if (string.IsNullOrWhiteSpace(nomorRekening))\n            throw new ArgumentException(\u0022Nomor rekening wajib diisi.\u0022, nameof(nomorRekening));\n        if (saldoAwal \u003C 0)\n            throw new ArgumentOutOfRangeException(nameof(saldoAwal), \u0022Saldo awal tidak boleh negatif.\u0022);\n\n        NomorRekening = nomorRekening;\n        Saldo = saldoAwal;\n    }\n\n    public void TarikTunai(decimal nominal)\n    {\n        if (nominal \u003C= 0)\n            throw new ArgumentException(\u0022Nominal harus lebih besar dari nol.\u0022, nameof(nominal));\n        if (Saldo \u003C nominal)\n            throw new InvalidOperationException(\u0022Saldo tidak mencukupi.\u0022);\n\n        Saldo -= nominal; // State mutation terlindungi 100%!\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## C# Modern: Init-Only Properties (\u0060init\u0060) \u0026 Primary Constructor\nC# 9 dan C# 12 menghadirkan sintaks modern untuk imutabilitas yang elegan:\n\n\u0060\u0060\u0060csharp\n// Primary Constructor C# 12: parameter langsung di samping nama class\npublic class Customer(string id, string fullName)\n{\n    public string Id { get; init; } = id;            // \u0027init\u0027 hanya bisa diset saat new\n    public string FullName { get; set; } = fullName; // \u0027set\u0027 bebas dimodifikasi kapan saja\n}\n\n// Penggunaan:\nvar c = new Customer(\u0022C-01\u0022, \u0022Budi Santoso\u0022);\n// c.Id = \u0022C-99\u0022; // ERROR KOMPILASI! CS8852: Init-only property tidak dapat diubah setelah inisialisasi!\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Menerapkan Enkapsulasi Kaya (Rich Domain Model)\npublic class SecureWallet\n{\n    public string Owner { get; init; }\n    public decimal Balance { get; private set; }\n\n    public SecureWallet(string owner, decimal initialDeposit)\n    {\n        if (string.IsNullOrWhiteSpace(owner))\n            throw new ArgumentException(\u0022Owner tidak boleh kosong.\u0022);\n        if (initialDeposit \u003C 0)\n            throw new ArgumentException(\u0022Deposit awal tidak boleh negatif.\u0022);\n\n        Owner = owner;\n        Balance = initialDeposit;\n    }\n\n    public void Deposit(decimal amount)\n    {\n        if (amount \u003C= 0) throw new ArgumentException(\u0022Nominal deposit harus positif.\u0022);\n        Balance \u002B= amount;\n    }\n\n    public bool TryWithdraw(decimal amount)\n    {\n        if (amount \u003C= 0 || Balance \u003C amount) return false;\n        Balance -= amount;\n        return true;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var wallet = new SecureWallet(\u0022Ahmad\u0022, 1_000_000m);\n        Console.WriteLine($\u0022Pemilik: {wallet.Owner} | Saldo: Rp {wallet.Balance:N0}\u0022);\n        \n        wallet.Deposit(500_000m);\n        Console.WriteLine($\u0022Setelah deposit: Rp {wallet.Balance:N0}\u0022);\n        \n        bool ok = wallet.TryWithdraw(2_000_000m);\n        Console.WriteLine($\u0022Penarikan 2 Juta berhasil? {ok} (Saldo tetap: Rp {wallet.Balance:N0})\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-03-01-1",
+      "type": "MultipleChoice",
+      "question": "Apa fungsi keyword accessor \u0060init\u0060 pada property C# modern (contoh: \u0060public string Id { get; init; }\u0060)?",
+      "options": [
+        "Mengizinkan property diubah nilainya kapan saja oleh thread mana pun",
+        "Mengizinkan property diberi nilai hanya selama konstruksi objek (\u0060new\u0060), dan setelah itu menjadi read-only permanen",
+        "Membuat property otomatis dienkripsi di memori",
+        "Memaksa compiler mengabaikan null safety"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Accessor \u0060init\u0060 memberlakukan aturan imutabilitas: nilai hanya dapat diisi pada saat inisialisasi objek (melalui constructor atau object initializer), setelah itu nilai terkunci dan tidak dapat dimutasi.",
+      "optionExplanations": [
+        "Salah. Itu adalah perilaku accessor \u0060set\u0060 biasa.",
+        "Benar! \u0060init\u0060 mengunci nilai agar hanya bisa diisi saat pembuatan objek pertama kali.",
+        "Salah. \u0060init\u0060 tidak mengenkripsi memori.",
+        "Salah. \u0060init\u0060 tetap tunduk pada aturan nullable reference types."
+      ],
+      "sectionRef": "C# Modern: Init-Only Properties (init) \u0026 Primary Constructor",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-01-2",
+      "type": "MultipleChoice",
+      "question": "Mengapa Anemic Domain Model (class yang hanya berisi public getter dan public setter tanpa method bisnis) dianggap sebagai anti-pattern pada arsitektur enterprise?",
+      "options": [
+        "Karena kode tidak bisa dikompilasi oleh Roslyn",
+        "Karena aturan validasi bisnis (invariants) tersebar di berbagai layer terpisah sehingga memicu inkonsistensi dan korupsi data",
+        "Karena menghabiskan memori RAM 10 kali lebih besar",
+        "Karena tidak mendukung protokol HTTP"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Anemic Domain Model memisahkan data dari logika perilakunya. Siapa pun dapat mengubah data tanpa validasi, menyebabkan aturan bisnis duplikatif dan rawan bug korupsi status.",
+      "optionExplanations": [
+        "Salah. Anemic class dapat dikompilasi secara legal oleh compiler C#.",
+        "Benar! Anemic model kehilangan kendali atas aturan validasi internal (invariants) objek.",
+        "Salah. Penggunaan memori tidak bertambah 10 kali lipat.",
+        "Salah. Tidak ada hubungannya dengan protokol HTTP."
+      ],
+      "sectionRef": "Enkapsulasi Bukan Sekadar Getter dan Setter",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-01",
+    "Title": "Perancangan Entitas Saldo Finansial Terenkapsulasi",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Buat kelas \u0060BankAccount\u0060 dengan field privat saldo (\u0060_balance\u0060).\nSediakan method \u0060Deposit(decimal amount)\u0060 dan \u0060Withdraw(decimal amount)\u0060.\nInvarian:\n- Deposit hanya menerima angka \u003E 0.\n- Withdraw hanya memproses jika saldo mencukupi dan amount \u003E 0.\nBaca daftar transaksi dari stdin: \u0027DEP 50000\u0027, \u0027WIT 20000\u0027, dll dipisahkan titik koma (\u0027;\u0027).\nCetak saldo akhir: \u0027SALDO_AKHIR: \u003CBalance\u003E\u0027.",
+    "InputFormat": "Satu baris instruksi transaksi dipisahkan \u0027;\u0027.",
+    "OutputFormat": "Satu baris: \u0027SALDO_AKHIR: \u003CBalance\u003E\u0027.",
+    "Constraints": "Saldo awal adalah 0.",
+    "Examples": [
+      {
+        "Input": "DEP 100000; WIT 40000",
+        "Output": "SALDO_AKHIR: 60000",
+        "Explanation": "Setor 100rb, tarik 40rb = 60rb."
+      },
+      {
+        "Input": "DEP 50000; WIT 70000",
+        "Output": "SALDO_AKHIR: 50000",
+        "Explanation": "Penarikan 70rb ditolak karena saldo kurang."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Globalization;\n\npublic class BankAccount\n{\n    private decimal _balance = 0;\n    public decimal Balance =\u003E _balance;\n    // TODO: Implementasikan Deposit dan Withdraw dengan invariant guard.\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        Console.WriteLine(\u0022SALDO_AKHIR: 0\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Globalization;\n\npublic class BankAccount\n{\n    private decimal _balance = 0;\n    public decimal Balance =\u003E _balance;\n\n    public void Deposit(decimal amount)\n    {\n        if (amount \u003E 0) _balance \u002B= amount;\n    }\n\n    public void Withdraw(decimal amount)\n    {\n        if (amount \u003E 0 \u0026\u0026 _balance \u003E= amount) _balance -= amount;\n    }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022SALDO_AKHIR: 0\u0022); return; }\n\n        var acc = new BankAccount();\n        var txs = line.Split(\u0027;\u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var t in txs)\n        {\n            var p = t.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n            if (p.Length \u003C 2) continue;\n            string op = p[0].ToUpperInvariant();\n            if (decimal.TryParse(p[1], CultureInfo.InvariantCulture, out decimal val))\n            {\n                if (op == \u0022DEP\u0022) acc.Deposit(val);\n                else if (op == \u0022WIT\u0022) acc.Withdraw(val);\n            }\n        }\n        Console.WriteLine($\u0022SALDO_AKHIR: {acc.Balance}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Setor \u0026 Tarik)",
+        "Description": "Contoh 1 (Setor \u0026 Tarik): input \u0027DEP 100000; WIT 40000\u0027 -\u003E expected \u0027SALDO_AKHIR: 60000\u0027",
+        "Input": "DEP 100000; WIT 40000",
+        "ExpectedOutput": "SALDO_AKHIR: 60000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Overdraft Ditolak)",
+        "Description": "Contoh 2 (Overdraft Ditolak): input \u0027DEP 50000; WIT 70000\u0027 -\u003E expected \u0027SALDO_AKHIR: 50000\u0027",
+        "Input": "DEP 50000; WIT 70000",
+        "ExpectedOutput": "SALDO_AKHIR: 50000",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Deposit Negatif Ditolak",
+        "Description": "Deposit Negatif Ditolak: input \u0027DEP -20000; DEP 30000\u0027 -\u003E expected \u0027SALDO_AKHIR: 30000\u0027",
+        "Input": "DEP -20000; DEP 30000",
+        "ExpectedOutput": "SALDO_AKHIR: 30000",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Banyak Transaksi",
+        "Description": "Banyak Transaksi: input \u0027DEP 10000; DEP 20000; WIT 15000; WIT 5000\u0027 -\u003E expected \u0027SALDO_AKHIR: 10000\u0027",
+        "Input": "DEP 10000; DEP 20000; WIT 15000; WIT 5000",
+        "ExpectedOutput": "SALDO_AKHIR: 10000",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Enkapsulasi menyembunyikan state internal _balance dari manipulasi langsung di luar kelas.",
+      "Pastikan operasi penarikan hanya memotong saldo bila amount \u003C= _balance."
+    ],
+    "Explanation": "Enkapsulasi memastikan objek bertanggung jawab penuh menjaga keabsahan invariant bisnis internalnya."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-03-02",
+      "title": "Pewarisan vs Komposisi",
+      "levelName": "LEVEL 03",
+      "context": "Memilih strategi penggabungan perilaku objek tanpa merusak enkapsulasi."
+    },
+    {
+      "lessonId": "lesson-13-03",
+      "title": "Tactical Domain-Driven Design",
+      "levelName": "LEVEL 13",
+      "context": "Merancang Entities dan Aggregate Roots di arsitektur DDD."
+    }
+  ],
+  "references": [
+    {
+      "title": "Encapsulation in Object-Oriented Programming - Fowler",
+      "url": "https://martinfowler.com/bliki/Encapsulation.html"
+    },
+    {
+      "title": "Init only setters - C# guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/init"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class AccountLedger\n{\n    public string AccountId { get; init; }\n    public decimal Balance { get; private set; }\n\n    public AccountLedger(string accountId, decimal initialBalance)\n    {\n        if (string.IsNullOrWhiteSpace(accountId))\n            throw new ArgumentException(\u0022AccountId required.\u0022);\n        if (initialBalance \u003C 0)\n            throw new ArgumentException(\u0022Initial balance cannot be negative.\u0022);\n\n        AccountId = accountId.Trim();\n        Balance = initialBalance;\n    }\n\n    public void Credit(decimal amount)\n    {\n        if (amount \u003C= 0)\n            throw new ArgumentException(\u0022Credit amount must be positive.\u0022);\n        Balance \u002B= amount;\n    }\n\n    public void Debit(decimal amount)\n    {\n        if (amount \u003C= 0)\n            throw new ArgumentException(\u0022Debit amount must be positive.\u0022);\n        if (Balance \u003C amount)\n            throw new InvalidOperationException(\u0022Insufficient funds\u0022);\n        Balance -= amount;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var ledger = new AccountLedger(\u0022ACC-001\u0022, 100000m);\n        ledger.Credit(50000m);\n        ledger.Debit(20000m);\n        Console.WriteLine($\u0022Saldo Akhir: Rp {ledger.Balance:N0}\u0022);\n    }\n}"
+}

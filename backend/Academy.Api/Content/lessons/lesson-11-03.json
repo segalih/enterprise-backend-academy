@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-11-03",
+    "levelId":  "level-11",
+    "moduleId":  "mod-11-02",
+    "order":  3,
+    "title":  "Dependency Injection Deep Dive: Lifetimes, Scope Validation, dan Captive Dependency Trap",
+    "slug":  "dependency-injection-captive-dependencies",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  55,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menganalisis arsitektur internal Microsoft.Extensions.DependencyInjection: ServiceProvider resolution, Transient vs Scoped vs Singleton, dan bahaya fatal Captive Dependencies.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-03-04",
+                              "reason":  "Prinsip Dependency Inversion \u0026 Interface Segregation"
+                          },
+                          {
+                              "lessonId":  "lesson-11-01",
+                              "reason":  "Siklus hidup HttpContext dan per-request scope"
+                          }
+                      ],
+    "introduces":  [
+                       "ServiceDescriptor \u0026 IServiceCollection internals",
+                       "Service Lifetimes: Transient, Scoped, Singleton",
+                       "Captive Dependency Trap (Root cause, bugs, and fixes)",
+                       "IServiceScopeFactory \u0026 Scope Validation",
+                       "Disposable Services \u0026 Memory Leaks in Root Container"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan mekanisme resolusi objek antara Transient, Scoped, dan Singleton di dalam IServiceProvider",
+                               "Mendiagnosa dan mereproduksi bug \u0027Captive Dependency\u0027 di mana Singleton menahan objek Scoped (seperti DbContext)",
+                               "Mengaktifkan dan memanfaatkan Scope Validation pada HostBuilder untuk menangkap kesalahan DI saat startup",
+                               "Menggunakan IServiceScopeFactory dengan benar di background services (IHostedService / BackgroundService)"
+                           ],
+    "markdownContent":  "# Dependency Injection Deep Dive: Lifetimes, Scope Validation, dan Captive Dependency Trap\n\nDependency Injection (DI) adalah jantung arsitektur ASP.NET Core modern. Seluruh subsistem frameworkâ€”mulai dari routing, controller, database context, hingga middlewareâ€”dirangkai oleh engine DI bawaan (`Microsoft.Extensions.DependencyInjection`).\n\nMeskipun penggunaannya terlihat sederhana (cukup memanggil `AddTransient`, `AddScoped`, atau `AddSingleton`), kesalahan pemahaman terhadap **Service Lifetimes** dan **Scope Boundaries** adalah salah satu sumber bug paling berbahaya di sistem enterprise: kebocoran memori, race condition data database, hingga crash aplikasi di lingkungan produksi.\n\n---\n\n## 1. Tiga Service Lifetime dalam ASP.NET Core\n\nSetiap pendaftaran dependensi dimodelkan dalam objek `ServiceDescriptor` yang menyimpan tipe service (`ServiceType`), tipe implementasi (`ImplementationType`), dan waktu hidup (`Lifetime`):\n\n```text\n1. Transient (AddTransient\u003cTService, TImpl\u003e)\n   - Instans BARU dibuat setiap kali service diminta.\n   - Cocok untuk objek ringan tanpa state (stateless utilities).\n\n2. Scoped (AddScoped\u003cTService, TImpl\u003e)\n   - Satu instans dibuat PER SCOPE (biasanya 1 HTTP Request = 1 Scope).\n   - Instans yang sama dibagikan ke seluruh class yang meminta service ini di dalam HTTP request yang sama.\n   - Contoh wajib: Entity Framework Core DbContext!\n\n3. Singleton (AddSingleton\u003cTService, TImpl\u003e)\n   - Satu instans dibuat SEKALI untuk SEUMUR HIDUP APLIKASI.\n   - Dibagikan ke semua HTTP request dan semua thread secara paralel.\n   - Harus strictly thread-safe!\n   - Contoh: Cache in-memory, HttpClientFactory, metrics engine.\n```\n\n---\n\n## 2. Bahaya Fatal: The Captive Dependency Trap\n\nApa itu **Captive Dependency**?\n\u003e **Captive Dependency** terjadi ketika sebuah service dengan waktu hidup yang lebih panjang (misalnya **Singleton**) meng-inject service dengan waktu hidup yang lebih pendek (misalnya **Scoped**).\n\n```mermaid\nflowchart TD\n    Root[\"Root DI Container (Singleton Lifetime)\"] --\u003e|Menahan Referensi Selamanya| Singleton[\"SingletonService\"]\n    Singleton --\u003e|Injected via Constructor| Scoped[\"ScopedDbContext (TERJEBAK!)\"]\n    R1[\"HTTP Request 1\"] -.-\u003e|Akses Paralel| Scoped\n    R2[\"HTTP Request 2\"] -.-\u003e|Akses Paralel| Scoped\n    R3[\"HTTP Request N\"] -.-\u003e|Akses Paralel| Scoped\n    Scoped -.-\u003e Leak[\"Thread-Safety Violation \u0026 Memory Leak!\"]\n```\n\n### Mengapa Ini Bencana Besar di Produksi?\n1. **Concurrency Crash pada DbContext**: EF Core `DbContext` **tidak thread-safe**. Jika dua request web masuk bersamaan dan `SingletonService` menggunakan `DbContext` yang sama, EF Core akan langsung melempar:\n   `InvalidOperationException: A second operation was started on this context instance before a previous operation completed.`\n2. **Stale Data (Data Basi)**: Karena `DbContext` tidak pernah di-dispose, first-level cache miliknya akan menahan entity selamanya. Query baru tidak akan merefleksikan perubahan di database.\n3. **Memory Leak**: `ChangeTracker` di dalam `DbContext` akan terus menumpuk objek entity yang dilacak, menyebabkan memory heap membesar hingga terjadi `OutOfMemoryException`.\n\n---\n\n## 3. Cara Mencegah: Scope Validation di ASP.NET Core\n\nASP.NET Core memiliki mekanisme built-in untuk mendeteksi Captive Dependencies saat aplikasi dijalankan:\n\n```csharp\nvar builder = WebApplication.CreateBuilder(args);\n\n// Mengaktifkan Scope Validation secara eksplisit\nbuilder.Host.UseDefaultServiceProvider((context, options) =\u003e\n{\n    // Melempar exception saat build time jika ada Singleton yang mengonsumsi Scoped\n    options.ValidateScopes = true; \n    options.ValidateOnBuild = true;\n});\n```\n\n\u003e [!NOTE]\n\u003e Secara default, `ValidateScopes` aktif di environment **Development**, tetapi **dinonaktifkan di Production** demi performa resolusi container. Oleh karena itu, pastikan unit test atau CI pipeline Anda menjalankan verifikasi DI container sebelum deploy!\n\n---\n\n## 4. Solusi Benar: Menggunakan `IServiceScopeFactory` di Singleton / Worker\n\nBagaimana jika sebuah Singleton (misalnya `BackgroundService` yang memproses antrean pesan) benar-benar membutuhkan service Scoped seperti `DbContext`?\n\n**JANGAN** meng-inject `DbContext` di constructor background service!\nGunakan **`IServiceScopeFactory`** untuk membuat scope manual per unit kerja:\n\n```csharp\npublic class QueueWorker : BackgroundService\n{\n    private readonly IServiceScopeFactory _scopeFactory;\n    private readonly ILogger\u003cQueueWorker\u003e _logger;\n\n    public QueueWorker(IServiceScopeFactory scopeFactory, ILogger\u003cQueueWorker\u003e logger)\n    {\n        _scopeFactory = scopeFactory;\n        _logger = logger;\n    }\n\n    protected override async Task ExecuteAsync(CancellationToken stoppingToken)\n    {\n        while (!stoppingToken.IsCancellationRequested)\n        {\n            // 1. Buat scope baru per unit kerja\n            using (var scope = _scopeFactory.CreateScope())\n            {\n                // 2. Resolve scoped service di dalam scope ini\n                var dbContext = scope.ServiceProvider.GetRequiredService\u003cAppDbContext\u003e();\n                \n                await ProcessNextJobAsync(dbContext, stoppingToken);\n            } // 3. Scope di-dispose: DbContext dan seluruh scoped/transient IDisposable dibersihkan!\n\n            await Task.Delay(5000, stoppingToken);\n        }\n    }\n}\n```\n\n---\n\n## 5. Ringkasan \u0026 Aturan Baku DI Enterprise\n\n1. **Aturan Hirarki**: Singleton hanya boleh meng-inject Singleton. Scoped boleh meng-inject Scoped atau Singleton. Transient boleh meng-inject apa saja.\n2. **Selalu Bersihkan IDisposable Transient**: Objek `Transient` yang mengimplementasikan `IDisposable` dan di-resolve langsung dari root container (`app.Services`) **tidak akan di-dispose** sampai aplikasi mati, memicu memory leak. Selalu resolve dari scoped container.\n3. **Audit Startup**: Jalankan `ValidateOnBuild = true` pada automated test suite untuk menjamin integritas container DI.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// Simulasi Mini Dependency Injection Container\npublic enum ServiceLifetime { Transient, Scoped, Singleton }\n\npublic class ServiceDescriptor\n{\n    public Type ServiceType { get; set; }\n    public Type ImplementationType { get; set; }\n    public ServiceLifetime Lifetime { get; set; }\n}\n\npublic class MiniContainer\n{\n    private readonly List\u003cServiceDescriptor\u003e _descriptors = new();\n\n    public void Register(Type serviceType, Type implType, ServiceLifetime lifetime)\n    {\n        _descriptors.Add(new ServiceDescriptor { ServiceType = serviceType, ImplementationType = implType, Lifetime = lifetime });\n    }\n\n    public void ValidateCaptiveDependencies()\n    {\n        // TODO: Deteksi jika ada pendaftaran Singleton yang dependensinya adalah Scoped service.\n        // Lempar InvalidOperationException dengan pesan yang jelas jika terdeteksi captive dependency!\n        Console.WriteLine(\"[Audit] Menjalankan validasi container...\");\n    }\n}\n\npublic interface IOrderRepository { }\npublic class SqlOrderRepository : IOrderRepository { }\n\npublic interface IEmailService { }\npublic class SmtpEmailService : IEmailService\n{\n    // SmtpEmailService didaftarkan sebagai Singleton, tetapi bergantung pada Scoped IOrderRepository!\n    public SmtpEmailService(IOrderRepository repo) { }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var container = new MiniContainer();\n        container.Register(typeof(IOrderRepository), typeof(SqlOrderRepository), ServiceLifetime.Scoped);\n        container.Register(typeof(IEmailService), typeof(SmtpEmailService), ServiceLifetime.Singleton);\n\n        try\n        {\n            container.ValidateCaptiveDependencies();\n            Console.WriteLine(\"Semua dependensi valid.\");\n        }\n        catch (InvalidOperationException ex)\n        {\n            Console.WriteLine($\"[TERDETEKSI BUG]: {ex.Message}\");\n        }\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic enum ServiceLifetime { Transient, Scoped, Singleton }\n\npublic class ServiceDescriptor\n{\n    public Type ServiceType { get; set; }\n    public Type ImplementationType { get; set; }\n    public ServiceLifetime Lifetime { get; set; }\n}\n\npublic class MiniContainer\n{\n    private readonly List\u003cServiceDescriptor\u003e _descriptors = new();\n\n    public void Register(Type serviceType, Type implType, ServiceLifetime lifetime)\n    {\n        _descriptors.Add(new ServiceDescriptor { ServiceType = serviceType, ImplementationType = implType, Lifetime = lifetime });\n    }\n\n    public void ValidateCaptiveDependencies()\n    {\n        Console.WriteLine(\"[Audit] Menjalankan validasi container...\");\n\n        var scopedServices = _descriptors\n            .Where(d =\u003e d.Lifetime == ServiceLifetime.Scoped)\n            .Select(d =\u003e d.ServiceType)\n            .ToHashSet();\n\n        foreach (var singleton in _descriptors.Where(d =\u003e d.Lifetime == ServiceLifetime.Singleton))\n        {\n            var constructors = singleton.ImplementationType.GetConstructors();\n            foreach (var ctor in constructors)\n            {\n                foreach (var param in ctor.GetParameters())\n                {\n                    if (scopedServices.Contains(param.ParameterType))\n                    {\n                        throw new InvalidOperationException(\n                            $\"Captive Dependency: Singleton \u0027{singleton.ImplementationType.Name}\u0027 tidak boleh bergantung pada Scoped service \u0027{param.ParameterType.Name}\u0027!\");\n                    }\n                }\n            }\n        }\n    }\n}\n\npublic interface IOrderRepository { }\npublic class SqlOrderRepository : IOrderRepository { }\n\npublic interface IEmailService { }\npublic class SmtpEmailService : IEmailService\n{\n    public SmtpEmailService(IOrderRepository repo) { }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var container = new MiniContainer();\n        container.Register(typeof(IOrderRepository), typeof(SqlOrderRepository), ServiceLifetime.Scoped);\n        container.Register(typeof(IEmailService), typeof(SmtpEmailService), ServiceLifetime.Singleton);\n\n        try\n        {\n            container.ValidateCaptiveDependencies();\n            Console.WriteLine(\"Semua dependensi valid.\");\n        }\n        catch (InvalidOperationException ex)\n        {\n            Console.WriteLine($\"[TERDETEKSI BUG]: {ex.Message}\");\n        }\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-11-03-1",
+                              "type":  "single_choice",
+                              "question":  "Mengapa meng-inject EF Core DbContext langsung ke dalam Singleton BackgroundService menyebabkan crash pada aplikasi produksi?",
+                              "options":  [
+                                              "Karena Singleton service hanya boleh dijalankan di sistem operasi Windows.",
+                                              "Karena DbContext tidak thread-safe dan akan memicu concurrency exception saat diakses oleh thread paralel, serta menimbun memori entitas di ChangeTracker tanpa pernah dibersihkan.",
+                                              "Karena BackgroundService secara otomatis menghapus database SQLite saat startup.",
+                                              "Karena DbContext menolak koneksi ke server selain localhost jika dipanggil dari singleton."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "DbContext didesain untuk per-request/per-unit-of-work lifetime (Scoped). Jika dijadikan captive dependency oleh Singleton, satu instans DbContext yang sama akan diakses bersamaan oleh berbagai thread/eksekusi paralel, memicu InvalidOperationException pada EF Core dan kebocoran memori akibat ChangeTracker yang tidak pernah di-reset.",
+                              "optionExplanations":  [
+                                                         "Salah. BackgroundService berjalan cross-platform (Linux/Windows/macOS).",
+                                                         "Benar! DbContext tidak thread-safe dan butuh di-scope per operasi agar memori dibersihkan dan koneksi database dikembalikan ke pool.",
+                                                         "Salah. BackgroundService tidak memiliki perilaku menghapus database secara otomatis.",
+                                                         "Salah. DbContext tidak memiliki batasan alamat IP seperti itu."
+                                                     ],
+                              "sectionRef":  "2. Bahaya Fatal: The Captive Dependency Trap",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-11-03-2",
+                              "type":  "single_choice",
+                              "question":  "Bagaimana cara yang benar bagi BackgroundService (Singleton) untuk menggunakan Scoped service seperti DbContext?",
+                              "options":  [
+                                              "Mengubah DbContext menjadi Singleton di Program.cs.",
+                                              "Meng-inject IServiceScopeFactory ke dalam BackgroundService, lalu membuat scope baru (using var scope = factory.CreateScope()) setiap kali memproses unit kerja.",
+                                              "Membuat static global DbContext instance di dalam static class.",
+                                              "Memanggil GC.Collect() setiap kali selesai melakukan query."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Pola resmi yang direkomendasikan Microsoft adalah meng-inject IServiceScopeFactory ke dalam Singleton/BackgroundService. Di setiap iterasi atau eksekusi pekerjaan, buat scope baru dengan using var scope = _scopeFactory.CreateScope(); lalu resolve DbContext dari scope.ServiceProvider. Saat blok using berakhir, DbContext otomatis di-dispose dengan bersih.",
+                              "optionExplanations":  [
+                                                         "Salah. Menjadikan DbContext sebagai Singleton akan memperparah race condition di seluruh aplikasi.",
+                                                         "Benar! IServiceScopeFactory memungkinkan pembuatan boundary lifecycle yang aman di dalam background process.",
+                                                         "Salah. Static global instance memperparah masalah thread-safety.",
+                                                         "Salah. GC.Collect() tidak memperbaiki captive dependency atau membersihkan state DbContext."
+                                                     ],
+                              "sectionRef":  "4. Solusi Benar: Menggunakan IServiceScopeFactory di Singleton / Worker",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-03-04",
+                           "lesson-11-01",
+                           "lesson-10-03"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Dependency Injection in ASP.NET Core - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Avoid Captive Dependencies in .NET",
+                           "url":  "https://andrewlock.net/avoiding-captive-dependencies-with-scoped-services-in-aspnetcore/",
+                           "type":  "article"
+                       }
+                   ]
+}

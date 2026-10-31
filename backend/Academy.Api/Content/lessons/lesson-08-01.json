@@ -1,0 +1,168 @@
+{
+  "id": "lesson-08-01",
+  "levelId": "level-08",
+  "moduleId": "mod-08-01",
+  "order": 1,
+  "title": "Arsitektur CoreCLR: IL, Metadata, JIT Compilation, dan Dynamic PGO",
+  "slug": "coreclr-architecture-jit-dynamic-pgo",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Membongkar rahasia mesin eksekusi .NET CoreCLR: alur kompilasi berjenjang (Tiered Compilation Tier 0 ke Tier 1), Dynamic Profile-Guided Optimization (Dynamic PGO), loop unrolling, dan intrinsik hardware CPU.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-01-01",
+      "title": "Eksekusi Kode: Dari Source Code ke Machine Code",
+      "levelName": "LEVEL 01",
+      "context": "Memahami peran Roslyn Compiler dan CIL."
+    }
+  ],
+  "introduces": [
+    "CoreCLR Runtime Execution Engine",
+    "Tiered Compilation (Tier 0 MinOpt vs Tier 1 FullOpt)",
+    "Dynamic PGO (Profile-Guided Optimization)",
+    "Call Counting \u0026 On-Stack Replacement (OSR)",
+    "RyuJIT Loop Unrolling \u0026 SIMD Vectorization"
+  ],
+  "learningObjectives": [
+    "Memahami arsitektur Tiered Compilation: startup instan vs performa steady-state jangka panjang.",
+    "Menjelaskan bagaimana Dynamic PGO mengamati tipe data aktual saat runtime untuk mengoptimalkan hot path.",
+    "Menganalisis hasil optimasi kompilasi JIT (Inlining, Devirtualization, Bounds Check Elimination)."
+  ],
+  "markdownContent": "# Arsitektur CoreCLR: IL, Metadata, JIT Compilation, dan Dynamic PGO\n\n## Jantung dari Seluruh Ekosistem .NET: CoreCLR\n**CoreCLR (Common Language Runtime)** adalah runtime engine performa tinggi kelas enterprise yang mengeksekusi bytecode aplikasi C# Anda.\nCoreCLR mengelola empat tanggung jawab raksasa:\n1. **Type Safety \u0026 Metadata Verification**: Menjamin pointer tidak membaca memori terlarang.\n2. **JIT Compilation (RyuJIT)**: Menerjemahkan IL bytecode menjadi instruksi mesin native arsitektur x86-64 / ARM64.\n3. **Automatic Memory Management (GC)**: Alokasi dan daur ulang memori Managed Heap.\n4. **Threading \u0026 Concurrency Engine**: ThreadPool, synchronization primitives, dan Exception Handling.\n\n---\n\n## 1. Kompilasi Berjenjang: Tiered Compilation\nSebelum era .NET Core, JIT compiler menghadapi dilema:\n- Jika mengompilasi dengan optimasi maksimal (Full Optimization), waktu startup aplikasi sangat lambat karena butuh waktu menganalisis seluruh cabang kode.\n- Jika mengompilasi cepat tanpa optimasi (MinOpt), aplikasi start cepat tetapi performa throughput rendah.\n\nSolusi jenius di .NET 8 adalah **Tiered Compilation (Kompilasi Berjenjang)**:\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    Call[\u0022Panggilan Method Pertama Kali\u0022] --\u003E T0\n    subgraph T0[\u0022Tier-0: Quick JIT / MinOpt\u0022]\n        Comp0[\u0022Kompilasi CIL ke Native Instan\u003Cbr/\u003E(Tanpa Optimasi Berat, Fast Startup)\u0022]\n    end\n    T0 --\u003E Mon[\u0022Call Counter Monitor\u003Cbr/\u003E(Threshold: 30x Panggilan / Hot Method)\u0022]\n    Mon --\u003E|Terbukti Hot Path| T1\n    subgraph T1[\u0022Tier-1: RyuJIT Full Optimization\u0022]\n        Opt[\u0022Optimasi Kompilasi Background:\u003Cbr/\u003E\u2022 Method Inlining\u003Cbr/\u003E\u2022 Loop Unrolling\u003Cbr/\u003E\u2022 Bounds Check Elimination\u003Cbr/\u003E\u2022 Devirtualization via Dynamic PGO\u0022]\n    end\n    T1 --\u003E Native[\u0022Native Code Sangat Optimal di CPU\u0022]\n\u0060\u0060\u0060\n\n---\n\n## 2. Revolusi .NET 8: Dynamic PGO (Profile-Guided Optimization)\nDi .NET 8, **Dynamic PGO aktif secara default** (fitur yang menjadikan .NET 8 runtime tercepat sepanjang sejarah Microsoft):\n- Saat method berjalan di Tier 0, CoreCLR menyuntikkan kode instrumentasi pelacak (*probes*).\n- Runtime mencatat data profil nyata: *\u201CMethod interface ini ternyata 99.9% waktu selalu menerima instance tipe \u0060SqlCustomerRepository\u0060!\u201D*\n- Ketika di-recompile ke Tier 1: **RyuJIT membakar tipe \u0060SqlCustomerRepository\u0060 langsung ke machine code tanpa VTable lookup!**\n- Jika sewaktu-waktu ada tipe lain masuk, JIT memiliki jalur fallback aman (*guarded devirtualization*).",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Mengamati Efek Tiered Compilation dan JIT Warm-Up\nstatic long HitungKalkulasi(int batas)\n{\n    long total = 0;\n    for (int i = 0; i \u003C batas; i\u002B\u002B)\n    {\n        total \u002B= (i ^ 3);\n    }\n    return total;\n}\n\nConsole.WriteLine(\u0022=== EKSPERIMEN JIT TIERING \u0026 WARM-UP ===\u0022);\n\n// 1. Eksekusi Pertama: Memicu Kompilasi JIT Tier 0 (Cold Start)\nvar sw1 = Stopwatch.StartNew();\nHitungKalkulasi(100_000);\nsw1.Stop();\nConsole.WriteLine($\u0022Panggilan 1 (Cold JIT Compilation) : {sw1.ElapsedTicks} ticks ({sw1.ElapsedMilliseconds} ms)\u0022);\n\n// 2. Eksekusi Berulang untuk memicu promosi ke Tier 1 Full Optimization\nfor (int i = 0; i \u003C 50; i\u002B\u002B)\n{\n    HitungKalkulasi(100_000);\n}\n\n// 3. Eksekusi Setelah Teroptimasi (Warm State)\nvar sw2 = Stopwatch.StartNew();\nHitungKalkulasi(100_000);\nsw2.Stop();\nConsole.WriteLine($\u0022Panggilan 52 (Hot JIT Steady-State) : {sw2.ElapsedTicks} ticks ({sw2.ElapsedMilliseconds} ms)\u0022);\n\nConsole.WriteLine($\u0022\\nPercepatan Eksekusi: {sw1.ElapsedTicks / Math.Max(1, sw2.ElapsedTicks)}x lebih efisien!\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-08-01-1",
+      "type": "MultipleChoice",
+      "question": "Apa tujuan utama dari fitur \u0027Tiered Compilation\u0027 pada arsitektur CoreCLR modern?",
+      "options": [
+        "Menghapus seluruh file assembly .dll dari disk",
+        "Menggabungkan waktu startup aplikasi yang instan (Tier 0 Quick JIT) dengan performa eksekusi throughput maksimal jangka panjang (Tier 1 Full Opt di background)",
+        "Memaksa program berjalan pada satu thread saja",
+        "Mengganti runtime C# dengan engine Python"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Tiered Compilation memungkinkan method dimulai dengan cepat menggunakan Quick JIT (Tier 0), lalu dipromosikan ke Tier 1 dengan optimasi mendalam jika terdeteksi sering dipanggil.",
+      "optionExplanations": [
+        "Salah. Assembly .dll tetap dibutuhkan di memori/disk.",
+        "Benar! Menyeimbangkan kecepatan startup dan performa steady-state throughput.",
+        "Salah. Tiered compilation mendukung multi-core dan background optimization.",
+        "Salah. CoreCLR adalah runtime native C#/.NET."
+      ],
+      "sectionRef": "1. Kompilasi Berjenjang: Tiered Compilation",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-08-01-2",
+      "type": "MultipleChoice",
+      "question": "Bagaimana cara kerja Dynamic PGO (Profile-Guided Optimization) di .NET 8 untuk meningkatkan kecepatan pemanggilan interface virtual?",
+      "options": [
+        "Mengganti interface dengan class statis saat compile time",
+        "Mengamati data profil eksekusi nyata saat runtime (Tier 0) dan melakukan Guarded Devirtualization pada tipe data yang paling sering digunakan saat kompilasi Tier 1",
+        "Menonaktifkan garbage collector",
+        "Menolak pemanggilan method virtual"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Dynamic PGO mempelajari pola eksekusi nyata di Tier 0 untuk mengoptimalkan tipe monomorfik yang paling sering muncul, mengganti pemanggilan virtual menjadi pemanggilan langsung (devirtualized).",
+      "optionExplanations": [
+        "Salah. Dynamic PGO bekerja secara dinamis di runtime, bukan compile-time murni.",
+        "Benar! Guarded devirtualization mengoptimalkan jalur eksekusi tersering berdasarkan profil runtime.",
+        "Salah. GC tetap berjalan normal.",
+        "Salah. Polimorfisme tetap berfungsi 100% normal dengan fallback aman."
+      ],
+      "sectionRef": "2. Revolusi .NET 8: Dynamic PGO (Profile-Guided Optimization)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-08-01",
+    "Title": "Pemeriksa Status Konfigurasi Dynamic PGO Runtime",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca satu baris string konfigurasi environment .NET runtime dari stdin (format \u0027Key1=Val1;Key2=Val2;...\u0027).\nCari konfigurasi \u0060DOTNET_TieredPGO\u0060.\n- Jika nilainya \u00271\u0027 atau \u0027true\u0027: cetak \u0027DYNAMIC_PGO: ENABLED\u0027\n- Jika nilainya \u00270\u0027 atau \u0027false\u0027: cetak \u0027DYNAMIC_PGO: DISABLED\u0027\n- Jika tidak ditemukan: cetak \u0027DYNAMIC_PGO: NOT_CONFIGURED\u0027.",
+    "InputFormat": "Satu baris string konfigurasi dipisahkan titik koma (\u0027;\u0027).",
+    "OutputFormat": "Satu baris status Dynamic PGO.",
+    "Constraints": "Case-insensitive.",
+    "Examples": [
+      {
+        "Input": "DOTNET_TieredPGO=1;DOTNET_TC_QuickJit=1",
+        "Output": "DYNAMIC_PGO: ENABLED",
+        "Explanation": "TieredPGO diaktifkan dengan nilai 1."
+      },
+      {
+        "Input": "ASPNETCORE_ENVIRONMENT=Production",
+        "Output": "DYNAMIC_PGO: NOT_CONFIGURED",
+        "Explanation": "Kunci tidak ditemukan."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? config = Console.ReadLine();\n        // TODO: Parse key-value pair dan evaluasi DOTNET_TieredPGO.\n        Console.WriteLine(\u0022DYNAMIC_PGO: NOT_CONFIGURED\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? config = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(config)) { Console.WriteLine(\u0022DYNAMIC_PGO: NOT_CONFIGURED\u0022); return; }\n\n        var pairs = config.Split(\u0027;\u0027, StringSplitOptions.RemoveEmptyEntries);\n        string status = \u0022NOT_CONFIGURED\u0022;\n\n        foreach (var p in pairs)\n        {\n            var kv = p.Trim().Split(\u0027=\u0027);\n            if (kv.Length == 2 \u0026\u0026 kv[0].Trim().Equals(\u0022DOTNET_TieredPGO\u0022, StringComparison.OrdinalIgnoreCase))\n            {\n                string val = kv[1].Trim().ToLowerInvariant();\n                if (val == \u00221\u0022 || val == \u0022true\u0022) status = \u0022ENABLED\u0022;\n                else if (val == \u00220\u0022 || val == \u0022false\u0022) status = \u0022DISABLED\u0022;\n                break;\n            }\n        }\n        Console.WriteLine($\u0022DYNAMIC_PGO: {status}\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Enabled Nilai 1)",
+        "Description": "Contoh 1 (Enabled Nilai 1): input \u0027DOTNET_TieredPGO=1;DOTNET_TC_QuickJit=1\u0027 -\u003E expected \u0027DYNAMIC_PGO: ENABLED\u0027",
+        "Input": "DOTNET_TieredPGO=1;DOTNET_TC_QuickJit=1",
+        "ExpectedOutput": "DYNAMIC_PGO: ENABLED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Not Configured)",
+        "Description": "Contoh 2 (Not Configured): input \u0027ASPNETCORE_ENVIRONMENT=Production\u0027 -\u003E expected \u0027DYNAMIC_PGO: NOT_CONFIGURED\u0027",
+        "Input": "ASPNETCORE_ENVIRONMENT=Production",
+        "ExpectedOutput": "DYNAMIC_PGO: NOT_CONFIGURED",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Disabled Nilai False",
+        "Description": "Disabled Nilai False: input \u0027DOTNET_TieredPGO=false\u0027 -\u003E expected \u0027DYNAMIC_PGO: DISABLED\u0027",
+        "Input": "DOTNET_TieredPGO=false",
+        "ExpectedOutput": "DYNAMIC_PGO: DISABLED",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Enabled Huruf Besar True",
+        "Description": "Enabled Huruf Besar True: input \u0027DOTNET_TieredPGO=TRUE\u0027 -\u003E expected \u0027DYNAMIC_PGO: ENABLED\u0027",
+        "Input": "DOTNET_TieredPGO=TRUE",
+        "ExpectedOutput": "DYNAMIC_PGO: ENABLED",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pecah string dengan Split(\u0027;\u0027).",
+      "Gunakan StringComparison.OrdinalIgnoreCase saat memeriksa nama konfigurasi."
+    ],
+    "Explanation": "Dynamic Profile-Guided Optimization (PGO) di .NET 8 mengumpulkan profil eksekusi kode saat runtime untuk mengompilasi ulang hot path menjadi instruksi mesin paling optimal."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-08-02",
+      "title": "Garbage Collector Internals",
+      "levelName": "LEVEL 08",
+      "context": "Bagaimana alokasi memori managed dikelola bersama RyuJIT."
+    },
+    {
+      "lessonId": "lesson-03-03",
+      "title": "Polimorfisme Dinamis \u0026 VTable",
+      "levelName": "LEVEL 03",
+      "context": "Bagaimana JIT devirtualization meniadakan biaya VTable call."
+    }
+  ],
+  "references": [
+    {
+      "title": "Tiered Compilation in .NET Core - .NET Blog",
+      "url": "https://devblogs.microsoft.com/dotnet/tiered-compilation-in-net-core/"
+    },
+    {
+      "title": "Performance Improvements in .NET 8 - Stephen Toub",
+      "url": "https://devblogs.microsoft.com/dotnet/performance-improvements-in-net-8/"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class JitTierInspector\n{\n    public static string GetJitOptimizationTier(int callCount) =\u003E callCount switch\n    {\n        \u003C= 0 =\u003E \u0022Uncompiled\u0022,\n        1 =\u003E \u0022Tier0-QuickJIT\u0022,\n        \u003C 30 =\u003E \u0022Tier0-Profiling\u0022,\n        _ =\u003E \u0022Tier1-FullOpt-PGO\u0022\n    };\n\n    public static void Main()\n    {\n        Console.WriteLine(GetJitOptimizationTier(1));\n        Console.WriteLine(GetJitOptimizationTier(15));\n        Console.WriteLine(GetJitOptimizationTier(50));\n    }\n}"
+}

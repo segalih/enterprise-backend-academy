@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-07-03",
+    "levelId":  "level-07",
+    "moduleId":  "mod-07-02",
+    "order":  3,
+    "title":  "Evolusi HTTP: Dari HTTP/1.1 Head-of-Line Blocking hingga HTTP/3 QUIC",
+    "slug":  "http-evolution-http1-http2-http3-quic",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menelusuri sejarah dan arsitektur protokol web: masalah Head-of-Line Blocking di HTTP/1.1, binary framing dan multiplexing di HTTP/2, serta revolusi HTTP/3 berbasis UDP/QUIC yang menghilangkan TCP HOL blocking di jaringan mobile.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-07-02",
+                              "title":  "TCP Deep Dive",
+                              "levelName":  "LEVEL 07",
+                              "context":  "Memahami handshake dan batasan transport layer TCP."
+                          }
+                      ],
+    "introduces":  [
+                       "HTTP/1.1 Keep-Alive \u0026 Pipelining",
+                       "Head-of-Line (HOL) Blocking (Application vs Transport)",
+                       "HTTP/2 Binary Framing \u0026 Multiplexing",
+                       "HPACK Header Compression",
+                       "HTTP/3 \u0026 QUIC (Quick UDP Internet Connections)",
+                       "0-RTT Connection Resumption"
+                   ],
+    "learningObjectives":  [
+                               "Menganalisis penyebab mendasar masalah Head-of-Line (HOL) Blocking pada HTTP/1.1.",
+                               "Menguraikan mekanisme multiplexing stream independen pada HTTP/2.",
+                               "Menjelaskan mengapa HTTP/3 bermigrasi dari TCP ke protokol QUIC berbasis UDP."
+                           ],
+    "markdownContent":  "# Evolusi HTTP: Dari HTTP/1.1 Head-of-Line Blocking hingga HTTP/3 QUIC\n\n## Evolusi Tiga Generasi Protokol Web\nProtokol Hypertext Transfer Protocol (HTTP) adalah fondasi seluruh Web API di dunia. Pemahaman mendalam tentang ketiga generasinya adalah pembeda antara developer biasa dan Enterprise Architect:\n\n```text\n+--------------------------------------------------------------------------+\n| HTTP/1.1 (1997) | Berbasis Teks ASCII | 1 Request per TCP Socket         |\n| HTTP/2   (2015) | Berbasis Biner      | Multiplexing Banyak Request      |\n| HTTP/3   (2022) | Berbasis UDP (QUIC) | Zero TCP HOL Blocking, 0-RTT TLS |\n+--------------------------------------------------------------------------+\n```\n\n---\n\n## 1. HTTP/1.1: Head-of-Line (HOL) Blocking\nPada HTTP/1.1:\n- Format pesan berupa teks polos (*Human-Readable ASCII*).\n- Pada 1 koneksi TCP, request harus dikirim secara **sekuensial**: Client mengirim Request 1 â†’ menunggu Response 1 selesai â†’ baru bisa mengirim Request 2.\n- **Masalah Head-of-Line (HOL) Blocking**: Jika Request 1 memakan waktu 5 detik (misal query database berat), maka Request 2, 3, dan 4 yang super ringan terpaksa antre membeku di belakangnya!\n- Solusi tambal-sulam browser lawas: Membuka **6 koneksi TCP paralel sekaligus per domain**, yang memboroskan memori server dan memicu kemacetan koneksi.\n\n---\n\n## 2. HTTP/2: Binary Framing \u0026 Multiplexing\nHTTP/2 merombak total cara transfer data tanpa mengubah semantik HTTP (GET, POST, Header, Status Code tetap sama):\n1. **Binary Framing Layer**: Teks ASCII dipecah menjadi frame-frame biner kecil berukuran tetap (**DATA frame**, **HEADERS frame**).\n2. **True Multiplexing**: Ratusan request dan response dapat dikirim **secara bersamaan di dalam 1 koneksi TCP tunggal**! Masing-masing frame memiliki `Stream ID` unik (misal: Stream 1, Stream 3) sehingga browser dapat merakitnya kembali tanpa tertukar.\n3. **HPACK**: Kompresi header HTTP untuk menghilangkan pengiriman ulang header duplikat (seperti User-Agent dan Cookie) yang memboroskan bandwidth.\n\n---\n\n## 3. Batasan HTTP/2 dan Lahirnya HTTP/3 (QUIC)\nMeskipun HTTP/2 menyelesaikan HOL blocking di tingkat aplikasi, ada masalah yang tidak bisa diselesaikan karena HTTP/2 masih berjalan di atas **TCP**:\n- **TCP-Level Head-of-Line Blocking**: Karena TCP menjamin urutan paket yang ketat, **jika 1 paket IP hilang di jaringan Wi-Fi/4G**, seluruh stream di dalam koneksi TCP tersebut terhenti total (*freeze*) hingga paket yang hilang dikirim ulang oleh server!\n\n### Solusi Revolusioner HTTP/3: QUIC (UDP)\nHTTP/3 membuang TCP dan berjalan di atas **UDP (User Datagram Protocol)** dengan lapisan keandalan baru bernama **QUIC**:\n1. **Independent Streams**: Setiap stream data benar-benar independen. Jika paket milik Stream 1 hilang, Stream 2 dan Stream 3 tetap berjalan dengan kecepatan penuh!\n2. **0-RTT Handshake**: Menggabungkan koneksi transport dan enkripsi TLS 1.3 dalam satu siklus, memungkinkan pengiriman data pada request pertama tanpa penalti roundtrip!\n3. **Connection Migration**: Ketika ponsel pengguna beralih dari Wi-Fi rumah ke jaringan seluler 4G/5G, IP address ponsel berubah: pada TCP koneksi langsung putus (*disconnect*), tetapi pada HTTP/3 koneksi tetap tersambung mulus berkat **Connection ID 64-bit**!",
+    "starterCode":  "using System;\nusing System.Net;\nusing System.Net.Http;\nusing System.Threading.Tasks;\n\npublic class Program\n{\n    public static void Main()\n    {\n        // PROGRAM: Menginspeksi Negosiasi Versi Protokol HTTP di .NET\n        var request = new HttpRequestMessage(HttpMethod.Get, \"https://api.enterprise.internal\")\n        {\n            Version = HttpVersion.Version20,\n            VersionPolicy = HttpVersionPolicy.RequestVersionOrHigher\n        };\n\n        Console.WriteLine($\"Target URI: {request.RequestUri}\");\n        Console.WriteLine($\"Diminta Versi: HTTP/{request.Version}\");\n        Console.WriteLine($\"Version Policy: {request.VersionPolicy}\");\n\n        // Simulasi respon server yang mendukung HTTP/2\n        var response = new HttpResponseMessage(HttpStatusCode.OK)\n        {\n            Version = HttpVersion.Version20\n        };\n\n        Console.WriteLine($\"\\nStatus Code: {response.StatusCode}\");\n        Console.WriteLine($\"Versi Protokol HTTP yang Dinegosiasikan: HTTP/{response.Version}\");\n\n        if (response.Version.Major \u003e= 2)\n        {\n            Console.WriteLine(\"Sukses! Koneksi menggunakan Multiplexed Binary Framing modern.\");\n        }\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-07-03-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Masalah apakah pada HTTP/1.1 yang menyebabkan request ringan harus menunggu hingga request berat di depannya selesai diproses pada satu koneksi TCP?",
+                              "options":  [
+                                              "Buffer Overflow",
+                                              "Head-of-Line (HOL) Blocking",
+                                              "Slow Start Collapse",
+                                              "SYN Flood Attack"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Head-of-Line (HOL) Blocking adalah keterbatasan HTTP/1.1 di mana antrian request pada 1 koneksi TCP harus dilayani secara berurutan strictly First-In First-Out.",
+                              "optionExplanations":  [
+                                                         "Salah. Buffer overflow adalah isu memori C/C++.",
+                                                         "Benar! Head-of-Line Blocking menyebabkan antrian request tertahan oleh request terdepan.",
+                                                         "Salah. Slow start adalah algoritma TCP congestion control.",
+                                                         "Salah. SYN Flood adalah serangan DoS pada TCP handshake."
+                                                     ],
+                              "sectionRef":  "1. HTTP/1.1: Head-of-Line (HOL) Blocking",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-07-03-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Di atas protokol transport layer apakah HTTP/3 (QUIC) berjalan untuk menghilangkan TCP-level Head-of-Line blocking?",
+                              "options":  [
+                                              "TCP murni",
+                                              "UDP (User Datagram Protocol)",
+                                              "ICMP",
+                                              "SCTP"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "HTTP/3 menggunakan protokol QUIC yang berjalan di atas UDP, mengimplementasikan keandalan dan enkripsi TLS secara mandiri per stream.",
+                              "optionExplanations":  [
+                                                         "Salah. HTTP/3 sengaja meninggalkan TCP karena keterbatasan in-order streaming TCP.",
+                                                         "Benar! QUIC berjalan di atas UDP untuk kebebasan kontrol multiplexing per-stream.",
+                                                         "Salah. ICMP digunakan untuk diagnostik ping/traceroute.",
+                                                         "Salah. SCTP jarang didukung oleh middleware router internet publik."
+                                                     ],
+                              "sectionRef":  "3. Batasan HTTP/2 dan Lahirnya HTTP/3 (QUIC)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-07-04",
+                               "title":  "TLS 1.3 Handshake \u0026 Enkripsi",
+                               "levelName":  "LEVEL 07",
+                               "context":  "Penggabungan handshake keamanan dengan transportasi QUIC di HTTP/3."
+                           },
+                           {
+                               "lessonId":  "lesson-11-01",
+                               "title":  "Arsitektur Kestrel Server",
+                               "levelName":  "LEVEL 11",
+                               "context":  "Mengaktifkan endpoint HTTP/2 dan HTTP/3 pada Kestrel ASP.NET Core."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "RFC 9114 - HTTP/3 Specification",
+                           "url":  "https://datatracker.ietf.org/doc/html/rfc9114"
+                       },
+                       {
+                           "title":  "High Performance Browser Networking - Ilya Grigorik",
+                           "url":  "https://hpbn.co/"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class HttpVersionInspector\n{\n    public static string GetProtocolFeatures(string httpVersion)\n    {\n        if (string.IsNullOrWhiteSpace(httpVersion)) return \"Unknown-Version\";\n\n        return httpVersion.Trim() switch\n        {\n            \"1.1\" =\u003e \"Text-Based;Sequential\",\n            \"2.0\" or \"2\" =\u003e \"Binary-Framing;Multiplexing;HPACK\",\n            \"3.0\" or \"3\" =\u003e \"QUIC-UDP;Independent-Streams;Zero-HOL\",\n            _ =\u003e \"Unknown-Version\"\n        };\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(GetProtocolFeatures(\"2.0\"));\n        Console.WriteLine(GetProtocolFeatures(\"3\"));\n    }\n}"
+}

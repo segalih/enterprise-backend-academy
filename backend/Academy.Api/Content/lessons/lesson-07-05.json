@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-07-05",
+    "levelId":  "level-07",
+    "moduleId":  "mod-07-03",
+    "order":  5,
+    "title":  "Reverse Proxy, API Gateway, dan Load Balancing L4 vs L7",
+    "slug":  "reverse-proxy-api-gateway-load-balancing-l4-l7",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Merancang gerbang infrastruktur backend enterprise: arsitektur Reverse Proxy (Nginx, YARP), pola API Gateway (Authentication, Rate Limiting, Request Routing), dan perbedaan mendasar Load Balancer Layer 4 (TCP/UDP) vs Layer 7 (HTTP).",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-07-01",
+                              "title":  "Model OSI \u0026 TCP/IP",
+                              "levelName":  "LEVEL 07",
+                              "context":  "Memahami Layer 4 Transport vs Layer 7 Application."
+                          }
+                      ],
+    "introduces":  [
+                       "Forward Proxy vs Reverse Proxy",
+                       "API Gateway Pattern",
+                       "L4 Load Balancing (IP + Port packet routing)",
+                       "L7 Load Balancing (Path-based HTTP routing)",
+                       "TLS Termination \u0026 Offloading",
+                       "YARP (Yet Another Reverse Proxy .NET)"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan peran arsitektural Forward Proxy (melindungi client) vs Reverse Proxy (melindungi server).",
+                               "Menganalisis perbedaan performa dan fleksibilitas Load Balancer L4 vs L7.",
+                               "Mengonfigurasi TLS Offloading pada Reverse Proxy untuk menghemat beban CPU Kestrel backend."
+                           ],
+    "markdownContent":  "# Reverse Proxy, API Gateway, dan Load Balancing L4 vs L7\n\n## Mengapa Backend Kestrel Tidak Boleh Langsung Terpapar ke Internet Publik?\nMeskipun Kestrel .NET 8 sangat cepat dan aman, di arsitektur produksi perbankan dan e-commerce, instance API **tidak pernah langsung membuka port ke internet publik**:\n- Jika 10 server backend Kestrel masing-masing harus mengelola sertifikat TLS HTTPS, pembaharuan sertifikat menjadi sangat rumit.\n- Jika terjadi serangan DDoS (Distributed Denial of Service) atau serangan Slowloris, thread CPU backend akan terkuras.\n\nSolusi industri adalah menempatkan **Reverse Proxy / API Gateway** di garis depan pertahanan!\n\n```mermaid\nflowchart TD\n    Client[\"Client / Browser Nasabah\"] --\u003e|\"HTTPS (Port 443)\"| RP\n    subgraph RP[\"Reverse Proxy / API Gateway (YARP / Nginx / Envoy)\"]\n        TLS[\"TLS Termination (Dekripsi HTTPS)\"]\n        WAF[\"Rate Limiting \u0026 WAF Security\"]\n        Route[\"Path-Based Routing (/api/v1/accounts)\"]\n        TLS --\u003e WAF --\u003e Route\n    end\n    Route --\u003e|Jaringan Internal VPC| K1[\"Kestrel Node 1 (Port 5000)\"]\n    Route --\u003e|Jaringan Internal VPC| K2[\"Kestrel Node 2 (Port 5000)\"]\n```\n\n---\n\n## Load Balancing: Layer 4 vs Layer 7\n\n| Aspek Perbandingan | Layer 4 Load Balancing (L4) | Layer 7 Load Balancing (L7) |\n| :--- | :--- | :--- |\n| **Tingkat Model OSI** | Transport Layer (TCP / UDP) | Application Layer (HTTP / HTTPS / gRPC) |\n| **Kriteria Routing** | Berdasarkan **IP Address dan Port** saja | Berdasarkan **URL Path, Header HTTP, Cookie, JSON Body** |\n| **Terminasi TLS** | Tidak (Pass-through TCP paket mentah) | Ya (**TLS Termination**: membaca isi HTTP terenkripsi) |\n| **Performa \u0026 Throughput**| **Sangat Cepat \u0026 Rendah CPU** (Hanya mengubah packet header) | Sedikit lebih lambat (Harus mem-parsing pesan HTTP penuh) |\n| **Teknologi Populer** | AWS NLB (Network Load Balancer), IPVS | AWS ALB (Application Load Balancer), Nginx, YARP |\n\n---\n\n## Manfaat Kunci: TLS Offloading\nDengan **TLS Offloading (TLS Termination)** pada Reverse Proxy:\n- Reverse Proxy melakukan dekripsi kriptografi yang berat di tepi jaringan.\n- Komunikasi dari Reverse Proxy ke instance Kestrel di dalam jaringan privat lokal (Private VPC) berjalan via HTTP biasa tanpa enkripsi.\n- **Hasil: CPU node Kestrel dapat 100% fokus pada pemrosesan logika bisnis dan query database!**",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// PROGRAM: Simulasi Algoritma Round-Robin Load Balancer Sederhana\npublic class RoundRobinLoadBalancer\n{\n    private readonly List\u003cstring\u003e _nodes;\n    private int _currentIndex = 0;\n    private readonly object _lock = new();\n\n    public RoundRobinLoadBalancer(IEnumerable\u003cstring\u003e nodes)\n    {\n        _nodes = new List\u003cstring\u003e(nodes);\n        if (_nodes.Count == 0) throw new ArgumentException(\"Daftar node tidak boleh kosong.\");\n    }\n\n    public string GetNextNode()\n    {\n        lock (_lock)\n        {\n            string node = _nodes[_currentIndex];\n            _currentIndex = (_currentIndex + 1) % _nodes.Count; // Berputar kembali ke 0 saat mencapai ujung\n            return node;\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var cluster = new[] { \"node-api-01:5000\", \"node-api-02:5000\", \"node-api-03:5000\" };\n        var lb = new RoundRobinLoadBalancer(cluster);\n        \n        Console.WriteLine(\"=== SIMULASI DISTRIBUSI REQUEST LOAD BALANCER ===\");\n        for (int i = 1; i \u003c= 6; i++)\n        {\n            Console.WriteLine($\"Request #{i} diarahkan ke: {lb.GetNextNode()}\");\n        }\n    }\n}\n",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-07-05-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa perbedaan kemampuan mendasar antara Load Balancer Layer 7 (L7) dibandingkan Layer 4 (L4)?",
+                              "options":  [
+                                              "L7 dapat membaca isi payload HTTP (seperti URL Path `/api/payments`, Headers, dan Cookies) untuk membuat keputusan perutean, sedangkan L4 hanya merutekan berdasarkan IP dan Port TCP mentah",
+                                              "L4 hanya bisa berjalan pada kabel tembaga, sedangkan L7 di kabel optik",
+                                              "L7 tidak mendukung protokol HTTPS",
+                                              "L4 menghapus header Authorization secara otomatis"
+                                          ],
+                              "correctOptionIndex":  0,
+                              "explanation":  "Layer 7 Application Load Balancer membedah konten HTTP sehingga mampu merutekan request ke microservice berbeda berdasarkan path URL atau header.",
+                              "optionExplanations":  [
+                                                         "Benar! L7 menginspeksi metadata dan path HTTP, sedangkan L4 hanya melihat TCP packet header.",
+                                                         "Salah. Keduanya beroperasi independen dari media fisik kabel.",
+                                                         "Salah. L7 justru mendukung dekripsi TLS/HTTPS penuh.",
+                                                         "Salah. L4 tidak mengubah isi application payload."
+                                                     ],
+                              "sectionRef":  "Load Balancing: Layer 4 vs Layer 7",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-07-05-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Apa keuntungan arsitektural dari praktik \u0027TLS Termination\u0027 yang dilakukan di layer Reverse Proxy?",
+                              "options":  [
+                                              "Menonaktifkan enkripsi secara permanen di seluruh dunia",
+                                              "Membebaskan CPU node server aplikasi backend dari beban komputasi dekripsi enkripsi HTTPS, memusatkan pengelolaan sertifikat di satu tempat",
+                                              "Membuat database SQL otomatis terenkripsi",
+                                              "Mempercepat kecepatan transfer file gambar 100 kali"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "TLS Termination mendekripsi lalu lintas di perimeter proxy, sehingga server backend di jaringan privat internal menerima lalu lintas HTTP ringan dan pengelolaan sertifikat tersentralisasi.",
+                              "optionExplanations":  [
+                                                         "Salah. Enkripsi tetap aktif antara pengguna dan reverse proxy.",
+                                                         "Benar! Menghemat siklus CPU backend dan menyederhanakan manajemen sertifikat SSL.",
+                                                         "Salah. Tidak berhubungan dengan database encryption.",
+                                                         "Salah. Tidak mengubah ukuran file fisik gambar."
+                                                     ],
+                              "sectionRef":  "Manfaat Kunci: TLS Offloading",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-11-01",
+                               "title":  "Arsitektur Kestrel Server",
+                               "levelName":  "LEVEL 11",
+                               "context":  "Hosting Kestrel di belakang reverse proxy Nginx atau YARP."
+                           },
+                           {
+                               "lessonId":  "lesson-14-04",
+                               "title":  "Resilience Engineering: Circuit Breaker",
+                               "levelName":  "LEVEL 14",
+                               "context":  "Penerapan health check dan failover pada load balancer."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "YARP: Yet Another Reverse Proxy - Microsoft Documentation",
+                           "url":  "https://microsoft.github.io/reverse-proxy/"
+                       },
+                       {
+                           "title":  "Configure ASP.NET Core to work with proxy servers and load balancers",
+                           "url":  "https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class ApiGatewayRouter\n{\n    public static string RouteRequest(string? path)\n    {\n        if (string.IsNullOrWhiteSpace(path)) return \"fallback-service:5000\";\n\n        string clean = path.Trim();\n        if (clean.StartsWith(\"/api/v1/auth\", StringComparison.OrdinalIgnoreCase))\n            return \"auth-service:5001\";\n\n        if (clean.StartsWith(\"/api/v1/orders\", StringComparison.OrdinalIgnoreCase))\n            return \"order-service:5002\";\n\n        if (clean.StartsWith(\"/api/v1/payments\", StringComparison.OrdinalIgnoreCase))\n            return \"payment-service:5003\";\n\n        return \"fallback-service:5000\";\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(RouteRequest(\"/api/v1/orders/123\"));\n        Console.WriteLine(RouteRequest(\"/api/v1/unknown\"));\n    }\n}"
+}

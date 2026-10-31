@@ -1,0 +1,176 @@
+{
+  "id": "lesson-08-02",
+  "levelId": "level-08",
+  "moduleId": "mod-08-01",
+  "order": 2,
+  "title": "Garbage Collector Internals: Gen 0/1/2, LOH, Mark-Sweep-Compact, dan GC Tuning",
+  "slug": "garbage-collector-internals-generations-loh",
+  "difficulty": "Advanced",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "gc",
+  "simulatorContext": "Gunakan simulator Garbage Collection di bawah: Amati bagaimana alokasi objek baru masuk ke Gen 0, bertahan hidup (survive) dan dipromosikan ke Gen 1 lalu Gen 2. Objek besar di atas 85.000 byte langsung dialokasikan ke Large Object Heap (LOH) dan hanya dibersihkan saat Gen 2 Full GC.",
+  "description": "Membongkar cara kerja CoreCLR Garbage Collector: Generational Hypothesis (Gen 0, 1, 2), Large Object Heap (LOH \u003E= 85.000 byte), 3 fase koleksi (Mark, Sweep, Compact), Workstation vs Server GC, dan penanganan Stop-The-World (STW) pauses.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami alokasi objek reference type di Managed Heap."
+    },
+    {
+      "lessonId": "lesson-08-01",
+      "title": "Arsitektur CoreCLR",
+      "levelName": "LEVEL 08",
+      "context": "Memahami komponen runtime CoreCLR."
+    }
+  ],
+  "introduces": [
+    "Generational Hypothesis (Gen 0, 1, 2)",
+    "Large Object Heap (LOH \u003E= 85.000 Byte)",
+    "Pinned Object Heap (POH)",
+    "Mark-Sweep-Compact Phases",
+    "Stop-The-World (STW) Pauses",
+    "Workstation GC vs Server GC",
+    "GC Roots (Stack, Static, Handles)"
+  ],
+  "learningObjectives": [
+    "Menjelaskan Generational Hypothesis: mengapa objek berumur pendek dibersihkan sangat cepat di Gen 0.",
+    "Menganalisis dampak fragmentasi memori pada Large Object Heap (LOH).",
+    "Mengonfigurasi Server GC vs Workstation GC untuk memaksimalkan throughput backend multi-core."
+  ],
+  "markdownContent": "# Garbage Collector Internals: Gen 0/1/2, LOH, Mark-Sweep-Compact, dan GC Tuning\n\n## Mengapa Garbage Collector (GC) Diciptakan?\nDalam bahasa manual seperti C/C\u002B\u002B, pengembang bertanggung jawab memanggil \u0060free()\u0060 atau \u0060delete\u0060. Dua bencana fatal selalu mengintai:\n1. **Dangling Pointer / Use-After-Free**: Mengakses memori yang sudah dihapus (sumber 70% kerentanan keamanan dunia).\n2. **Memory Leak**: Lupa membebaskan memori sehingga RAM server habis perlahan-lahan.\n\n.NET Garbage Collector (GC) adalah sistem otomatis yang menjamin **Memory Safety**: objek yang sudah tidak lagi dirujuk oleh aplikasi akan dideteksi dan dibersihkan secara aman.\n\n---\n\n## 1. Generational Hypothesis: Gen 0, 1, dan 2\nPrinsip empiris computer science membuktikan bahwa: **95% objek di dalam aplikasi backend berumur sangat pendek (mati hanya dalam beberapa milidetik setelah dibuat)**, seperti string sementara, DTO per-request, dan variabel lokal.\n\nOleh karena itu, Managed Heap dibagi menjadi 3 Generasi:\n\n\u0060\u0060\u0060mermaid\nflowchart TD\n    subgraph SOH[\u0022Small Object Heap (SOH)\u0022]\n        G0[\u0022Generation 0\u003Cbr/\u003E\u2022 Objek Baru Lahir\u003Cbr/\u003E\u2022 Koleksi Sangat Cepat (~1ms)\u0022]\n        G1[\u0022Generation 1\u003Cbr/\u003E\u2022 Buffer Transisi Objek Selamat\u0022]\n        G2[\u0022Generation 2\u003Cbr/\u003E\u2022 Objek Tua (Singleton, Cache, Static)\u003Cbr/\u003E\u2022 Full GC (Koleksi Menyeluruh)\u0022]\n        G0 --\u003E|Survive GC Gen 0| G1\n        G1 --\u003E|Survive GC Gen 1| G2\n    end\n    Alloc[\u0022.NET Allocation\u0022] --\u003E|Ukuran \u003C 85.000 Byte| G0\n    Alloc --\u003E|Ukuran \u003E= 85.000 Byte| LOH[\u0022Large Object Heap (LOH)\u003Cbr/\u003E\u2022 Tanpa Kompaksi (Cegah CPU Freeze)\u003Cbr/\u003E\u2022 Hanya Dibersihkan Saat Gen 2 Full GC\u0022]\n\u0060\u0060\u0060\n\n---\n\n## 2. Tiga Fase Pengumpulan: Mark, Sweep, Compact\nKetika alokasi memori memicu GC:\n1. **Mark Phase (Penandaan)**:\n   - GC menelusuri seluruh **GC Roots** (variabel di Stack aktif semua thread, static variables, CPU registers).\n   - Seluruh objek yang dapat dijangkau (*reachable*) ditandai sebagai **LIVE (Hidup)**. Objek yang tidak terjangkau dianggap **DEAD (Sampah)**.\n2. **Sweep Phase (Penyapuan)**:\n   - Alamat memori objek yang mati didaftarkan ke dalam *Free List* untuk ditimpa alokasi baru.\n3. **Compact Phase (Pemadatan)**:\n   - Objek yang masih hidup digeser merapat ke awal segmen memori untuk menghilangkan lubang fragmentasi memori.\n\n---\n\n## 3. Server GC vs Workstation GC: Wajib Tahu untuk Backend!\nDi file \u0060runtimeconfig.json\u0060 atau \u0060MyApp.csproj\u0060:\n- **Workstation GC**: Menggunakan 1 thread GC tunggal yang berbagi core dengan aplikasi. Dirancang untuk aplikasi desktop GUI agar antarmuka responsif.\n- **Server GC (\u0060ServerGarbageCollection = true\u0060)**:\n  - **Membuat 1 Managed Heap dan 1 Dedicated Thread GC khusus PER PHYSICAL CPU CORE!**\n  - Pada server 32-core, ada 32 heap terpisah yang mengalokasikan data secara paralel tanpa perebutan lock.\n  - Throughput naik hingga **1000% pada aplikasi Web API Kestrel!** (Default pada aplikasi ASP.NET Core).",
+  "starterCode": "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Menginspeksi Generasi GC dan Pengaruh Alokasi\nConsole.WriteLine(\u0022=== INFORMASI RUNTIME GARBAGE COLLECTOR ===\u0022);\nConsole.WriteLine($\u0022Is Server GC Active? : {System.Runtime.GCSettings.IsServerGC}\u0022);\nConsole.WriteLine($\u0022GC Latency Mode      : {System.Runtime.GCSettings.LatencyMode}\u0022);\nConsole.WriteLine($\u0022Total Memory Terpakai: {GC.GetTotalMemory(false) / 1024} KB\u0022);\n\n// Mengamati promosi generasi objek\nobject obj = new object();\nConsole.WriteLine($\u0022\\nObjek baru lahir di Generasi: {GC.GetGeneration(obj)}\u0022); // Gen 0\n\n// Paksa GC Gen 0 berjalan\nGC.Collect(0, GCCollectionMode.Forced);\nConsole.WriteLine($\u0022Setelah GC Gen 0, objek promosi ke Generasi: {GC.GetGeneration(obj)}\u0022); // Gen 1\n\n// Paksa GC Gen 1 berjalan\nGC.Collect(1, GCCollectionMode.Forced);\nConsole.WriteLine($\u0022Setelah GC Gen 1, objek promosi ke Generasi: {GC.GetGeneration(obj)}\u0022); // Gen 2\n\nConsole.WriteLine($\u0022\\nHitungan Koleksi Sejauh Ini -\u003E Gen 0: {GC.CollectionCount(0)} | Gen 1: {GC.CollectionCount(1)} | Gen 2: {GC.CollectionCount(2)}\u0022);",
+  "quizQuestions": [
+    {
+      "id": "q-08-02-1",
+      "type": "MultipleChoice",
+      "question": "Berapa batas ambang ukuran minimum objek di mana .NET CoreCLR secara otomatis mengalokasikannya ke Large Object Heap (LOH) alih-alih Gen 0?",
+      "options": [
+        "1.024 Byte (1 KB)",
+        "4.096 Byte (4 KB)",
+        "85.000 Byte (~83 KB)",
+        "1.048.576 Byte (1 MB)"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Objek dengan ukuran 85.000 byte atau lebih besar dialokasikan langsung ke Large Object Heap (LOH) untuk menghindari biaya mahal pemadatan memori (compaction).",
+      "optionExplanations": [
+        "Salah. 1 KB dialokasikan normal di Gen 0.",
+        "Salah. 4 KB adalah ukuran virtual memory page, bukan ambang batas LOH.",
+        "Benar! 85.000 byte adalah ambang batas resmi alokasi Large Object Heap di .NET.",
+        "Salah. 1 MB dialokasikan di LOH namun ambang awalnya adalah 85.000 byte."
+      ],
+      "sectionRef": "1. Generational Hypothesis: Gen 0, 1, dan 2",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-08-02-2",
+      "type": "MultipleChoice",
+      "question": "Apa perbedaan arsitektural utama dari \u0027Server GC\u0027 dibandingkan \u0027Workstation GC\u0027 pada aplikasi backend ASP.NET Core?",
+      "options": [
+        "Server GC mematikan pengumpulan sampah memori",
+        "Server GC membuat Heap memori terpisah dan thread GC independen untuk setiap physical core CPU, memaksimalkan throughput multi-thread",
+        "Server GC hanya bisa dijalankan di cloud Azure",
+        "Server GC otomatis menghapus log error produksi"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Server GC mempartisi Managed Heap dan menyediakan dedicated GC thread per core prosesor, memungkinkan alokasi dan koleksi paralel tanpa thread contention.",
+      "optionExplanations": [
+        "Salah. Server GC tetap mengumpulkan sampah memori secara agresif.",
+        "Benar! Segment heap terpisah dan dedicated thread per core memaksimalkan pemanfaatan CPU.",
+        "Salah. Server GC dapat berjalan di server mana pun (Linux, Docker, Windows).",
+        "Salah. Server GC tidak mengelola log aplikasi."
+      ],
+      "sectionRef": "3. Server GC vs Workstation GC: Wajib Tahu untuk Backend!",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-08-02",
+    "Title": "Pemeriksa Ambang Batas Alokasi Large Object Heap (LOH)",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Di .NET CLR, objek berukuran \u003E= 85.000 byte secara default langsung dialokasikan ke Large Object Heap (LOH) alih-alih Small Object Heap (Gen 0).\nBaca ukuran alokasi array (dalam satuan bytes) dari stdin.\n- Jika ukuran \u003E= 85000: cetak \u0027HEAP: LOH (Direct Allocation)\u0027\n- Jika ukuran \u003C 85000: cetak \u0027HEAP: SOH (Generation 0)\u0027.",
+    "InputFormat": "Satu baris bilangan bulat positif ukuran bytes.",
+    "OutputFormat": "Satu baris lokasi heap CLR.",
+    "Constraints": "Ukuran \u003E= 0.",
+    "Examples": [
+      {
+        "Input": "85000",
+        "Output": "HEAP: LOH (Direct Allocation)",
+        "Explanation": "Tepat di ambang batas 85.000 byte langsung dialokasikan ke LOH."
+      },
+      {
+        "Input": "1024",
+        "Output": "HEAP: SOH (Generation 0)",
+        "Explanation": "1 KB dialokasikan ke Small Object Heap Gen 0."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Evaluasi ambang batas 85.000 byte CLR.\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (!long.TryParse(line, out long bytes)) return;\n\n        if (bytes \u003E= 85000)\n        {\n            Console.WriteLine(\u0022HEAP: LOH (Direct Allocation)\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022HEAP: SOH (Generation 0)\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Tepat 85000 LOH)",
+        "Description": "Contoh 1 (Tepat 85000 LOH): input \u002785000\u0027 -\u003E expected \u0027HEAP: LOH (Direct Allocation)\u0027",
+        "Input": "85000",
+        "ExpectedOutput": "HEAP: LOH (Direct Allocation)",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (1024 SOH)",
+        "Description": "Contoh 2 (1024 SOH): input \u00271024\u0027 -\u003E expected \u0027HEAP: SOH (Generation 0)\u0027",
+        "Input": "1024",
+        "ExpectedOutput": "HEAP: SOH (Generation 0)",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Tepat di Bawah Batas 84999",
+        "Description": "Tepat di Bawah Batas 84999: input \u002784999\u0027 -\u003E expected \u0027HEAP: SOH (Generation 0)\u0027",
+        "Input": "84999",
+        "ExpectedOutput": "HEAP: SOH (Generation 0)",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Alokasi Sangat Besar",
+        "Description": "Alokasi Sangat Besar: input \u002710485760\u0027 -\u003E expected \u0027HEAP: LOH (Direct Allocation)\u0027",
+        "Input": "10485760",
+        "ExpectedOutput": "HEAP: LOH (Direct Allocation)",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Ambang batas resmi CLR LOH adalah 85.000 byte.",
+      "LOH tidak dipadatkan (compacted) secara default untuk menghemat CPU overhead."
+    ],
+    "Explanation": "Memahami batas 85.000 byte penting dalam arsitektur backend .NET untuk mencegah fragmentasi memori akibat alokasi berulang pada Large Object Heap."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-08-03",
+      "title": "Pola Resource Cleanup: IDisposable",
+      "levelName": "LEVEL 08",
+      "context": "Pembersihan unmanaged resource sebelum objek di-collect oleh GC."
+    },
+    {
+      "lessonId": "lesson-04-03",
+      "title": "High-Performance C#: ArrayPool",
+      "levelName": "LEVEL 04",
+      "context": "Menggunakan ArrayPool\u003Cbyte\u003E untuk menghindari alokasi LOH berulang."
+    }
+  ],
+  "references": [
+    {
+      "title": "Fundamentals of garbage collection - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/fundamentals"
+    },
+    {
+      "title": "The Large Object Heap on Windows Systems - Maoni Stephens",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/large-object-heap"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class MemoryAllocationInspector\n{\n    public const int LohThresholdBytes = 85000;\n\n    public static bool IsLargeObjectHeapAllocation(int byteSize)\n    {\n        if (byteSize \u003C= 0) return false;\n        return byteSize \u003E= LohThresholdBytes;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(IsLargeObjectHeapAllocation(1024));\n        Console.WriteLine(IsLargeObjectHeapAllocation(85000));\n        Console.WriteLine(IsLargeObjectHeapAllocation(100000));\n    }\n}"
+}

@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-11-02",
+    "levelId":  "level-11",
+    "moduleId":  "mod-11-01",
+    "order":  2,
+    "title":  "Minimal APIs vs Controller-Based APIs: Performance, Routing, dan Desain Endpoint",
+    "slug":  "minimal-apis-vs-controllers",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  50,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membandingkan arsitektur Minimal APIs dan Controller-based APIs di ASP.NET Core 8: overhead alokasi memori, RequestDelegateGenerator, source generation, dan strategi arsitektur hybrid.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-11-01",
+                              "reason":  "Pemahaman Middleware Pipeline \u0026 Endpoint Routing"
+                          },
+                          {
+                              "lessonId":  "lesson-04-04",
+                              "reason":  "Reflection vs C# Source Generators"
+                          }
+                      ],
+    "introduces":  [
+                       "Minimal APIs vs Controller MVC architecture",
+                       "RequestDelegateGenerator (RDG) \u0026 AOT compatibility",
+                       "EndpointRouteBuilder \u0026 Route Groups (MapGroup)",
+                       "Endpoint Filters (IEndpointFilter) vs Action Filters",
+                       "Zero-allocation JSON serialization \u0026 model binding"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan mekanisme internal eksekusi Minimal APIs vs Controller MVC Pipeline",
+                               "Menerapkan Route Groups (`MapGroup`) untuk modularisasi endpoint, otorisasi, dan OpenAPI metadata",
+                               "Menggunakan `IEndpointFilter` untuk validasi input dan cross-cutting concerns tanpa overhead reflection Controller",
+                               "Memilih arsitektur yang tepat antara Minimal APIs (mikroservis, performa ekstrem) dan Controllers (enterprise monolitik besar)"
+                           ],
+    "markdownContent":  "# Minimal APIs vs Controller-Based APIs: Performance, Routing, dan Desain Endpoint\n\nSejak diperkenalkan di .NET 6 dan dimatangkan secara radikal di .NET 8, **Minimal APIs** bukan sekadar \"gaya penulisan ringkas\" untuk aplikasi demo atau toy projects. Minimal APIs adalah perombakan fundamental pada engine routing dan eksekusi request di ASP.NET Core, dirancang untuk mendukung **Native AOT (Ahead-of-Time compilation)**, mengurangi konsumsi memori per container, dan meningkatkan throughput request pada arsitektur microservices modern.\n\nNamun, apakah controller-based APIs sudah usang? Tentu tidak. Memahami mekanisme internal kedua paradigma ini sangat penting bagi backend engineer senior untuk membuat keputusan arsitektur yang pragmatis.\n\n---\n\n## 1. Perbandingan Arsitektur Eksekusi\n\nMari kita telusuri apa yang terjadi di balik layar saat sebuah request HTTP `GET /orders/42` dieksekusi oleh kedua pendekatan.\n\n```mermaid\nflowchart TD\n    Req[\"HTTP Request\"] --\u003e Kestrel[\"Kestrel Web Server\"]\n    Kestrel --\u003e Route[\"Routing Engine\"]\n    Route --\u003e Invoker[\"ControllerActionInvoker\u003cbr/\u003e(Reflection \u0026 Metadata)\"]\n    Invoker --\u003e Act[\"Controller Activation (DI Activator)\"]\n    Act --\u003e Bind[\"Complex Model Binding \u0026 Validation\"]\n    Bind --\u003e Auth[\"Authorization \u0026 Action Filters\"]\n    Auth --\u003e Exec[\"Controller Method Execution\"]\n    Exec --\u003e Res[\"ActionResult Executor (ObjectResultExecutor)\"]\n    Res --\u003e Out[\"Serialized JSON Response\"]\n```\n\n```mermaid\nflowchart TD\n    Req[\"HTTP Request\"] --\u003e Kestrel[\"Kestrel Web Server\"]\n    Kestrel --\u003e Route[\"Routing (Direct DFA Matcher)\"]\n    Route --\u003e Delegate[\"Compiled RequestDelegate\u003cbr/\u003e(Source-generated, No Reflection)\"]\n    Delegate --\u003e Filter[\"Endpoint Filter (Jika Ada)\"]\n    Filter --\u003e Exec[\"Delegate Execution (Direct Invocation)\"]\n    Exec --\u003e Out[\"Direct JSON / IResult Response\"]\n```\n\n### Analisis Overhead:\n1. **Controller Activation**: Pada model controller, class controller harus diinstansiasi setiap kali request masuk (`Scoped` atau `Transient` instantiation), lalu dibuang (disposed). Minimal APIs mengeksekusi delegasi statis atau method handler tanpa perlu mengalokasikan wrapper class.\n2. **Action Invocation via Reflection vs Source Generation**: Controller klasik banyak mengandalkan `System.Reflection` untuk menginspeksi atribut, tipe parameter, dan model state. Di .NET 8, Minimal APIs didukung oleh **RequestDelegateGenerator (RDG)**: compiler menganalisis endpoint saat build time dan menghasilkan kode C# murni untuk membaca route, query, dan body langsung tanpa reflection.\n3. **Ukuran Binary \u0026 Startup Time**: Minimal APIs tidak menyertakan seluruh sub-assembly MVC (`Microsoft.AspNetCore.Mvc.Core`, view engines, tag helpers). Ini memangkas startup time hingga 30-50% dan memangkas penggunaan memory footprint.\n\n---\n\n## 2. Minimal APIs di Level Enterprise: Mengorganisir dengan Route Groups\n\nKritik awal terhadap Minimal APIs adalah bahwa kode `Program.cs` bisa membengkak menjadi ribuan baris (\"spaghetti Program.cs\"). Solusi enterprise untuk masalah ini adalah pemisahan modular menggunakan **Route Groups (`MapGroup`)** dan extension methods.\n\n```csharp\npublic static class OrderEndpoints\n{\n    public static RouteGroupBuilder MapOrderEndpoints(this IEndpointRouteBuilder app)\n    {\n        var group = app.MapGroup(\"/api/v1/orders\")\n                       .WithTags(\"Orders\")\n                       .RequireAuthorization(); // Menerapkan auth ke seluruh grup!\n\n        group.MapGet(\"/\", GetAllOrders);\n        group.MapGet(\"/{id:guid}\", GetOrderById);\n        group.MapPost(\"/\", CreateOrder)\n             .AddEndpointFilter\u003cValidationFilter\u003cCreateOrderRequest\u003e\u003e();\n\n        return group;\n    }\n\n    private static async Task\u003cIResult\u003e GetOrderById(Guid id, IOrderRepository repo)\n    {\n        var order = await repo.FindByIdAsync(id);\n        return order is not null ? Results.Ok(order) : Results.NotFound();\n    }\n}\n```\n\nDi `Program.cs`, kita hanya memanggil:\n```csharp\napp.MapOrderEndpoints();\napp.MapCustomerEndpoints();\n```\n\n---\n\n## 3. Endpoint Filters (`IEndpointFilter`): Alternatif Modern Action Filters\n\nDi Controller MVC, Anda menggunakan `ActionFilterAttribute` untuk menangani validasi, logging, atau audit trail. Pada Minimal APIs, kita menggunakan **Endpoint Filters**.\n\n```csharp\npublic class ValidationFilter\u003cT\u003e : IEndpointFilter where T : class\n{\n    private readonly IValidator\u003cT\u003e _validator;\n\n    public ValidationFilter(IValidator\u003cT\u003e validator)\n    {\n        _validator = validator;\n    }\n\n    public async ValueTask\u003cobject?\u003e InvokeAsync(\n        EndpointFilterInvocationContext context, \n        EndpointFilterDelegate next)\n    {\n        var argument = context.Arguments.OfType\u003cT\u003e().FirstOrDefault();\n        if (argument is null)\n        {\n            return Results.BadRequest(new { Error = \"Request body cannot be empty\" });\n        }\n\n        var validationResult = await _validator.ValidateAsync(argument);\n        if (!validationResult.IsValid)\n        {\n            return Results.ValidationProblem(validationResult.ToDictionary());\n        }\n\n        // Downstream call\n        return await next(context);\n    }\n}\n```\n\nEndpoint Filters memiliki performa lebih tinggi karena menggunakan `ValueTask\u003cobject?\u003e` (mengurangi alokasi heap saat eksekusi sinkronus).\n\n---\n\n## 4. Matriks Keputusan: Kapan Memilih Controller vs Minimal APIs?\n\n| Faktor Pertimbangan | Controller-Based APIs | Minimal APIs (.NET 8) |\n| :--- | :--- | :--- |\n| **Throughput / Latency** | Tinggi | Ekstrem (10-25% lebih tinggi RPS) |\n| **Startup Time \u0026 Memory** | Sedang | Sangat Rendah (ideal untuk Serverless \u0026 Docker) |\n| **Native AOT Compilation** | Sulit (banyak dependensi reflection) | Didukung penuh (dengan RDG) |\n| **Organisasi Project Monolitik Besar** | Sangat Matang (Convention-based folder structure) | Membutuhkan disiplin arsitektur (MapGroup \u0026 extension modules) |\n| **Dukungan OData \u0026 Content Negotiation Kompleks** | Sangat mudah / out-of-the-box | Memerlukan implementasi manual |\n\n---\n\n## 5. Ringkasan \u0026 Panduan Rekayasa\n\nBagi sistem baru berskala enterprise yang mengadopsi Clean Architecture atau Vertical Slice:\n1. **Gunakan Minimal APIs** untuk microservices, worker endpoints, proxy gateway, dan service yang membutuhkan waktu start cepat atau resource container ketat.\n2. Manfaatkan `MapGroup` untuk membungkus prefix URL, authentication policy, dan common endpoint filters secara terpusat.\n3. Gunakan `TypedResults` daripada `Results` generik untuk meningkatkan tipe-keamanan (type-safety) dan otomatisasi OpenAPI/Swagger documentation tanpa anotasi `[ProducesResponseType]` yang berlebihan.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Simulasi Mini Endpoint Routing \u0026 Filter System\npublic record HttpRequest(string Method, string Path, object? Body);\npublic record HttpResponse(int StatusCode, object? Content);\n\npublic interface IEndpointFilter\n{\n    ValueTask\u003cHttpResponse\u003e InvokeAsync(HttpRequest request, Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e next);\n}\n\npublic class OrderValidationFilter : IEndpointFilter\n{\n    public async ValueTask\u003cHttpResponse\u003e InvokeAsync(HttpRequest request, Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e next)\n    {\n        // TODO: Periksa apakah body bernilai null atau string kosong.\n        // Jika tidak valid, kembalikan HttpResponse dengan StatusCode 400 Bad Request.\n        // Jika valid, teruskan ke next(request).\n        return await next(request);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var filter = new OrderValidationFilter();\n\n        Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e endpointHandler = req =\u003e\n        {\n            return ValueTask.FromResult(new HttpResponse(200, $\"Order Created: {req.Body}\"));\n        };\n\n        // Test 1: Request Tidak Valid (Body null)\n        var invalidReq = new HttpRequest(\"POST\", \"/api/orders\", null);\n        var resp1 = await filter.InvokeAsync(invalidReq, endpointHandler);\n        Console.WriteLine($\"Invalid Req -\u003e Status: {resp1.StatusCode}, Content: {resp1.Content}\");\n\n        // Test 2: Request Valid\n        var validReq = new HttpRequest(\"POST\", \"/api/orders\", \"Item: Laptop Gaming\");\n        var resp2 = await filter.InvokeAsync(validReq, endpointHandler);\n        Console.WriteLine($\"Valid Req -\u003e Status: {resp2.StatusCode}, Content: {resp2.Content}\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\npublic record HttpRequest(string Method, string Path, object? Body);\npublic record HttpResponse(int StatusCode, object? Content);\n\npublic interface IEndpointFilter\n{\n    ValueTask\u003cHttpResponse\u003e InvokeAsync(HttpRequest request, Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e next);\n}\n\npublic class OrderValidationFilter : IEndpointFilter\n{\n    public async ValueTask\u003cHttpResponse\u003e InvokeAsync(HttpRequest request, Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e next)\n    {\n        if (request.Body is null || (request.Body is string str \u0026\u0026 string.IsNullOrWhiteSpace(str)))\n        {\n            return new HttpResponse(400, \"Validation Failed: Body cannot be empty\");\n        }\n\n        return await next(request);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var filter = new OrderValidationFilter();\n\n        Func\u003cHttpRequest, ValueTask\u003cHttpResponse\u003e\u003e endpointHandler = req =\u003e\n        {\n            return ValueTask.FromResult(new HttpResponse(200, $\"Order Created: {req.Body}\"));\n        };\n\n        var invalidReq = new HttpRequest(\"POST\", \"/api/orders\", null);\n        var resp1 = await filter.InvokeAsync(invalidReq, endpointHandler);\n        Console.WriteLine($\"Invalid Req -\u003e Status: {resp1.StatusCode}, Content: {resp1.Content}\");\n\n        var validReq = new HttpRequest(\"POST\", \"/api/orders\", \"Item: Laptop Gaming\");\n        var resp2 = await filter.InvokeAsync(validReq, endpointHandler);\n        Console.WriteLine($\"Valid Req -\u003e Status: {resp2.StatusCode}, Content: {resp2.Content}\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-11-02-1",
+                              "type":  "single_choice",
+                              "question":  "Apa keunggulan teknis utama Minimal APIs dalam ASP.NET Core 8 dibandingkan Controller klasik terkait AOT (Ahead-of-Time compilation)?",
+                              "options":  [
+                                              "Minimal APIs mengharuskan seluruh program ditulis dalam bahasa C++.",
+                                              "Minimal APIs menggunakan RequestDelegateGenerator (RDG) saat kompilasi sehingga menghilangkan ketergantungan pada runtime reflection yang tidak ramah Native AOT.",
+                                              "Minimal APIs tidak mendukung routing berbasis URL sehingga kodenya lebih kecil.",
+                                              "Minimal APIs secara otomatis mengubah database SQLite menjadi in-memory array."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Controller MVC klasik bergantung secara intensif pada runtime reflection (menginspeksi method, tipe parameter, dan model binder secara dinamis). Native AOT memangkas kode yang tidak terdeteksi oleh static analyzer. Minimal APIs di .NET 8 menggunakan RequestDelegateGenerator (C# Source Generator) yang membangkitkan kode binding saat build time sehingga 100% kompatibel dengan Native AOT.",
+                              "optionExplanations":  [
+                                                         "Salah. Minimal APIs ditulis murni dalam C#.",
+                                                         "Benar! RequestDelegateGenerator mengonversi delegasi endpoint menjadi kode IL/C# statis tanpa reflection runtime.",
+                                                         "Salah. Minimal APIs memiliki fitur routing yang sama canggihnya dengan controller.",
+                                                         "Salah. Minimal APIs tidak mengatur implementasi database pengguna."
+                                                     ],
+                              "sectionRef":  "1. Perbandingan Arsitektur Eksekusi",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-11-02-2",
+                              "type":  "single_choice",
+                              "question":  "Bagaimana cara terbaik untuk mencegah kode Program.cs membengkak dan sulit dirawat saat menggunakan Minimal APIs di proyek enterprise besar?",
+                              "options":  [
+                                              "Menggabungkan seluruh endpoint menjadi satu string URL raksasa.",
+                                              "Menggunakan Route Groups (MapGroup) yang diekstrak ke dalam static extension methods per domain/fitur.",
+                                              "Menghindari penggunaan dependency injection.",
+                                              "Mengharuskan client mengirimkan query parameter terenkripsi."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Best practice arsitektur Minimal APIs untuk enterprise adalah mengisolasi endpoint per entitas domain ke dalam static extension methods (misal MapOrderEndpoints) menggunakan Route Groups (MapGroup). Hal ini memungkinkan pengaturan URL prefix, authorization, dan endpoint filters secara modular dan bersih.",
+                              "optionExplanations":  [
+                                                         "Salah. Ini anti-pattern yang merusak arsitektur API.",
+                                                         "Benar! MapGroup dan modular extension methods memisahkan endpoint per fitur tanpa mengotori Program.cs.",
+                                                         "Salah. Dependency Injection adalah fondasi utama ASP.NET Core.",
+                                                         "Salah. Enkripsi query parameter tidak menyelesaikan masalah organisasi kode."
+                                                     ],
+                              "sectionRef":  "2. Minimal APIs di Level Enterprise: Mengorganisir dengan Route Groups",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-11-01",
+                           "lesson-11-03",
+                           "lesson-13-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Minimal APIs Overview - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "ASP.NET Core Request Delegate Generator (RDG) for Native AOT",
+                           "url":  "https://devblogs.microsoft.com/dotnet/asp-net-core-updates-in-dotnet-8-preview-3/#request-delegate-generator-rdg",
+                           "type":  "article"
+                       }
+                   ]
+}

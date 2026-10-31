@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-14-01",
+    "levelId":  "level-14",
+    "moduleId":  "mod-14-01",
+    "order":  1,
+    "title":  "Hukum Sistem Terdistribusi: CAP Theorem, PACELC, Kegagalan Parsial dan Eventual Consistency",
+    "slug":  "distributed-systems-cap-pacelc",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Memahami realitas arsitektur sistem terdistribusi: Teorema CAP, PACELC, 8 Fallacies of Distributed Computing, penanganan kegagalan parsial (Partial Failures), dan model konsistensi data.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-07-02",
+                              "reason":  "Protokol Jaringan \u0026 Latensi TCP"
+                          },
+                          {
+                              "lessonId":  "lesson-09-03",
+                              "reason":  "ACID Transactions \u0026 Database Isolation Levels"
+                          }
+                      ],
+    "introduces":  [
+                       "The 8 Fallacies of Distributed Computing",
+                       "CAP Theorem (Consistency, Availability, Partition Tolerance)",
+                       "PACELC Theorem (Beyond network partitions)",
+                       "Partial Failures vs Crash-stop failures",
+                       "Strong Consistency vs Eventual Consistency"
+                   ],
+    "learningObjectives":  [
+                               "Menganalisis kegagalan sistem berdasarkan 8 Fallacies of Distributed Computing (misal: \u0027The network is reliable\u0027)",
+                               "Menjelaskan trade-off Teorema CAP saat terjadi Network Partition (CP vs AP)",
+                               "Membedakan sistem konsistensi kuat (Strong Consistency) dengan konsistensi lambat (Eventual Consistency)",
+                               "Mendesain arsitektur backend yang toleran terhadap kegagalan parsial pada microservices"
+                           ],
+    "markdownContent":  "# Hukum Sistem Terdistribusi: CAP Theorem, PACELC, Kegagalan Parsial dan Eventual Consistency\n\nKetika aplikasi backend Anda berpindah dari satu server monolitik menjadi beberapa microservices atau cluster database multi-node, aturan permainan berubah secara radikal. \n\nKomputasi terdistribusi bukanlah \"monolit yang dipecah dengan network call\". Sistem terdistribusi hidup di bawah hukum fisika jaringan yang tidak sempurna: kabel putus, paket data hilang, jam server (*clock skew*) meleset, dan server mati sewaktu-waktu.\n\nMateri ini membahas fondasi teoritis dan praktis yang wajib dikuasai sebelum Anda merancang arsitektur microservices.\n\n---\n\n## 1. 8 Fallacies of Distributed Computing\n\nL. Peter Deutsch dan James Gosling merumuskan 8 kesalahan fatal (*fallacies*) yang sering diasumsikan oleh engineer pemula:\n1. **The network is reliable** (Jaringan selalu dapat diandalkan â€” padahal timeout dan packet drop pasti terjadi).\n2. **Latency is zero** (Latensi nol â€” padahal network round-trip 100.000x lebih lambat dari RAM access).\n3. **Bandwidth is infinite** (Bandwidth tak terbatas).\n4. **The network is secure** (Jaringan aman).\n5. **Topology doesn\u0027t change** (Topologi jaringan tidak pernah berubah).\n6. **There is one administrator** (Hanya ada satu administrator).\n7. **Transport cost is zero** (Biaya serialisasi dan transmisi data nol).\n8. **The network is homogeneous** (Jaringan bersifat homogen).\n\n---\n\n## 2. Teorema CAP (Eric Brewer)\n\nTeorema CAP menyatakan bahwa dalam sistem penyimpanan data terdistribusi yang terhubung melalui jaringan, **Anda hanya dapat memilih 2 dari 3 jaminan berikut secara bersamaan**:\n\n```text\n                       Consistency (C)\n                             /                            /                             /                              /  CA    (Tidak realistis di jaringan terdistribusi!)\n                         /                                /__________     Availability (A)  /    CP       Partition Tolerance (P)\n                      /                                   /       AP                           --------------------\n```\n\n1. **Consistency (C)**: Setiap operasi baca menerima data tulis terbaru atau menghasilkan error (Linearizability).\n2. **Availability (A)**: Setiap request yang tidak gagal selalu menerima respons non-error (meskipun data mungkin bukan yang paling mutakhir).\n3. **Partition Tolerance (P)**: Sistem tetap berfungsi meskipun terjadi partisi jaringan (kabel putus atau paket hilang antar node).\n\n\u003e [!IMPORTANT]\n\u003e **Realitas Jaringan Nyata:**\n\u003e Partisi jaringan (**P**) adalah keniscayaan fisik yang tidak bisa dihindari. Oleh karena itu, pada praktiknya, pilihan Anda di sistem terdistribusi hanyalah:\n\u003e - **CP (Pilih Konsistensi daripada Ketersediaan)**: Jika terjadi putus jaringan antar node, tolak request tulis/baca untuk mencegah data inkonsisten (contoh: Raft, etcd, MongoDB write concerns).\n\u003e - **AP (Pilih Ketersediaan daripada Konsistensi)**: Tetap layani request dengan data yang ada, meskipun node lain belum menerima update (contoh: Cassandra, DynamoDB, DNS).\n\n---\n\n## 3. Teorema PACELC: Melihat Lebih Jauh dari Sekadar Partisi\n\nTeorema CAP hanya membahas apa yang terjadi saat terjadi **Partisi Jaringan**. Namun 99% waktu, jaringan berjalan normal! Apa trade-off-nya saat tidak ada partisi?\n\nTeorema **PACELC** melengkapi CAP:\n\u003e **Jika ada Partition (P)**, pilih antara **Availability (A)** atau **Consistency (C)**;\n\u003e **Else (E)** (saat jaringan normal), pilih antara **Latency (L)** atau **Consistency (C)**!\n\nJika Anda menginginkan data konsisten sempurna bahkan saat jaringan normal, setiap transaksi tulis harus menunggu konfirmasi (*quorum ack*) dari node lain, yang otomatis **menaikkan Latensi (L)**.\n\n---\n\n## 4. Kegagalan Parsial (Partial Failures)\n\nDalam aplikasi monolitik, jika sebuah fungsi memanggil fungsi lain, pemanggilan tersebut berhasil atau melempar exception di proses yang sama.\n\nDalam microservices, terdapat kemungkinan **Partial Failure**:\n- Service A memanggil Service B via HTTP.\n- Service B memproses transaksi pembayaran secara sukses.\n- Namun sebelum Service B mengirim balasan HTTP 200, koneksi internet terputus!\n- **Dilema Service A**: Apakah pembayaran berhasil atau gagal? Service A tidak tahu!\n\nInilah mengapa operasi di sistem terdistribusi **WAJIB Idempotent** dan dilengkapi mekanisme **Retry dengan Exponential Backoff \u0026 Jitter**.\n\n---\n\n## 5. Ringkasan \u0026 Prinsip Desain Terdistribusi\n\n1. **Rancang untuk Kegagalan (Design for Failure)**: Asumsikan downstream service Anda pasti akan mengalami crash atau slow response.\n2. **Pelajari Kebutuhan Bisnis**: Jangan memaksakan Strong Consistency (CP) jika bisnis hanya membutuhkan Eventual Consistency (misalnya jumlah view video YouTube atau status likes feed media sosial).\n3. **Gunakan Timeout yang Realistis**: Jangan biarkan HTTP client menunggu tanpa timeout; pasang timeout ketat (misal 2 detik) dan circuit breaker.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\n\n// Simulasi Model Konsistensi Replikasi Multi-Node\npublic class DistributedNode\n{\n    public string NodeId { get; }\n    public string Data { get; set; } = \"Versi Awal\";\n\n    public DistributedNode(string nodeId) =\u003e NodeId = nodeId;\n}\n\npublic class DistributedCluster\n{\n    private readonly List\u003cDistributedNode\u003e _nodes = new();\n\n    public DistributedCluster(params string[] nodeIds)\n    {\n        foreach (var id in nodeIds) _nodes.Add(new DistributedNode(id));\n    }\n\n    public void WriteQuorum(string newData, int quorumSize)\n    {\n        // TODO: Simulasikan penulisan data ke minimal sejumlah node \u0027quorumSize\u0027.\n        // Jika berhasil di-write ke \u003e= quorumSize node, cetak \"Write Quorum Sukses\".\n        // Jika node aktif kurang dari quorum, lempar InvalidOperationException(\"Gagal mencapai quorum CP!\").\n    }\n\n    public void PrintClusterState()\n    {\n        foreach (var node in _nodes)\n        {\n            Console.WriteLine($\"Node {node.NodeId}: {node.Data}\");\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var cluster = new DistributedCluster(\"Node-1\", \"Node-2\", \"Node-3\");\n        \n        Console.WriteLine(\"--- Status Awal ---\");\n        cluster.PrintClusterState();\n\n        // Tulis data dengan quorum 2 dari 3 node (Majority Quorum CP)\n        Console.WriteLine(\"\\n--- Menulis dengan Quorum (2 dari 3) ---\");\n        cluster.WriteQuorum(\"Saldo: Rp 1.000.000\", 2);\n        cluster.PrintClusterState();\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\n\npublic class DistributedNode\n{\n    public string NodeId { get; }\n    public string Data { get; set; } = \"Versi Awal\";\n\n    public DistributedNode(string nodeId) =\u003e NodeId = nodeId;\n}\n\npublic class DistributedCluster\n{\n    private readonly List\u003cDistributedNode\u003e _nodes = new();\n\n    public DistributedCluster(params string[] nodeIds)\n    {\n        foreach (var id in nodeIds) _nodes.Add(new DistributedNode(id));\n    }\n\n    public void WriteQuorum(string newData, int quorumSize)\n    {\n        if (quorumSize \u003e _nodes.Count)\n        {\n            throw new InvalidOperationException(\"Gagal mencapai quorum CP!\");\n        }\n\n        int written = 0;\n        for (int i = 0; i \u003c quorumSize; i++)\n        {\n            _nodes[i].Data = newData;\n            written++;\n        }\n\n        Console.WriteLine($\"Write Quorum Sukses: Berhasil mereplikasi ke {written} node.\");\n    }\n\n    public void PrintClusterState()\n    {\n        foreach (var node in _nodes)\n        {\n            Console.WriteLine($\"Node {node.NodeId}: {node.Data}\");\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var cluster = new DistributedCluster(\"Node-1\", \"Node-2\", \"Node-3\");\n        \n        Console.WriteLine(\"--- Status Awal ---\");\n        cluster.PrintClusterState();\n\n        Console.WriteLine(\"\\n--- Menulis dengan Quorum (2 dari 3) ---\");\n        cluster.WriteQuorum(\"Saldo: Rp 1.000.000\", 2);\n        cluster.PrintClusterState();\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-14-01-1",
+                              "type":  "single_choice",
+                              "question":  "Menurut Teorema CAP, mengapa dalam sistem penyimpanan data terdistribusi di dunia nyata kita tidak bisa memilih \u0027CA\u0027 (Consistency + Availability tanpa Partition Tolerance)?",
+                              "options":  [
+                                              "Karena CA hanya bisa dibeli jika membayar lisensi komersial ke Apache Software Foundation.",
+                                              "Karena partisi jaringan (kabel putus, router crash, latency spike) adalah keniscayaan fisik yang pasti terjadi, sehingga sistem wajib siap menghadapi kondisi Partition (P).",
+                                              "Karena CA mengharuskan komputer menggunakan kabel tembaga bukan serat optik.",
+                                              "Karena sistem operasi Windows melarang protokol CA."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Partisi jaringan (Partition) bukanlah opsi yang bisa kita matikan di dunia nyata. Komputer terdistribusi terhubung oleh jaringan fisik yang sewaktu-waktu mengalami gangguan. Oleh karena itu, arsitektur harus memilih antara konsistensi (CP) atau ketersediaan (AP) saat partisi terjadi.",
+                              "optionExplanations":  [
+                                                         "Salah. CAP adalah hukum ilmiah komputasi terdistribusi, bukan lisensi software.",
+                                                         "Benar! Partisi jaringan adalah realitas fisik tak terhindarkan; kita hanya bisa memilih perilaku sistem saat partisi terjadi (CP atau AP).",
+                                                         "Salah. Jenis kabel tidak menghilangkan kemungkinan gangguan jaringan.",
+                                                         "Salah. Tidak ada batasan sistem operasi terkait CAP."
+                                                     ],
+                              "sectionRef":  "2. Teorema CAP (Eric Brewer)",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-14-01-2",
+                              "type":  "single_choice",
+                              "question":  "Apa yang dimaksud dengan kondisi Partial Failure dalam arsitektur microservices?",
+                              "options":  [
+                                              "Layar monitor developer pecah setengah.",
+                                              "Kondisi di mana salah satu komponen/service hilir gagal atau lambat merespons sementara sisa sistem lainnya tetap berjalan normal, memicu ketidakpastian status transaksi.",
+                                              "Kondisi saat compiler C# hanya mengompilasi setengah baris kode.",
+                                              "Ketika database menghapus setengah kolom tabel secara acak."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Tidak seperti sistem monolitik yang biasanya gagal secara serentak (crash total), sistem terdistribusi mengalami kegagalan parsial: beberapa node mati atau timeout sementara node lain tetap hidup, menyebabkan pemanggil tidak yakin apakah operasinya berhasil dieksekusi atau tidak.",
+                              "optionExplanations":  [
+                                                         "Salah. Tidak berhubungan dengan hardware fisik monitor.",
+                                                         "Benar! Kegagalan parsial menciptakan ambiguitas status respon di antara komponen-komponen terdistribusi.",
+                                                         "Salah. Compiler bersifat biner: berhasil atau gagal.",
+                                                         "Salah. Database tidak menghapus kolom secara acak."
+                                                     ],
+                              "sectionRef":  "4. Kegagalan Parsial (Partial Failures)",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-07-02",
+                           "lesson-09-03",
+                           "lesson-14-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Designing Data-Intensive Applications - Martin Kleppmann",
+                           "url":  "https://dataintensive.net/",
+                           "type":  "book"
+                       },
+                       {
+                           "title":  "CAP Twelve Years Later: How the \u0027Rules\u0027 Have Changed - Eric Brewer",
+                           "url":  "https://www.infoq.com/articles/cap-twelve-years-later-how-the-rules-have-changed/",
+                           "type":  "article"
+                       }
+                   ]
+}

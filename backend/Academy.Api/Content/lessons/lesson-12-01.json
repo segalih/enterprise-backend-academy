@@ -1,0 +1,111 @@
+{
+    "id":  "lesson-12-01",
+    "levelId":  "level-12",
+    "moduleId":  "mod-12-01",
+    "order":  1,
+    "title":  "Internal Async/Await: State Machine Struct, Task Continuations, dan SynchronizationContext",
+    "slug":  "async-await-state-machine-internals",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  60,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  "async-flow",
+    "simulatorContext":  {
+                             "stages":  [
+                                            "Caller Thread (Pushed to ThreadPool)",
+                                            "Compiler transforms method into IAsyncStateMachine struct",
+                                            "Awaited Task incomplete -\u003e registers continuation via AwaitUnsafeOnCompleted",
+                                            "Thread is returned to ThreadPool (Zero thread blocking)",
+                                            "I/O completion event fires (IOCP) -\u003e ThreadPool picks continuation and resumes State Machine"
+                                        ]
+                         },
+    "description":  "Membongkar apa yang sebenarnya dilakukan compiler C# saat Anda menulis \u0027async await\u0027: transformasi struct IAsyncStateMachine, Task/ValueTask allocation, dan peran SynchronizationContext.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-02-04",
+                              "reason":  "Value Type vs Reference Type (Struct allocation)"
+                          },
+                          {
+                              "lessonId":  "lesson-06-02",
+                              "reason":  "OS Process vs Thread \u0026 Thread Pool Internals"
+                          }
+                      ],
+    "introduces":  [
+                       "C# Async State Machine transformation (IAsyncStateMachine struct)",
+                       "AsyncTaskMethodBuilder \u0026 state tracking (\u003c\u003e1__state)",
+                       "SynchronizationContext vs TaskScheduler",
+                       "Task vs ValueTask (Heap allocation vs struct optimization)",
+                       "ThreadPool thread starvation vs asynchronous I/O"
+                   ],
+    "learningObjectives":  [
+                               "Menganalisis kode IL hasil dekompilasi async/await dan memahami peran IAsyncStateMachine",
+                               "Menjelaskan bagaimana thread OS dibebaskan kembali ke ThreadPool saat operasi I/O asinkronus berlangsung",
+                               "Memahami alasan ASP.NET Core tidak lagi memiliki SynchronizationContext (berbeda dengan Windows Forms/WPF)",
+                               "Mengidentifikasi kapan harus menggunakan ValueTask\u003cT\u003e untuk menghindari alokasi Task di heap pada hot-path"
+                           ],
+    "markdownContent":  "# Internal Async/Await: State Machine Struct, Task Continuations, dan SynchronizationContext\n\nKata kunci `async` dan `await` di C# sering dianggap sebagai \"sihir hitam\". Banyak developer pemula beranggapan bahwa `async` otomatis membuat thread baru di latar belakang. Asumsi ini salah fatal.\n\nOperasi asinkronus sejati (terutama I/O seperti network call atau disk read) **tidak menggunakan thread sama sekali** selama proses transfer data berlangsung (\"There is no thread\"). \n\nDalam materi ini, kita akan membedah transformasi kompilasi C# yang mengubah method asinkronus menjadi **State Machine Struct**, bagaimana continuations didaftarkan ke runtime, dan mengapa `SynchronizationContext` sangat menentukan perilaku aplikasi Anda.\n\n---\n\n## 1. Mitos Terbesar: \"Async = Multi-threading\"\n\nSaat Anda melakukan query database atau memanggil HTTP API eksternal:\n```csharp\nvar response = await httpClient.GetAsync(\"https://api.bank.com/rate\");\n```\n\nApakah ada thread yang menunggu secara pasif selama 200ms saat server bank memproses data?\n**TIDAK.**\n- Soket TCP menyerahkan request ke kartu jaringan (NIC).\n- Driver OS mendaftarkan callback ke hardware interrupt (IOCP di Windows / epoll di Linux).\n- Thread yang memulai method tersebut langsung **dibebaskan kembali ke .NET ThreadPool** untuk melayani request HTTP lain dari pengguna lain!\n- Ketika paket data respon tiba di kartu jaringan, hardware interrupt memicu runtime .NET untuk mengambil thread acak dari ThreadPool guna melanjutkan eksekusi kode setelah baris `await`.\n\nInilah rahasia mengapa ASP.NET Core dapat melayani puluhan ribu koneksi bersamaan hanya dengan segelintir core CPU.\n\n---\n\n## 2. Di Balik Layar: Transformasi `IAsyncStateMachine`\n\nKetika compiler C# (Roslyn) menemukan method dengan modifier `async`, compiler akan:\n1. Menulis ulang method Anda menjadi sebuah **`struct`** yang mengimplementasikan interface internal **`IAsyncStateMachine`**.\n2. Variabel lokal di dalam method Anda diubah menjadi field di dalam struct tersebut (agar nilainya bertahan saat eksekusi ditunda).\n3. Titik-titik `await` diubah menjadi transisi status angka: `\u003c\u003e1__state = 0`, `\u003c\u003e1__state = 1`, dst.\n\n```csharp\n// Kode Asli Anda:\npublic async Task\u003cint\u003e FetchDataAsync()\n{\n    int localVal = 42;\n    await Task.Delay(100);\n    return localVal * 2;\n}\n\n// Kira-kira Apa yang Dihasilkan Compiler (Representasi C#):\n[CompilerGenerated]\nprivate struct \u003cFetchDataAsync\u003ed__0 : IAsyncStateMachine\n{\n    public int \u003c\u003e1__state;\n    public AsyncTaskMethodBuilder\u003cint\u003e \u003c\u003et__builder;\n    public int \u003clocalVal\u003e5__1;\n    private TaskAwaiter \u003c\u003eu__1;\n\n    public void MoveNext()\n    {\n        int result;\n        try\n        {\n            if (\u003c\u003e1__state != 0)\n            {\n                \u003clocalVal\u003e5__1 = 42;\n                \u003c\u003eu__1 = Task.Delay(100).GetAwaiter();\n                if (!\u003c\u003eu__1.IsCompleted)\n                {\n                    \u003c\u003e1__state = 0; // Set state ke pending\n                    \u003c\u003et__builder.AwaitUnsafeOnCompleted(ref \u003c\u003eu__1, ref this);\n                    return; // KELUAR! Bebaskan thread saat ini!\n                }\n            }\n            // Lanjutan setelah await selesai:\n            \u003c\u003eu__1.GetResult();\n            result = \u003clocalVal\u003e5__1 * 2;\n        }\n        catch (Exception ex)\n        {\n            \u003c\u003e1__state = -2;\n            \u003c\u003et__builder.SetException(ex);\n            return;\n        }\n        \u003c\u003e1__state = -2;\n        \u003c\u003et__builder.SetResult(result);\n    }\n}\n```\n\n---\n\n## 3. Apa itu `SynchronizationContext`?\n\nDi aplikasi UI (seperti WPF, WinForms, atau MAUI), manipulasi elemen tombol/teks hanya boleh dilakukan oleh **Main UI Thread**. Jika thread background mencoba mengubah UI, OS akan melempar exception. Di sinilah `SynchronizationContext` berperan: ia menangkap continuation setelah `await` dan mengembalikannya ke UI thread utama.\n\n### Mengapa ASP.NET Core TIDAK Memiliki `SynchronizationContext`?\nPada ASP.NET lawas (.NET Framework), terdapat `AspNetSynchronizationContext` yang memastikan satu HTTP request selalu terikat pada satu thread context. Namun, mekanisme ini menimbulkan overhead context switching yang sangat tinggi dan rawan memicu deadlock jika developer memanggil `.Result` atau `.Wait()`.\n\nDi **ASP.NET Core**, tim Microsoft secara sengaja **menghapus SynchronizationContext**. \nArtinya:\n- Setelah baris `await`, kode Anda dapat dilanjutkan oleh thread mana saja yang sedang menganggur di ThreadPool.\n- Di ASP.NET Core, memanggil `ConfigureAwait(false)` sudah **tidak diperlukan lagi** di level web app (meskipun masih disarankan pada reusable library).\n\n---\n\n## 4. Task vs ValueTask\u003cT\u003e\n\nSetiap kali Anda membuat objek `Task\u003cT\u003e`, runtime harus mengalokasikan memori di managed heap.\nJika sebuah method asinkronus seringkali selesai secara sinkronus (misalnya hasil query sudah ada di memory cache), mengalokasikan objek `Task` baru adalah pemborosan resource yang membebani Garbage Collector.\n\n```csharp\n// ValueTask\u003cT\u003e adalah struct (Value Type)!\n// Jika data ada di cache, 0 byte alokasi di heap!\npublic ValueTask\u003cint\u003e GetCachedUserPointsAsync(int userId)\n{\n    if (_cache.TryGetValue(userId, out int points))\n    {\n        return new ValueTask\u003cint\u003e(points); // Zero-allocation!\n    }\n\n    return new ValueTask\u003cint\u003e(FetchPointsFromDbAsync(userId));\n}\n```\n\n\u003e [!WARNING]\n\u003e **Aturan Penggunaan ValueTask:**\n\u003e Jangan pernah meng-await `ValueTask` dua kali! Jangan pernah memanggil `.AsTask()` berulang kali! Karena `ValueTask` dapat menggunakan object pooling internal yang di-recycle setelah di-await.\n\n---\n\n## 5. Ringkasan \u0026 Best Practice\n\n1. **Async Tidak Sama dengan Thread Baru**: Async adalah mekanisme non-blocking I/O yang membebaskan thread untuk melayani pekerjaan lain.\n2. **Compiler Menghasilkan State Machine**: Setiap fungsi `async` dikompilasi menjadi struct yang mengelola tahapan eksekusi dan memulihkan variabel lokal.\n3. **Pahami ValueTask**: Gunakan `ValueTask\u003cT\u003e` hanya jika method tersebut memiliki peluang tinggi selesai secara sinkronus (misal in-memory cache hit) pada jalur kode berperforma tinggi (*hot-path*).",
+    "starterCode":  "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\n// Eksperimen Thread Id pada Async/Await\npublic class Program\n{\n    public static async Task Main()\n    {\n        Console.WriteLine($\"[1] Sebelum await: Thread ID = {Environment.CurrentManagedThreadId}\");\n\n        // Lakukan operasi I/O asinkronus simulasi\n        await SimulateIoOperationAsync();\n\n        Console.WriteLine($\"[3] Setelah await:  Thread ID = {Environment.CurrentManagedThreadId}\");\n        \n        // TODO:\n        // Amati apakah Thread ID pada langkah [1] dan langkah [3] sama atau berbeda.\n        // Tuliskan kesimpulan singkat di console menggunakan Console.WriteLine.\n    }\n\n    private static async Task SimulateIoOperationAsync()\n    {\n        Console.WriteLine($\"[2] Di dalam method async: Thread ID = {Environment.CurrentManagedThreadId}\");\n        \n        // Task.Delay mensimulasikan non-blocking timer OS (bukan Thread.Sleep!)\n        await Task.Delay(100);\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        int initialThread = Environment.CurrentManagedThreadId;\n        Console.WriteLine($\"[1] Sebelum await: Thread ID = {initialThread}\");\n\n        await SimulateIoOperationAsync();\n\n        int resumeThread = Environment.CurrentManagedThreadId;\n        Console.WriteLine($\"[3] Setelah await:  Thread ID = {resumeThread}\");\n\n        Console.WriteLine(\"\\nKesimpulan Internal .NET:\");\n        Console.WriteLine(\"Thread awal dibebaskan ke ThreadPool saat Task.Delay aktif.\");\n        Console.WriteLine(\"Continuation dapat dieksekusi oleh thread mana saja yang tersedia di ThreadPool.\");\n    }\n\n    private static async Task SimulateIoOperationAsync()\n    {\n        Console.WriteLine($\"[2] Di dalam method async: Thread ID = {Environment.CurrentManagedThreadId}\");\n        await Task.Delay(100);\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-12-01-1",
+                              "type":  "single_choice",
+                              "question":  "Apa yang sebenarnya terjadi pada thread OS ketika sebuah operasi asinkronus murni (seperti HttpClient.GetAsync atau Task.Delay) sedang berlangsung?",
+                              "options":  [
+                                              "Thread tersebut masuk ke infinite while loop sampai data tiba.",
+                                              "Thread tersebut dibekukan (frozen) oleh kernel OS dan tidak dapat digunakan oleh aplikasi lain.",
+                                              "Thread tersebut dibebaskan kembali ke .NET ThreadPool sehingga dapat melayani request lain (tidak ada thread yang menganggur/terblokir).",
+                                              "Runtime .NET membuat 10 thread baru untuk mempercepat transmisi kabel internet."
+                                          ],
+                              "correctOptionIndex":  2,
+                              "explanation":  "Keunggulan utama asynchronous I/O adalah \u0027There is no thread\u0027. Selama hardware atau network sedang mentransmisikan data, thread pemanggil dikembalikan ke ThreadPool. Ketika I/O selesai, hardware interrupt mengabarkan OS (IOCP/epoll) untuk menjadwalkan thread manapun di ThreadPool melanjutkan state machine.",
+                              "optionExplanations":  [
+                                                         "Salah. Infinite loop (busy waiting) akan membebani CPU hingga 100%.",
+                                                         "Salah. Membekukan thread memboroskan memori stack thread (1MB per thread).",
+                                                         "Benar! Thread dikembalikan ke pool dan siap melayani request lain, memaksimalkan throughput server.",
+                                                         "Salah. Jumlah thread tidak ada hubungannya dengan kecepatan transmisi kabel jaringan fisik."
+                                                     ],
+                              "sectionRef":  "1. Mitos Terbesar: \u0027Async = Multi-threading\u0027",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-12-01-2",
+                              "type":  "single_choice",
+                              "question":  "Mengapa ValueTask\u003cT\u003e lebih efisien daripada Task\u003cT\u003e pada method yang sering mengembalikan data dari memory cache?",
+                              "options":  [
+                                              "Karena ValueTask\u003cT\u003e adalah struct (Value Type), sehingga jika data sudah tersedia secara sinkronus di cache, tidak ada alokasi objek Task baru di managed heap.",
+                                              "Karena ValueTask\u003cT\u003e secara otomatis mengenkripsi data menggunakan algoritma AES-256.",
+                                              "Karena Task\u003cT\u003e sudah dihentikan dukungannya (deprecated) oleh tim arsitek .NET.",
+                                              "Karena ValueTask\u003cT\u003e tidak memerlukan compiler C# untuk berjalan."
+                                          ],
+                              "correctOptionIndex":  0,
+                              "explanation":  "Task\u003cT\u003e adalah class (reference type) yang selalu dialokasikan di heap setiap kali diinstansiasi. ValueTask\u003cT\u003e adalah struct yang dapat membungkus nilai langsung tanpa alokasi heap saat operasi selesai secara sinkronus (cache-hit), meringankan beban kerja Garbage Collector secara drastis.",
+                              "optionExplanations":  [
+                                                         "Benar! Struct optimization menghindari beban GC pada synchronous completions.",
+                                                         "Salah. ValueTask tidak berkaitan dengan enkripsi kriptografi.",
+                                                         "Salah. Task\u003cT\u003e tetap merupakan tipe standar default untuk sebagian besar operasi asinkronus.",
+                                                         "Salah. C# compiler tetap diperlukan untuk mengompilasi kode."
+                                                     ],
+                              "sectionRef":  "4. Task vs ValueTask\u003cT\u003e",
+                              "difficulty":  "Advanced"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-06-02",
+                           "lesson-12-02",
+                           "lesson-12-03"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Async in depth - Microsoft Learn",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/standard/async-in-depth",
+                           "type":  "documentation"
+                       },
+                       {
+                           "title":  "Understanding the Whys, Whats, and Whens of ValueTask - Stephen Toub",
+                           "url":  "https://devblogs.microsoft.com/dotnet/understanding-the-whys-whats-and-whens-of-valuetask/",
+                           "type":  "article"
+                       }
+                   ]
+}

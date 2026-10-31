@@ -1,0 +1,169 @@
+{
+  "id": "lesson-02-07",
+  "levelId": "level-02",
+  "moduleId": "mod-02-03",
+  "order": 7,
+  "title": "Methods: Return Types, Overloading, Named \u0026 Optional Params, serta ref, out, in",
+  "slug": "csharp-methods-parameter-modifiers",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami perancangan method di C#: konvensi penamaan, method overloading vs optional parameters, serta parameter modifiers tingkat lanjut (ref, out, in) untuk optimalisasi performa alokasi memori.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-04",
+      "title": "Value Types vs Reference Types",
+      "levelName": "LEVEL 02",
+      "context": "Memahami alokasi Stack frame saat method dipanggil."
+    }
+  ],
+  "introduces": [
+    "Method Signature",
+    "Method Overloading",
+    "Named \u0026 Optional Arguments",
+    "Modifier \u0027out\u0027 (Definite Assignment)",
+    "Modifier \u0027ref\u0027 (Two-Way Pointer)",
+    "Modifier \u0027in\u0027 (Readonly Reference Pass-by-Reference)"
+  ],
+  "learningObjectives": [
+    "Merancang method signature yang bersih, eksplisit, dan konsisten.",
+    "Menganalisis perbedaan mekanis antara parameter modifier: out, ref, dan in.",
+    "Menggunakan modifier \u0027in\u0027 untuk menghindari penyalinan struct berukuran besar pada hot path."
+  ],
+  "markdownContent": "# Methods: Return Types, Overloading, Named \u0026 Optional Params, serta ref, out, in\n\n## Anatomi Method Signature di C#\nSebuah method di C# adalah blok instruksi modular yang memiliki kontrak jelas:\n\u0060\u0060\u0060csharp\npublic static bool TryProcessPayment(string accountId, decimal amount, out string transactionId)\n\u0060\u0060\u0060\nMethod signature terdiri dari:\n1. **Access Modifier**: \u0060public\u0060, \u0060internal\u0060, \u0060private\u0060, \u0060protected\u0060.\n2. **Modifier Tambahan**: \u0060static\u0060, \u0060async\u0060, \u0060virtual\u0060, \u0060override\u0060.\n3. **Return Type**: Tipe nilai yang dikembalikan (atau \u0060void\u0060 jika tidak ada).\n4. **Nama Method**: Wajib menggunakan konvensi **PascalCase** (\u0060ProcessOrder\u0060, bukan \u0060processOrder\u0060).\n5. **Parameter List**: Daftar argumen beserta tipenya.\n\n---\n\n## Tiga Modifier Parameter Khusus: \u0060out\u0060, \u0060ref\u0060, dan \u0060in\u0060\n\n| Modifier | Arah Aliran Data | Kewajiban Inisialisasi Penelepon | Kewajiban di Dalam Method | Kasus Penggunaan Utama |\n| :--- | :--- | :--- | :--- | :--- |\n| **(Default)** | Masuk (In) | Wajib diinisialisasi | Nilai lokal disalin, perubahan tidak mempengaruhi variabel pemanggil | Operasi umum |\n| **\u0060out\u0060** | Keluar (Out) | Tidak perlu diinisialisasi | **WAJIB diisi sebelum method return** (Definite Assignment) | Mengembalikan lebih dari 1 hasil (pola TryParse) |\n| **\u0060ref\u0060** | Dua Arah (In \u0026 Out) | **Wajib diinisialisasi** sebelum dikirim | Bebas dibaca atau dimodifikasi langsung pada memori pemanggil | Modifikasi in-place variabel pemanggil |\n| **\u0060in\u0060** | Masuk (Read-Only Ref) | Wajib diinisialisasi | **DILARANG diubah (Readonly)** oleh method | Optimasi performa: mengoper struct besar tanpa duplikasi byte |\n\n---\n\n## Praktik Nyata: Pola \u0022Try-Parse\u0022 Enterprise\nDalam backend, melempar Exception (\u0060try { int.Parse(...) } catch { ... }\u0060) untuk input pengguna yang salah adalah **anti-pattern yang sangat lambat** (membuat exception membutuhkan penangkapan stack trace yang mahal).\n\nStandar industri C# menggunakan **Pola Try-Parse** dengan modifier \u0060out\u0060:\n\u0060\u0060\u0060csharp\nif (int.TryParse(inputPengguna, out int hasil))\n{\n    // Sukses: variabel hasil sudah terisi dan siap dipakai\n    Console.WriteLine($\u0022Angka valid: {hasil}\u0022);\n}\nelse\n{\n    // Gagal: tidak ada exception yang dilempar, latensi 0 ms!\n    Console.WriteLine(\u0022Format angka salah.\u0022);\n}\n\u0060\u0060\u0060\n\n---\n\n## Optimasi High-Throughput: Parameter \u0060in\u0060\nKetika Anda mengoper sebuah struct besar (misalnya matriks 64-byte) ke sebuah method sebagai parameter biasa:\n\u0060\u0060\u0060csharp\nvoid ProsesData(Matrix64Byte data) // CPU menyalin 64 byte dari stack ke stack frame baru!\n\u0060\u0060\u0060\nDengan menambahkan keyword \u0060in\u0060:\n\u0060\u0060\u0060csharp\nvoid ProsesData(in Matrix64Byte data) // CPU HANYA mengirim pointer alamat 8 byte! Nol penyalinan data!\n\u0060\u0060\u0060\nCompiler menjamin bahwa kode di dalam \u0060ProsesData\u0060 tidak dapat mengubah data tersebut (\u0060CS8332: Cannot assign to variable because it is a readonly variable\u0060).",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Parameter Modifier ref, out, dan in\npublic struct BigPayload\n{\n    public long A, B, C, D; // 32 byte data\n}\n\npublic class ParameterDemonstrator\n{\n    // 1. Modifier OUT: Wajib mengisi nilai sebelum selesai\n    public static bool TryBagi(int pembilang, int penyebut, out int hasil, out int sisa)\n    {\n        if (penyebut == 0)\n        {\n            hasil = 0;\n            sisa = 0;\n            return false;\n        }\n\n        hasil = pembilang / penyebut;\n        sisa = pembilang % penyebut;\n        return true;\n    }\n\n    // 2. Modifier REF: Memodifikasi langsung variabel pemanggil\n    public static void GandakanSaldo(ref decimal saldo)\n    {\n        saldo *= 2;\n    }\n\n    // 3. Modifier IN: Mengoper referensi read-only tanpa alokasi penyalinan\n    public static long JumlahkanPayload(in BigPayload payload)\n    {\n        // payload.A = 100; // ERROR: Tidak boleh diubah karena readonly!\n        return payload.A \u002B payload.B \u002B payload.C \u002B payload.D;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Uji Out\n        if (ParameterDemonstrator.TryBagi(17, 5, out int div, out int rem))\n        {\n            Console.WriteLine($\u002217 / 5 = {div} sisa {rem}\u0022);\n        }\n        \n        // Uji Ref\n        decimal myBalance = 1_000_000m;\n        ParameterDemonstrator.GandakanSaldo(ref myBalance);\n        Console.WriteLine($\u0022Saldo setelah digandakan: Rp {myBalance:N0}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-02-07-1",
+      "type": "MultipleChoice",
+      "question": "Kewajiban apakah yang diberlakukan oleh C# compiler (Roslyn) kepada sebuah method yang memiliki parameter bertanda \u0060out\u0060?",
+      "options": [
+        "Method tersebut harus berjalan secara asinkronus",
+        "Method wajib mengisi (menugaskan nilai) pada parameter out tersebut sebelum method selesai atau return",
+        "Method tidak boleh menerima parameter lain selain out",
+        "Parameter out harus bertipe string"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Aturan Definite Assignment C# mewajibkan setiap parameter bertanda \u0060out\u0060 diberi nilai valid di semua jalur percabangan eksekusi sebelum method mengembalikan kontrol.",
+      "optionExplanations": [
+        "Salah. Parameter out tidak berhubungan dengan operasi async.",
+        "Benar! Parameter \u0060out\u0060 wajib ditugaskan nilainya sebelum method return.",
+        "Salah. Method dapat memiliki kombinasi berbagai jenis parameter.",
+        "Salah. Parameter out dapat menggunakan tipe data C# apa pun."
+      ],
+      "sectionRef": "Tiga Modifier Parameter Khusus: out, ref, dan in",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-07-2",
+      "type": "MultipleChoice",
+      "question": "Apa keuntungan utama menggunakan modifier \u0060in\u0060 pada parameter bertipe struct besar di C#?",
+      "options": [
+        "Membuat struct tersebut disimpan di memori heap",
+        "Mengoper struct melalui referensi pointer memori (8 byte) tanpa menyalin seluruh isi struct, sambil menjamin isi struct tidak dapat dimodifikasi (readonly)",
+        "Otomatis memvalidasi bahwa struct tidak bernilai null",
+        "Mengubah struct menjadi class secara otomatis"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Modifier \u0060in\u0060 mengoper parameter by-reference untuk efisiensi memori (tanpa copy byte-by-byte pada stack), dengan proteksi read-only yang divalidasi oleh compiler.",
+      "optionExplanations": [
+        "Salah. Modifier \u0060in\u0060 tidak memindahkan struct ke Managed Heap.",
+        "Benar! Menghindari duplikasi memori stack (pass-by-reference) dengan proteksi immutability penuh.",
+        "Salah. Struct adalah value type dan tidak dapat bernilai null secara default.",
+        "Salah. Tipe data struct tetap menjadi struct."
+      ],
+      "sectionRef": "Optimasi High-Throughput: Parameter in",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-07",
+    "Title": "Implementasi Pola TryParse Rekening Bank Modulo-10",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat method dengan pola \u0060bool TryParseAccount(string input, out string branch, out string accountNum)\u0060.\nNomor rekening valid memiliki format: \u0027\u003C3 digit cabang\u003E-\u003C6 digit rekening\u003E-\u003C1 digit checksum\u003E\u0027.\nChecksum dihitung dari: (Jumlah semua digit cabang dan digit rekening) modulo 10.\nJika format valid dan digit checksum cocok, kembalikan true dan cetak \u0027VALID: Branch=\u003Cbranch\u003E, Account=\u003CaccountNum\u003E\u0027.\nJika tidak valid, cetak \u0027INVALID_ACCOUNT\u0027.",
+    "InputFormat": "Satu baris string nomor rekening (misal \u0027101-123456-7\u0027).",
+    "OutputFormat": "Satu baris status validitas atau rincian cabang dan akun.",
+    "Constraints": "Panjang string persis 12 karakter termasuk tanda minus.",
+    "Examples": [
+      {
+        "Input": "101-123456-8",
+        "Output": "VALID: Branch=101, Account=123456",
+        "Explanation": "Jumlah digit 1\u002B0\u002B1 \u002B 1\u002B2\u002B3\u002B4\u002B5\u002B6 = 23. 23 mod 10 = 3 (Mismatch jika checksum != 3)."
+      },
+      {
+        "Input": "101-123456-3",
+        "Output": "VALID: Branch=101, Account=123456",
+        "Explanation": "23 mod 10 = 3 cocok dengan checksum."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static bool TryParseAccount(string? input, out string branch, out string accountNum)\n    {\n        branch = string.Empty;\n        accountNum = string.Empty;\n        // TODO: Validasi format dan kalkulasi modulo 10 checksum.\n        return false;\n    }\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (TryParseAccount(line, out var b, out var acc))\n        {\n            Console.WriteLine($\u0022VALID: Branch={b}, Account={acc}\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022INVALID_ACCOUNT\u0022);\n        }\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static bool TryParseAccount(string? input, out string branch, out string accountNum)\n    {\n        branch = string.Empty;\n        accountNum = string.Empty;\n        if (string.IsNullOrWhiteSpace(input)) return false;\n\n        var parts = input.Trim().Split(\u0027-\u0027);\n        if (parts.Length != 3) return false;\n        if (parts[0].Length != 3 || parts[1].Length != 6 || parts[2].Length != 1) return false;\n\n        int sum = 0;\n        foreach (char c in parts[0])\n        {\n            if (!char.IsDigit(c)) return false;\n            sum \u002B= c - \u00270\u0027;\n        }\n        foreach (char c in parts[1])\n        {\n            if (!char.IsDigit(c)) return false;\n            sum \u002B= c - \u00270\u0027;\n        }\n\n        if (!char.IsDigit(parts[2][0])) return false;\n        int expectedChecksum = sum % 10;\n        int actualChecksum = parts[2][0] - \u00270\u0027;\n\n        if (expectedChecksum != actualChecksum) return false;\n\n        branch = parts[0];\n        accountNum = parts[1];\n        return true;\n    }\n\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (TryParseAccount(line, out var b, out var acc))\n        {\n            Console.WriteLine($\u0022VALID: Branch={b}, Account={acc}\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022INVALID_ACCOUNT\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Valid Checksum 3)",
+        "Description": "Contoh 1 (Valid Checksum 3): input \u0027101-123456-3\u0027 -\u003E expected \u0027VALID: Branch=101, Account=123456\u0027",
+        "Input": "101-123456-3",
+        "ExpectedOutput": "VALID: Branch=101, Account=123456",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Salah Checksum)",
+        "Description": "Contoh 2 (Salah Checksum): input \u0027101-123456-8\u0027 -\u003E expected \u0027INVALID_ACCOUNT\u0027",
+        "Input": "101-123456-8",
+        "ExpectedOutput": "INVALID_ACCOUNT",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Format Kurang Segmen",
+        "Description": "Format Kurang Segmen: input \u0027101-123456\u0027 -\u003E expected \u0027INVALID_ACCOUNT\u0027",
+        "Input": "101-123456",
+        "ExpectedOutput": "INVALID_ACCOUNT",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Semua Nol",
+        "Description": "Semua Nol: input \u0027000-000000-0\u0027 -\u003E expected \u0027VALID: Branch=000, Account=000000\u0027",
+        "Input": "000-000000-0",
+        "ExpectedOutput": "VALID: Branch=000, Account=000000",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Pola TryParse menggunakan out parameter untuk mengembalikan data hasil parsing tanpa melempar exception saat format salah.",
+      "Jumlahkan digit 1\u002B0\u002B1\u002B1\u002B2\u002B3\u002B4\u002B5\u002B6 = 23, 23 % 10 = 3."
+    ],
+    "Explanation": "Pola TryParse adalah konvensi resmi .NET Runtime untuk parsing data yang rentan kesalahan input pengguna tanpa membebani performa akibat overhead throw exception."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-09",
+      "title": "Robust Exception Handling",
+      "levelName": "LEVEL 02",
+      "context": "Memilih kapan melempar exception vs menggunakan pola TryParse."
+    },
+    {
+      "lessonId": "lesson-04-03",
+      "title": "Span\u003CT\u003E, Memory\u003CT\u003E \u0026 Zero-Allocation",
+      "levelName": "LEVEL 04",
+      "context": "Pemanfaatan ref struct dan in modifier untuk parsing performa tinggi."
+    }
+  ],
+  "references": [
+    {
+      "title": "Method Parameters - C# Reference",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/method-parameters"
+    },
+    {
+      "title": "The Try-Parse Pattern - Framework Design Guidelines",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/exceptions-and-performance"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Text;\n\npublic class AccountValidator\n{\n    public static bool TryParseAccountNumber(string? input, out string formattedAccount)\n    {\n        formattedAccount = \u0022\u0022;\n        if (string.IsNullOrWhiteSpace(input)) return false;\n\n        var sb = new StringBuilder();\n        foreach (char c in input)\n        {\n            if (char.IsWhiteSpace(c) || c == \u0027-\u0027) continue;\n            if (!char.IsDigit(c)) return false;\n            sb.Append(c);\n        }\n\n        if (sb.Length != 10) return false;\n\n        formattedAccount = $\u0022ACC-{sb}\u0022;\n        return true;\n    }\n\n    public static void Main()\n    {\n        if (TryParseAccountNumber(\u0022123-456-7890\u0022, out string acc1))\n        {\n            Console.WriteLine($\u0022Valid: {acc1}\u0022);\n        }\n        else\n        {\n            Console.WriteLine(\u0022Invalid\u0022);\n        }\n    }\n}"
+}

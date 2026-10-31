@@ -1,0 +1,104 @@
+{
+    "id":  "lesson-13-01",
+    "levelId":  "level-13",
+    "moduleId":  "mod-13-01",
+    "order":  1,
+    "title":  "Prinsip SOLID dalam Praktik Enterprise C#: Menghindari Over-Engineering dan Code Rot",
+    "slug":  "solid-principles-enterprise-csharp",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  55,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menerapkan prinsip SOLID secara pragmatis di C# modern: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion, dan cara menghindari jebakan \u0027Design Pattern Cargo Cult\u0027.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-03-04",
+                              "reason":  "Interfaces, Polymorphism, dan ISP"
+                          },
+                          {
+                              "lessonId":  "lesson-11-03",
+                              "reason":  "Dependency Injection Lifetimes \u0026 Containers"
+                          }
+                      ],
+    "introduces":  [
+                       "Pragmatic SOLID vs Academic Dogma",
+                       "Single Responsibility Principle (SRP) as reason for change",
+                       "Open/Closed Principle (OCP) via Strategy \u0026 Extension points",
+                       "Liskov Substitution Principle (LSP) \u0026 Contract Violations",
+                       "Interface Segregation Principle (ISP) vs \u0027Header Interfaces\u0027",
+                       "Dependency Inversion Principle (DIP) \u0026 Hexagonal abstractions"
+                   ],
+    "learningObjectives":  [
+                               "Mengevaluasi batas tanggung jawab class berdasarkan \u0027aktor perubahan\u0027 (SRP), bukan sekadar jumlah baris kode",
+                               "Mengidentifikasi pelanggaran Liskov Substitution Principle (misal melempar NotImplementedException di subclass)",
+                               "Membedakan abstraksi yang bernilai tinggi dengan \u0027Header Interfaces\u0027 (interface tiruan 1-to-1 yang tidak diperlukan)",
+                               "Menghindari jebakan over-engineering di mana abstraksi berlebihan membuat alur kode sulit dipahami dan lambat didebug"
+                           ],
+    "markdownContent":  "# Prinsip SOLID dalam Praktik Enterprise C#: Menghindari Over-Engineering dan Code Rot\n\nPrinsip **SOLID**â€”diperkenalkan oleh Robert C. Martin (Uncle Bob)â€”adalah lima panduan fundamental untuk menghasilkan kode berorientasi objek yang fleksibel, mudah diuji, dan tahan terhadap perubahan zaman.\n\nNamun, di banyak perusahaan enterprise, SOLID sering disalahartikan menjadi doktrin kaku (\"Cargo Cult Programming\"). Developer sering membuat interface untuk setiap class tanpa alasan, memecah class menjadi ratusan file satu baris, dan menambahkan puluhan layer abstraksi yang tidak pernah digunakan.\n\nMateri ini membahas penerapan SOLID yang **pragmatis, elegan, dan realistis** dalam ekosistem C# dan .NET modern.\n\n---\n\n## 1. Single Responsibility Principle (SRP): \"Satu Alasan untuk Berubah\"\n\nDefinisi formal SRP yang tepat bukanlah *\"sebuah class hanya boleh melakukan satu hal\"*, melainkan:\n\u003e **\"Sebuah modul atau class hanya boleh bertanggung jawab kepada satu aktor bisnis (satu alasan untuk berubah).\"**\n\n### Pelanggaran Klasik SRP:\n```csharp\n// ANTI-PATTERN: God Object yang melayani 3 aktor bisnis berbeda!\npublic class OrderService\n{\n    public void ProcessOrder(Order order)\n    {\n        // 1. Logika Bisnis Penjualan (Aktor: Sales Ops)\n        decimal discount = CalculateDiscount(order);\n        \n        // 2. Akses Database SQL (Aktor: DBA)\n        using var conn = new SqlConnection(\"...\");\n        conn.Execute(\"INSERT INTO Orders ...\", order);\n        \n        // 3. Format Laporan PDF \u0026 Kirim Email (Aktor: Marketing)\n        var pdf = GeneratePdfInvoice(order);\n        var smtp = new SmtpClient();\n        smtp.Send(\"invoice@customer.com\", pdf);\n    }\n}\n```\nJika tim Marketing ingin mengganti template email, atau DBA ingin memigrasikan database ke PostgreSQL, class `OrderService` harus diedit dan berisiko merusak logika perhitungan diskon Sales!\n\n### Solusi SRP:\nPisahkan tanggung jawab berdasarkan domain:\n- `OrderPricingEngine`: Hanya menghitung diskon dan total harga.\n- `IOrderRepository`: Mengelola persistensi data pesanan.\n- `IInvoiceNotificationService`: Menangani pengiriman invoice via email.\n\n---\n\n## 2. Open/Closed Principle (OCP): Terbuka untuk Ekstensi, Tertutup untuk Modifikasi\n\n\u003e **Software entity harus terbuka untuk penambahan perilaku baru (extension), tetapi tertutup dari modifikasi kode inti yang sudah stabil (modification).**\n\n### Pelanggaran OCP (Switch-Statement Hell):\n```csharp\npublic class PaymentProcessor\n{\n    public void Pay(string type, decimal amount)\n    {\n        if (type == \"CreditCard\") { /* ... */ }\n        else if (type == \"BankTransfer\") { /* ... */ }\n        else if (type == \"Crypto\") { /* ... */ } // Setiap ada metode pembayaran baru, class ini harus diedit!\n    }\n}\n```\n\n### Solusi OCP Modern di C#:\nGunakan **Strategy Pattern** dan Dependency Injection:\n```csharp\npublic interface IPaymentStrategy\n{\n    string PaymentType { get; }\n    Task ProcessPaymentAsync(decimal amount);\n}\n\npublic class PaymentProcessor\n{\n    private readonly IEnumerable\u003cIPaymentStrategy\u003e _strategies;\n\n    public PaymentProcessor(IEnumerable\u003cIPaymentStrategy\u003e strategies)\n    {\n        _strategies = strategies;\n    }\n\n    public async Task PayAsync(string type, decimal amount)\n    {\n        var strategy = _strategies.FirstOrDefault(s =\u003e s.PaymentType == type)\n            ?? throw new NotSupportedException($\"Metode {type} belum didukung.\");\n            \n        await strategy.ProcessPaymentAsync(amount);\n    }\n}\n```\nUntuk menambahkan metode pembayaran baru (misal `QrisPaymentStrategy`), Anda cukup membuat class baru dan mendaftarkannya di DI container **tanpa menyentuh satu baris pun kode di `PaymentProcessor`!**\n\n---\n\n## 3. Liskov Substitution Principle (LSP): Menjaga Kontrak Pewarisan\n\n\u003e **Jika S adalah subtype dari T, maka objek bertipe T harus dapat digantikan dengan objek bertipe S tanpa merusak kebenaran program.**\n\nTanda-tanda paling umum pelanggaran LSP:\n1. Melempar `NotImplementedException` atau `NotSupportedException` pada method hasil turunan interface atau base class.\n2. Memeriksa `if (obj is SubclassA)` di pemanggil sebelum memanggil method polimorfik.\n3. Mengubah aturan validasi (pre-conditions) menjadi lebih ketat di turunan.\n\n---\n\n## 4. Interface Segregation Principle (ISP): Waspadai \"Header Interfaces\"\n\n\u003e **Client tidak boleh dipaksa bergantung pada method interface yang tidak digunakannya.**\n\n### Bahaya \"Header Interfaces\":\nBanyak developer membuat interface `IOrderService` yang memiliki 30 method dan menduplikasikan seluruh public method dari `OrderService`. Ini bukan abstraksi, ini hanya duplikasi file yang sia-sia (\"Header Interface Anti-pattern\").\n\nPecah interface menjadi kontrak-kontrak kecil yang fokus pada kebutuhan client:\n- `IOrderReader` (hanya query baca `GetOrderById`)\n- `IOrderCanceller` (hanya perintah batal `CancelOrder`)\n\n---\n\n## 5. Dependency Inversion Principle (DIP)\n\n\u003e **Modul level tinggi tidak boleh bergantung pada modul level rendah; keduanya harus bergantung pada abstraksi.**\n\nJangan biarkan logika bisnis inti (`Domain / Application Layer`) bergantung langsung pada detail teknologi seperti `Microsoft.Data.SqlClient`, `SendGrid`, atau `Redis`. Definisikan interface di layer aplikasi, dan implementasikan interface tersebut di layer infrastruktur terluar.\n\n---\n\n## 6. Ringkasan \u0026 Aturan Menghindari Over-Engineering\n\n1. **Rule of Three**: Jangan terburu-buru membuat abstraksi interface jika implementasinya baru satu, kecuali interface tersebut mutlak diperlukan untuk Unit Testing / Mocking.\n2. **Keterbacaan Lebih Utama daripada Teori**: Jika penerapan pattern membuat alur kode melompat ke 10 file berbeda hanya untuk menyimpan 1 baris string, itu adalah tanda *over-engineering*.\n3. **Fokus pada Boundary**: Terapkan SOLID paling ketat pada batas-batas subsistem (*module boundaries*), bukan pada helper internal satu fungsi.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\n// Skenario: OCP Payment Gateway Extensibility\npublic interface IPaymentStrategy\n{\n    string Method { get; }\n    Task\u003cbool\u003e ChargeAsync(decimal amount);\n}\n\npublic class CreditCardStrategy : IPaymentStrategy\n{\n    public string Method =\u003e \"CREDIT_CARD\";\n    public Task\u003cbool\u003e ChargeAsync(decimal amount)\n    {\n        Console.WriteLine($\"[CreditCard] Berhasil mendebit Rp {amount:N0}\");\n        return Task.FromResult(true);\n    }\n}\n\n// TODO: Tambahkan kelas QrisStrategy yang mengimplementasikan IPaymentStrategy\n// Method =\u003e \"QRIS\", mencetak log charge dan mengembalikan true.\n\npublic class PaymentGateway\n{\n    private readonly Dictionary\u003cstring, IPaymentStrategy\u003e _strategies = new();\n\n    public void RegisterStrategy(IPaymentStrategy strategy)\n    {\n        _strategies[strategy.Method] = strategy;\n    }\n\n    public async Task ProcessAsync(string method, decimal amount)\n    {\n        if (!_strategies.TryGetValue(method, out var strategy))\n        {\n            throw new NotSupportedException($\"Metode {method} tidak didukung!\");\n        }\n\n        await strategy.ChargeAsync(amount);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var gateway = new PaymentGateway();\n        gateway.RegisterStrategy(new CreditCardStrategy());\n\n        // Jalankan Credit Card\n        await gateway.ProcessAsync(\"CREDIT_CARD\", 150_000);\n\n        // TODO: Daftarkan QrisStrategy baru dan proses pembayaran QRIS sebesar Rp 75.000\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Threading.Tasks;\n\npublic interface IPaymentStrategy\n{\n    string Method { get; }\n    Task\u003cbool\u003e ChargeAsync(decimal amount);\n}\n\npublic class CreditCardStrategy : IPaymentStrategy\n{\n    public string Method =\u003e \"CREDIT_CARD\";\n    public Task\u003cbool\u003e ChargeAsync(decimal amount)\n    {\n        Console.WriteLine($\"[CreditCard] Berhasil mendebit Rp {amount:N0}\");\n        return Task.FromResult(true);\n    }\n}\n\npublic class QrisStrategy : IPaymentStrategy\n{\n    public string Method =\u003e \"QRIS\";\n    public Task\u003cbool\u003e ChargeAsync(decimal amount)\n    {\n        Console.WriteLine($\"[QRIS] QR Code dipindai. Berhasil membayar Rp {amount:N0}\");\n        return Task.FromResult(true);\n    }\n}\n\npublic class PaymentGateway\n{\n    private readonly Dictionary\u003cstring, IPaymentStrategy\u003e _strategies = new();\n\n    public void RegisterStrategy(IPaymentStrategy strategy)\n    {\n        _strategies[strategy.Method] = strategy;\n    }\n\n    public async Task ProcessAsync(string method, decimal amount)\n    {\n        if (!_strategies.TryGetValue(method, out var strategy))\n        {\n            throw new NotSupportedException($\"Metode {method} tidak didukung!\");\n        }\n\n        await strategy.ChargeAsync(amount);\n    }\n}\n\npublic class Program\n{\n    public static async Task Main()\n    {\n        var gateway = new PaymentGateway();\n        gateway.RegisterStrategy(new CreditCardStrategy());\n        gateway.RegisterStrategy(new QrisStrategy());\n\n        await gateway.ProcessAsync(\"CREDIT_CARD\", 150_000);\n        await gateway.ProcessAsync(\"QRIS\", 75_000);\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-13-01-1",
+                              "type":  "single_choice",
+                              "question":  "Manakah contoh pelanggaran nyata terhadap Liskov Substitution Principle (LSP) di C#?",
+                              "options":  [
+                                              "Sebuah class mengimplementasikan dua interface sekaligus.",
+                                              "Sebuah subclass meng-override method dari base class dan melempar NotImplementedException karena tidak mendukung operasi tersebut.",
+                                              "Menggunakan dependency injection di constructor.",
+                                              "Membuat struct immutable untuk merepresentasikan koordinat peta."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Liskov Substitution Principle mensyaratkan bahwa setiap subclass harus dapat menggantikan base class/interface-nya tanpa mematahkan ekspektasi pemanggil. Melempar NotImplementedException adalah pelanggaran langsung terhadap kontrak polimorfik.",
+                              "optionExplanations":  [
+                                                         "Salah. Mengimplementasikan banyak interface adalah hal normal dan didukung C#.",
+                                                         "Benar! Melempar NotImplementedException merusak kontrak polimorfik base type.",
+                                                         "Salah. DI adalah penerapan DIP yang dianjurkan.",
+                                                         "Salah. Immutable struct adalah praktik yang sangat baik."
+                                                     ],
+                              "sectionRef":  "3. Liskov Substitution Principle (LSP): Menjaga Kontrak Pewarisan",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-13-01-2",
+                              "type":  "single_choice",
+                              "question":  "Apa definisi yang paling tepat untuk Single Responsibility Principle (SRP) menurut Robert C. Martin?",
+                              "options":  [
+                                              "Setiap fungsi C# hanya boleh memiliki maksimal 1 baris kode.",
+                                              "Sebuah class/modul hanya boleh memiliki satu alasan untuk berubah (hanya bertanggung jawab kepada satu aktor bisnis).",
+                                              "Setiap database table hanya boleh memiliki satu kolom primary key.",
+                                              "Aplikasi hanya boleh dijalankan di satu server fisik tunggal."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "SRP bukan tentang jumlah baris kode atau jumlah fungsi, melainkan tentang kohesi bisnis: satu modul perangkat lunak hanya boleh memiliki satu alasan untuk berubah, yaitu memenuhi kebutuhan satu aktor atau departemen tertentu.",
+                              "optionExplanations":  [
+                                                         "Salah. Membatasi 1 baris kode adalah mitos yang merusak arsitektur.",
+                                                         "Benar! Satu alasan untuk berubah memisahkan kode berdasarkan aktor bisnis yang mempengaruhinya.",
+                                                         "Salah. Ini adalah aturan normalisasi database, bukan prinsip OOP SRP.",
+                                                         "Salah. Tidak ada hubungan dengan server fisik."
+                                                     ],
+                              "sectionRef":  "1. Single Responsibility Principle (SRP): \u0027Satu Alasan untuk Berubah\u0027",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-03-04",
+                           "lesson-11-03",
+                           "lesson-13-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Clean Architecture: A Craftsman\u0027s Guide to Software Structure and Design - Robert C. Martin",
+                           "url":  "https://www.oreilly.com/library/view/clean-architecture-a/9780134494272/",
+                           "type":  "book"
+                       },
+                       {
+                           "title":  "SOLID Principles in C# - Derek Comartin",
+                           "url":  "https://codeopinion.com/solid-principles/",
+                           "type":  "article"
+                       }
+                   ]
+}

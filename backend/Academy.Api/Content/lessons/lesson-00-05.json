@@ -1,0 +1,168 @@
+{
+  "id": "lesson-00-05",
+  "levelId": "level-00",
+  "moduleId": "mod-00-02",
+  "order": 5,
+  "title": "Aritmatika Biner \u0026 Two\u0027s Complement: Representasi Bilangan Negatif",
+  "slug": "binary-arithmetic-twos-complement",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": "binary",
+  "simulatorContext": "Perhatikan bit paling kiri (Bit 7 / Most Significant Bit). Dalam representasi Two\u0027s Complement 8-bit bertanda (sbyte), Bit 7 memiliki bobot nilai -128.",
+  "description": "Mendalami representasi bilangan bulat bertanda (signed integer) menggunakan Two\u0027s Complement, logika sirkuit adder tanpa subtractor terpisah, dan jebakan integer overflow.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-00-04",
+      "title": "Sistem Biner \u0026 Heksadesimal",
+      "levelName": "LEVEL 00",
+      "context": "Memahami notasi bitwise dan biner dasar."
+    }
+  ],
+  "introduces": [
+    "Two\u0027s Complement",
+    "Most Significant Bit (Sign Bit)",
+    "Integer Overflow \u0026 Underflow",
+    "Arithmetic Inversion (~x \u002B 1)",
+    "Checked vs Unchecked C#"
+  ],
+  "learningObjectives": [
+    "Memahami mengapa Two\u0027s Complement digunakan secara universal oleh CPU modern.",
+    "Menghitung representasi negatif suatu bilangan dengan metode Invert \u002B 1.",
+    "Menganalisis fenomena Integer Overflow di backend C# dan cara mitigasinya."
+  ],
+  "markdownContent": "# Aritmatika Biner \u0026 Two\u0027s Complement: Representasi Bilangan Negatif\n\n## Mengapa Two\u0027s Complement?\nDi masa awal komputasi, insinyur mencoba metode **Sign \u0026 Magnitude** (menjadikan bit paling kiri tanda minus, dan sisa bit angka absolut). Metode ini memiliki kelemahan fatal:\n1. Memiliki **dua representasi angka nol**: \u0060\u002B0\u0060 (\u006000000000\u0060) dan \u0060-0\u0060 (\u006010000000\u0060), yang merusak logika perbandingan (\u0060x == y\u0060).\n2. Sirkuit CPU harus memiliki chip **Subtractor terpisah** selain Adder, yang memboroskan miliaran transistor.\n\nSolusi jenius yang dipakai di seluruh prosesor modern sejak era 1950-an adalah **Two\u0027s Complement (Komplemen Dua)**.\n\n---\n\n## Mekanisme Two\u0027s Complement\nDalam format bertanda (signed 8-bit \u0060sbyte\u0060):\n- Bit 0 sampai 6 memiliki bobot positif: \u002B1, \u002B2, \u002B4, \u002B8, \u002B16, \u002B32, \u002B64.\n- **Bit 7 (Most Significant Bit / MSB)** memiliki bobot **negatif**: -128.\n\n\u0060\u0060\u0060text\nBit Indeks:   [7]    [6]   [5]   [4]   [3]   [2]   [1]   [0]\nBobot Nilai: -128    \u002B64   \u002B32   \u002B16   \u002B8    \u002B4    \u002B2    \u002B1\n--------------------------------------------------------------\nContoh (\u002B5):   0      0     0     0     0     1     0     1  = 4 \u002B 1 = 5\nContoh (-1):   1      1     1     1     1     1     1     1  = -128 \u002B 127 = -1\nContoh (-5):   1      1     1     1     1     0     1     1  = -128 \u002B 123 = -5\n\u0060\u0060\u0060\n\n### Aturan Emas Mencari Negatif: Invert Bits, Lalu Tambah 1\n\u0060\u0060\u0060text\n1. Ambil representasi positif (\u002B5):   0000 0101\n2. Balik semua bit (Bitwise NOT ~) :   1111 1010\n3. Tambahkan 1                     : \u002B         1\n------------------------------------------------\nHasil (-5)                         :   1111 1011\n\u0060\u0060\u0060\n\nKeunggulan terbesarnya: **Operasi pengurangan \u0060A - B\u0060 dilakukan oleh CPU sebagai penjumlahan \u0060A \u002B (-B)\u0060 menggunakan sirkuit Adder yang sama persis tanpa perlu sirkuit subtractor khusus!**\n\n---\n\n## Bahaya Integer Overflow di Backend Enterprise\nApa yang terjadi jika nilai maksimum bilangan bulat bertanda ditambahkan 1?\n\n\u0060\u0060\u0060csharp\nsbyte maxVal = 127; // Biner: 0111 1111\nmaxVal\u002B\u002B;           // Biner: 1000 0000 (Bobot -128!)\nConsole.WriteLine(maxVal); // Mencetak -128!\n\u0060\u0060\u0060\n\nDi C#, operasi aritmatika secara default berjalan dalam konteks **unchecked** (mengorbankan deteksi overflow demi performa kecepatan instruksi mentah).\nUntuk transaksi finansial enterprise, gunakan keyword \u0060checked\u0060 untuk melempar \u0060OverflowException\u0060 daripada menghasilkan saldo negatif yang korup:\n\n\u0060\u0060\u0060csharp\nchecked\n{\n    int balance = int.MaxValue;\n    balance \u002B= 1; // Melempar System.OverflowException!\n}\n\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Two\u0027s Complement dan Integer Overflow\nsbyte positiveFive = 5;\nsbyte negativeFive = (sbyte)(~positiveFive \u002B 1);\n\nConsole.WriteLine($\u0022Positive: {positiveFive} (Biner: {Convert.ToString((byte)positiveFive, 2).PadLeft(8, \u00270\u0027)})\u0022);\nConsole.WriteLine($\u0022Negative: {negativeFive} (Biner: {Convert.ToString((byte)negativeFive, 2).PadLeft(8, \u00270\u0027)})\u0022);\n\n// Bukti Adder: 5 \u002B (-5) harus menghasilkan 0\nsbyte result = (sbyte)(positiveFive \u002B negativeFive);\nConsole.WriteLine($\u00225 \u002B (-5) = {result}\u0022);\n\n// Demonstrasi Bahaya Overflow Finansial\nint accountBalance = int.MaxValue;\nConsole.WriteLine($\u0022Saldo Maksimal: Rp {accountBalance:N0}\u0022);\nint overflowed = accountBalance \u002B 1; // Unchecked overflow!\nConsole.WriteLine($\u0022Setelah \u002B 1 (Unchecked): Rp {overflowed:N0}\u0022);\n\n// TODO: Bungkus operasi penambahan dalam blok checked { ... }\n// dan tangkap OverflowException menggunakan try/catch!",
+  "quizQuestions": [
+    {
+      "id": "q-00-05-1",
+      "type": "MultipleChoice",
+      "question": "Bagaimana cara mengubah bilangan bulat biner positif menjadi representasi Two\u0027s Complement negatifnya?",
+      "options": [
+        "Ubah bit paling kiri menjadi 1 dan biarkan bit lain apa adanya",
+        "Balik seluruh bit (Invert / NOT), kemudian tambahkan 1",
+        "Geser semua bit ke kiri sebanyak 1 posisi",
+        "Balik seluruh bit, kemudian kurangkan 1"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Algoritma Two\u0027s Complement: inversi semua bit (~x) lalu tambahkan 1 (~x \u002B 1).",
+      "optionExplanations": [
+        "Salah. Itu adalah format Sign \u0026 Magnitude yang memiliki bug dua nilai nol.",
+        "Benar! Inversi bit dan penambahan 1 (~x \u002B 1) adalah prosedur baku Two\u0027s Complement.",
+        "Salah. Menggeser bit ke kiri adalah operasi perkalian dengan 2.",
+        "Salah. Penambahan 1 dilakukan setelah inversi, bukan pengurangan."
+      ],
+      "sectionRef": "Aturan Emas Mencari Negatif: Invert Bits, Lalu Tambah 1",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-00-05-2",
+      "type": "MultipleChoice",
+      "question": "Keyword apa di C# yang memaksa runtime melempar OverflowException ketika operasi aritmatika integer melampaui batas tipe datanya?",
+      "options": [
+        "volatile",
+        "checked",
+        "strict",
+        "safe"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Keyword \u0060checked\u0060 memastikan operasi aritmatika memeriksa register overflow flag CPU dan melempar OverflowException jika terjadi luapan nilai.",
+      "optionExplanations": [
+        "Salah. volatile digunakan untuk visibilitas memori antar thread.",
+        "Benar! Blok \u0060checked\u0060 atau compiler flag \u0060/checked\u0060 memastikan overflow dideteksi dan dilempar sebagai exception.",
+        "Salah. strict bukan keyword C#.",
+        "Salah. safe bukan keyword C# untuk pengecekan overflow."
+      ],
+      "sectionRef": "Bahaya Integer Overflow di Backend Enterprise",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-00-05",
+    "Title": "Deteksi Overflow Aritmatika Two\u0027s Complement",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca dua buah bilangan bulat 32-bit bertanda (int) A dan B dari stdin yang dipisahkan oleh spasi.\nLakukan operasi penjumlahan A \u002B B.\nJika operasi menyebabkan integer overflow (melampaui int.MaxValue atau di bawah int.MinValue), cetak \u0027OVERFLOW\u0027.\nJika aman, cetak hasil penjumlahannya.",
+    "InputFormat": "Satu baris memuat dua bilangan bulat A dan B dipisahkan oleh spasi.",
+    "OutputFormat": "Satu baris berisi hasil penjumlahan atau kata \u0027OVERFLOW\u0027.",
+    "Constraints": "A dan B berada dalam rentang int 32-bit [-2147483648, 2147483647].",
+    "Examples": [
+      {
+        "Input": "100 200",
+        "Output": "300",
+        "Explanation": "100 \u002B 200 = 300 aman tanpa overflow."
+      },
+      {
+        "Input": "2147483640 10",
+        "Output": "OVERFLOW",
+        "Explanation": "2147483640 \u002B 10 melampaui int.MaxValue (2147483647)."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        // TODO: Gunakan blok checked { ... } untuk mendeteksi OverflowException.\n        Console.WriteLine(0);\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var parts = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (parts.Length \u003C 2 || !int.TryParse(parts[0], out int a) || !int.TryParse(parts[1], out int b)) return;\n        try\n        {\n            checked\n            {\n                int sum = a \u002B b;\n                Console.WriteLine(sum);\n            }\n        }\n        catch (OverflowException)\n        {\n            Console.WriteLine(\u0022OVERFLOW\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Penjumlahan Normal)",
+        "Description": "Contoh 1 (Penjumlahan Normal): input \u0027100 200\u0027 -\u003E expected \u0027300\u0027",
+        "Input": "100 200",
+        "ExpectedOutput": "300",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Overflow Positif)",
+        "Description": "Contoh 2 (Overflow Positif): input \u00272147483640 10\u0027 -\u003E expected \u0027OVERFLOW\u0027",
+        "Input": "2147483640 10",
+        "ExpectedOutput": "OVERFLOW",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Underflow Negatif",
+        "Description": "Underflow Negatif: input \u0027-2147483640 -10\u0027 -\u003E expected \u0027OVERFLOW\u0027",
+        "Input": "-2147483640 -10",
+        "ExpectedOutput": "OVERFLOW",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      },
+      {
+        "Name": "Penjumlahan Negatif Aman",
+        "Description": "Penjumlahan Negatif Aman: input \u0027-50 30\u0027 -\u003E expected \u0027-20\u0027",
+        "Input": "-50 30",
+        "ExpectedOutput": "-20",
+        "IsHidden": false,
+        "Category": "Normal"
+      }
+    ],
+    "Hints": [
+      "Di C#, kata kunci \u0060checked { ... }\u0060 mengaktifkan pengecekan overflow aritmatika saat runtime.",
+      "Tangkap OverflowException untuk mencetak \u0027OVERFLOW\u0027."
+    ],
+    "Explanation": "Representasi two\u0027s complement memiliki batas nilai tetap. Kata kunci checked di C# memastikan overflow memicu OverflowException alih-alih silent wrap-around."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-03",
+      "title": "Sistem Tipe C#: Integer, Floating Point, Decimal",
+      "levelName": "LEVEL 02",
+      "context": "Memilih tipe data numerik yang tepat untuk domain bisnis."
+    },
+    {
+      "lessonId": "lesson-18-01",
+      "title": "Double-Entry Ledger Architecture",
+      "levelName": "LEVEL 18",
+      "context": "Pencegahan korupsi angka pembukuan finansial berskala triliunan."
+    }
+  ],
+  "references": [
+    {
+      "title": "Two\u0027s Complement Explanation - Cornell CS",
+      "url": "https://www.cs.cornell.edu/~tomf/notes/cps104/twoscomp.html"
+    },
+    {
+      "title": "C# Checked and Unchecked Statements",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/statements/checked-and-unchecked"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic class FinancialMath\n{\n    public static int? SafeAdd(int a, int b)\n    {\n        try\n        {\n            checked\n            {\n                return a \u002B b;\n            }\n        }\n        catch (OverflowException)\n        {\n            return null;\n        }\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\u0022Normal: {SafeAdd(100, 200)}\u0022);\n        Console.WriteLine($\u0022Overflow: {SafeAdd(int.MaxValue, 1)}\u0022);\n    }\n}"
+}

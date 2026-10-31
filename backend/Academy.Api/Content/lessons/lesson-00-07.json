@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-00-07",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-03",
+    "order":  7,
+    "title":  "Sistem Operasi \u0026 Kernel: User Mode, Kernel Mode, dan System Calls",
+    "slug":  "os-kernel-modes",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  45,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Mempelajari batas perlindungan perangkat keras CPU (Ring 0 vs Ring 3), alur peralihan konteks melalui System Call, dan mengapa akses I/O harus melewati kernel OS.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-02",
+                              "title":  "CPU Deep Dive",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami register CPU dan interupsi hardware."
+                          }
+                      ],
+    "introduces":  [
+                       "Protection Rings",
+                       "Ring 0 (Kernel Mode)",
+                       "Ring 3 (User Mode)",
+                       "System Calls (syscall)",
+                       "Context Switch Overhead",
+                       "Privileged Instructions"
+                   ],
+    "learningObjectives":  [
+                               "Memahami perbedaan hak akses hardware antara Ring 0 (Kernel) dan Ring 3 (User).",
+                               "Menelusuri alur eksekusi dari C# method (misal File.Write) ke instruksi syscall CPU.",
+                               "Menganalisis dampak performa dari context switching antara user mode dan kernel mode."
+                           ],
+    "markdownContent":  "# Sistem Operasi \u0026 Kernel: User Mode, Kernel Mode, dan System Calls\n\n## Mengapa Komputer Membutuhkan Pemisahan Mode?\nBayangkan jika setiap aplikasi dapat langsung menulis ke sektor fisik SSD atau menghentikan sinyal clock CPU. Satu aplikasi yang mengalami bug (*crash*) atau malware jahat akan melumpuhkan seluruh server dan mencuri data aplikasi lain.\n\nUntuk mencegah kekacauan ini, prosesor x86/ARM memiliki mekanisme keamanan bawaan berupa **Hardware Protection Rings**:\n\n```mermaid\nflowchart TD\n    subgraph R3[\"[RING 3] USER MODE (Hak Akses Terbatas)\"]\n        U1[\"Aplikasi C# Backend (Kestrel, Worker Service)\"]\n        U2[\"Database Server (PostgreSQL, SQL Server)\"]\n        U3[\"Instruksi CPU Aman (Aritmatika, Stack Lokal)\"]\n    end\n\n    Syscall{\"SYSTEM CALL BOUNDARY\u003cbr/\u003e(syscall / INT 0x80)\"}\n\n    subgraph R0[\"[RING 0] KERNEL MODE (Hak Istimewa Penuh)\"]\n        K1[\"Kernel OS (Linux / Windows NT Core)\"]\n        K2[\"Device Drivers (NIC, Storage Controller)\"]\n        K3[\"Manajemen Hardware (MMU, Interrupt Handler)\"]\n    end\n\n    R3 --\u003e|Permintaan IO / Socket / File| Syscall\n    Syscall --\u003e|Elevasi Hak Akses| R0\n```\n\n---\n\n## Dua Mode Eksekusi CPU\n1. **User Mode (Ring 3)**:\n   - Aplikasi yang kita tulis selalu berjalan di User Mode.\n   - Tidak dapat mengeksekusi **Privileged Instructions** (seperti menonaktifkan hardware interrupt atau mengubah Page Table).\n   - Hanya dapat mengakses ruang memori virtual miliknya sendiri. Jika mencoba mengakses memori aplikasi lain, CPU memicu hardware trap: **Segmentation Fault / General Protection Fault**.\n2. **Kernel Mode (Ring 0)**:\n   - Kode kernel sistem operasi berjalan di sini.\n   - Memiliki kontrol tak terbatas terhadap seluruh register CPU, fisik RAM, dan seluruh perangkat keras periferal.\n\n---\n\n## Jembatan Antar-Dunia: System Calls (syscall)\nKetika kode C# backend Anda ingin menulis baris log ke disk atau mengirim respons JSON melalui TCP socket, aplikasi **tidak boleh** mengakses disk atau kabel jaringan secara langsung.\nAplikasi harus meminta bantuan kernel melalui **System Call (Syscall)**:\n\n```mermaid\nsequenceDiagram\n    autonumber\n    actor App as Aplikasi C# (User Mode Ring 3)\n    participant Lib as Libc / Win32 Wrapper\n    participant CPU as CPU Trap Handler\n    participant Kernel as OS Kernel (Ring 0)\n    participant Driver as NVMe Storage Driver\n\n    App-\u003e\u003eLib: File.WriteAllText(\"audit.log\", data)\n    Lib-\u003e\u003eCPU: Instruksi CPU syscall\n    CPU-\u003e\u003eKernel: Switch Hak Akses Ring 3 -\u003e Ring 0\n    Kernel-\u003e\u003eDriver: Validasi I/O \u0026 Instruksi DMA Blok\n    Driver--\u003e\u003eKernel: Operasi Selesai (Interrupt)\n    Kernel-\u003e\u003eCPU: Instruksi sysret\n    CPU--\u003e\u003eApp: Switch Kembali Ring 0 -\u003e Ring 3\n```\n\n### Biaya Performa: Context Switch\nSetiap pemanggilan syscall membutuhkan waktu ~100-500 nanodetik karena CPU harus menukar register state, membersihkan pipeline, dan beralih hak proteksi.\nInilah alasan mengapa aplikasi backend skala enterprise menggunakan **Buffered I/O** (mengumpulkan data di memori sebelum melakukan 1 syscall besar) alih-alih memanggil disk untuk setiap karakter kecil!",
+    "starterCode":  "using System;\nusing System.Diagnostics;\nusing System.IO;\n\n// PROGRAM: Mengamati Dampak Buffered I/O vs Frekuensi Syscall Trap\nconst int Iterations = 50_000;\n\n// Uji 1: Simulasi Unbuffered (Setiap byte memicu context switch/write terpisah)\nvar sw1 = Stopwatch.StartNew();\nusing (var stream1 = new MemoryStream())\n{\n    byte b = (byte)\u0027A\u0027;\n    for (int i = 0; i \u003c Iterations; i++)\n    {\n        stream1.WriteByte(b); // Banyak overhead pemanggilan write terpisah\n    }\n}\nsw1.Stop();\nConsole.WriteLine($\"Unbuffered I/O (Banyak Write Call Trap): {sw1.ElapsedMilliseconds} ms\");\n\n// Uji 2: Buffered I/O (Buffer batch meminimalkan pemanggilan saluran I/O)\nvar sw2 = Stopwatch.StartNew();\nusing (var stream2 = new MemoryStream())\nusing (var buffered = new BufferedStream(stream2, 4096))\n{\n    byte[] buffer = new byte[Iterations];\n    Array.Fill(buffer, (byte)\u0027A\u0027);\n    buffered.Write(buffer, 0, buffer.Length); // Hanya 1 pemanggilan batch besar!\n    buffered.Flush();\n}\nsw2.Stop();\nConsole.WriteLine($\"Buffered I/O (Write Call Minimal): {sw2.ElapsedMilliseconds} ms\");\nConsole.WriteLine($\"Efisiensi: Pemanggilan dalam buffer menghemat overhead context switch!\");",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-07-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Di level proteksi hardware prosesor (Ring) manakah aplikasi backend C# dan server Kestrel berjalan secara default?",
+                              "options":  [
+                                              "Ring 0 (Kernel Mode)",
+                                              "Ring 1 (Hypervisor Mode)",
+                                              "Ring 2 (Device Driver Mode)",
+                                              "Ring 3 (User Mode)"
+                                          ],
+                              "correctOptionIndex":  3,
+                              "explanation":  "Seluruh aplikasi pengguna berjalan di Ring 3 (User Mode) yang terisolasi dan aman.",
+                              "optionExplanations":  [
+                                                         "Salah. Ring 0 adalah Kernel Mode dengan hak akses tak terbatas ke seluruh hardware.",
+                                                         "Salah. Ring 1 umumnya tidak digunakan pada OS modern (atau digunakan untuk isolasi hypervisor).",
+                                                         "Salah. Driver OS modern berjalan di Ring 0 atau user mode driver framework.",
+                                                         "Benar! Ring 3 adalah User Mode tempat seluruh aplikasi end-user dan web server berjalan."
+                                                     ],
+                              "sectionRef":  "Dua Mode Eksekusi CPU",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-07-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Instruksi CPU apa yang dieksekusi untuk memicu peralihan eksekusi dari Ring 3 (User Mode) ke Ring 0 (Kernel Mode) pada arsitektur x86-64 modern?",
+                              "options":  [
+                                              "jmp",
+                                              "syscall",
+                                              "nop",
+                                              "call"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Instruksi `syscall` pada x86-64 (atau `sysenter` / software interrupt `int 0x80`) secara hardware memicu pengalihan hak akses ke kernel mode pada alamat handler yang telah didaftarkan OS.",
+                              "optionExplanations":  [
+                                                         "Salah. Jmp hanya melompat ke alamat memori dalam batas privilege yang sama.",
+                                                         "Benar! Instruksi `syscall` adalah gerbang hardware resmi untuk meminta layanan kernel OS.",
+                                                         "Salah. Nop (No Operation) tidak melakukan apa pun.",
+                                                         "Salah. Call biasa hanya memanggil subrutin lokal di ruang memori user."
+                                                     ],
+                              "sectionRef":  "Jembatan Antar-Dunia: System Calls (syscall)",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-00-08",
+                               "title":  "Virtual Memory, Paging \u0026 Proteksi Memori",
+                               "levelName":  "LEVEL 00",
+                               "context":  "Bagaimana kernel OS mengisolasi memori proses menggunakan Memory Management Unit (MMU)."
+                           },
+                           {
+                               "lessonId":  "lesson-11-01",
+                               "title":  "Arsitektur ASP.NET Core: Kestrel Server",
+                               "levelName":  "LEVEL 11",
+                               "context":  "Bagaimana Kestrel meminimalkan overhead syscall menggunakan IO pipelines."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Operating Systems: Three Easy Pieces - Arpaci-Dusseau",
+                           "url":  "https://pages.cs.wisc.edu/~remzi/OSTEP/"
+                       },
+                       {
+                           "title":  "System Calls in Linux Kernel",
+                           "url":  "https://www.kernel.org/doc/html/latest/process/adding-syscalls.html"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class IoOptimizer\n{\n    public static int CalculateSyscallCount(int messageCount, int messageSizeBytes, int bufferCapacityBytes)\n    {\n        if (messageCount \u003c= 0 || messageSizeBytes \u003c= 0 || bufferCapacityBytes \u003c= 0) return 0;\n        long totalBytes = (long)messageCount * messageSizeBytes;\n        long fullFlushes = totalBytes / bufferCapacityBytes;\n        long remainder = totalBytes % bufferCapacityBytes;\n        \n        long totalSyscalls = fullFlushes + (remainder \u003e 0 ? 1 : 0);\n        return (int)totalSyscalls;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\"Syscalls: {CalculateSyscallCount(100, 50, 2048)}\");\n    }\n}"
+}

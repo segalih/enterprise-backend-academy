@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-00-03",
+    "levelId":  "level-00",
+    "moduleId":  "mod-00-01",
+    "order":  3,
+    "title":  "Hierarki Memori: Dari Register, L1/L2/L3 Cache, RAM, hingga NVMe",
+    "slug":  "memory-hierarchy",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  40,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Menganalisis piramida hierarki memori komputer: trade-off kapasitas vs latensi, prinsip Locality of Reference (Spasial \u0026 Temporal), dan konsep Cache Lines 64-byte.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-00-02",
+                              "title":  "CPU Deep Dive",
+                              "levelName":  "LEVEL 00",
+                              "context":  "Memahami letak register dan core eksekusi."
+                          }
+                      ],
+    "introduces":  [
+                       "Memory Hierarchy",
+                       "SRAM vs DRAM",
+                       "Cache Line (64 Bytes)",
+                       "Temporal Locality",
+                       "Spatial Locality",
+                       "Cache Miss (Cold, Capacity, Conflict)"
+                   ],
+    "learningObjectives":  [
+                               "Memahami trade-off latensi dan kapasitas pada piramida hierarki memori.",
+                               "Menganalisis prinsip Temporal Locality dan Spatial Locality pada kode backend.",
+                               "Menjelaskan struktur Cache Line 64-byte dan dampaknya terhadap throughput."
+                           ],
+    "markdownContent":  "# Hierarki Memori: Dari Register, L1/L2/L3 Cache, RAM, hingga NVMe\n\n## Piramida Hierarki Memori\nDalam arsitektur komputer fisik, terdapat hukum fisika tak terbantahkan: **memori yang sangat cepat pasti sangat mahal dan memiliki kapasitas kecil**. Karena itu, komputer menggunakan arsitektur piramida berjenjang:\n\n```mermaid\nflowchart TD\n    REG[\"Registers\u003cbr/\u003e~1 KB | Latensi: ~0.5 ns (1 cycle)\"]\n    L1[\"L1 Cache\u003cbr/\u003e32-64 KB | Latensi: ~1 ns (4 cycles)\"]\n    L2[\"L2 Cache\u003cbr/\u003e512 KB - 1 MB | Latensi: ~3-5 ns (12 cycles)\"]\n    L3[\"L3 Cache\u003cbr/\u003e16-64 MB | Latensi: ~15-20 ns (40 cycles)\"]\n    RAM[\"DRAM Utama (RAM)\u003cbr/\u003e16-256 GB | Latensi: ~60-100 ns (200 cycles)\"]\n    SSD[\"Storage Persisten (NVMe / SSD)\u003cbr/\u003e1-10 TB | Latensi: ~20.000-50.000 ns\"]\n\n    REG --\u003e L1 --\u003e L2 --\u003e L3 --\u003e RAM --\u003e SSD\n```\n\nJika dianalogikan ke kehidupan nyata:\n- **Register CPU**: Data yang sedang Anda pegang langsung di telapak tangan Anda.\n- **L1 Cache**: Buku referensi di meja tepat di depan Anda.\n- **RAM Utama**: Buku yang harus Anda ambil dari rak di sudut ruangan (butuh berjalan beberapa langkah).\n- **NVMe SSD**: Dokumen yang harus Anda ambil di gedung arsip kota seberang (butuh perjalanan darat).\n- **Network Call ke Database Lain**: Mengirim surat pos ke benua lain.\n\n---\n\n## Mekanisme Cache Lines (64 Bytes)\nCPU **tidak pernah** mengambil 1 byte atau 4 byte secara terisolasi dari RAM. CPU selalu mentransfer data dalam blok berukuran tetap yang disebut **Cache Line**, yang pada prosesor x86-64 modern berukuran **64 Byte**.\n\nKetika Anda membaca sebuah elemen array:\n```csharp\nint val = myArray[0]; // Membaca 4 byte integer\n```\nCPU secara otomatis memuat 64 byte memori berurutan (mencakup `myArray[0]` hingga `myArray[15]`) ke dalam L1 Data Cache!\n\n### Dua Prinsip Keramat: Locality of Reference\n1. **Spatial Locality (Lokalitas Spasial)**:\n   - Jika memori pada alamat `X` diakses, kemungkinan besar memori pada alamat berdekatan (`X+1`, `X+2`) akan segera diakses.\n   - Contoh: Iterasi sekuensial pada array `int[]` sangat cepat karena 15 elemen berikutnya sudah berada di L1 Cache gratis!\n2. **Temporal Locality (Lokalitas Temporal)**:\n   - Jika memori pada alamat `X` baru saja diakses, kemungkinan besar memori yang sama akan diakses kembali dalam waktu dekat.\n   - Contoh: Variabel penghitung `sum` atau loop accumulator disimpan langsung di register/L1 cache.\n\n---\n\n## Tiga Jenis Cache Miss\nKetika CPU membutuhkan data di memori tetapi tidak menemukannya di L1/L2/L3 cache:\n1. **Cold (Compulsory) Miss**: Data diakses pertama kali dan belum pernah dimuat ke cache.\n2. **Capacity Miss**: Kapasitas cache penuh sehingga data lama terdepak keluar (*eviction*) berdasarkan algoritma LRU (Least Recently Used).\n3. **Conflict Miss**: Beberapa blok alamat memori dipetakan ke slot (cache set) yang sama pada cache multi-way associative, saling menggusur satu sama lain.",
+    "starterCode":  "using System;\nusing System.Diagnostics;\n\n// PROGRAM: Pembuktian Cache Lines \u0026 Locality of Reference\n// Menguji efek traversing array: Berurutan (Sequential) vs Melompat (Stride)\nconst int Rows = 2048;\nconst int Cols = 2048;\nint[,] matrix = new int[Rows, Cols];\n\n// Inisialisasi matriks\nfor (int r = 0; r \u003c Rows; r++)\n    for (int c = 0; c \u003c Cols; c++)\n        matrix[r, c] = 1;\n\n// Uji 1: Row-Major (Cache-Friendly - Sesuai tata letak baris memori berurutan)\nvar sw = Stopwatch.StartNew();\nlong sumRowMajor = 0;\nfor (int r = 0; r \u003c Rows; r++)\n{\n    for (int c = 0; c \u003c Cols; c++)\n    {\n        sumRowMajor += matrix[r, c];\n    }\n}\nsw.Stop();\nConsole.WriteLine($\"Row-Major (Cache Hit Maksimal): {sw.ElapsedMilliseconds} ms\");\n\n// TODO: Balikkan loop menjadi c duluan lalu r (Column-Major)\n// dan lihat bagaimana lonjakan Cache Miss membuat runtime jauh lebih lambat!",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-00-03-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Berapa ukuran unit standar blok data (Cache Line) yang dipindahkan dari RAM ke cache CPU pada arsitektur x86-64 modern?",
+                              "options":  [
+                                              "8 Bytes (1 quadword)",
+                                              "64 Bytes",
+                                              "512 Bytes",
+                                              "4096 Bytes (4 KB Page)"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Cache Line pada prosesor x86/ARM modern adalah 64 Byte. Setiap kali satu alamat memori diminta, CPU menyalin seluruh blok 64-byte di sekitarnya.",
+                              "optionExplanations":  [
+                                                         "Salah. 8 byte adalah ukuran register 64-bit tunggal, bukan ukuran cache line transfer.",
+                                                         "Benar! 64 bytes adalah ukuran baku Cache Line prosesor modern.",
+                                                         "Salah. 512 byte adalah ukuran sektor disk tradisional.",
+                                                         "Salah. 4096 byte (4 KB) adalah ukuran virtual memory page OS, bukan CPU cache line."
+                                                     ],
+                              "sectionRef":  "Mekanisme Cache Lines (64 Bytes)",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-00-03-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Prinsip apa yang menyatakan bahwa data yang berada di alamat memori berdekatan kemungkinan besar akan segera diakses setelah elemen pertama diakses?",
+                              "options":  [
+                                              "Temporal Locality",
+                                              "Spatial Locality",
+                                              "Branch Prediction",
+                                              "Memory Barrier"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Spatial Locality adalah kecenderungan program untuk mengakses data pada alamat yang berdekatan secara fisik di memori dalam rentang waktu yang berdekatan.",
+                              "optionExplanations":  [
+                                                         "Salah. Temporal Locality merujuk pada akses berulang ke alamat memori yang sama dalam waktu dekat.",
+                                                         "Benar! Spatial Locality memprediksi akses ke memori tetangga berdekatan (dasar dari pemanfaatan cache line 64-byte).",
+                                                         "Salah. Branch prediction memprediksi arah percabangan if/else CPU.",
+                                                         "Salah. Memory barrier adalah instruksi sinkronisasi hardware memori antar-core."
+                                                     ],
+                              "sectionRef":  "Dua Prinsip Keramat: Locality of Reference",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-04-03",
+                               "title":  "Span\u003cT\u003e, Memory\u003cT\u003e \u0026 Zero-Allocation",
+                               "levelName":  "LEVEL 04",
+                               "context":  "Memanfaatkan contiguous memory untuk memaksimalkan L1/L2 cache hit di C#."
+                           },
+                           {
+                               "lessonId":  "lesson-06-01",
+                               "title":  "CPU Pipeline \u0026 False Sharing",
+                               "levelName":  "LEVEL 06",
+                               "context":  "Bagaimana dua core yang menulis ke cache line yang sama menimbulkan false sharing."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "What Every Programmer Should Know About Memory - Ulrich Drepper",
+                           "url":  "https://people.freebsd.org/~lstewart/articles/cpumemory.pdf"
+                       },
+                       {
+                           "title":  "Latency Numbers Every Programmer Should Know",
+                           "url":  "https://gist.github.com/jboner/2841832"
+                       }
+                   ],
+    "solutionCode":  "using System;\n\npublic class CacheLineCalculator\n{\n    public static int CalculateCacheLines(int startByteOffset, int dataLengthBytes)\n    {\n        if (dataLengthBytes \u003c= 0) return 0;\n        int endByte = startByteOffset + dataLengthBytes - 1;\n        int startLine = startByteOffset / 64;\n        int endLine = endByte / 64;\n        return (endLine - startLine) + 1;\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine($\"Lines: {CalculateCacheLines(0, 64)}\");\n        Console.WriteLine($\"Lines: {CalculateCacheLines(60, 10)}\");\n    }\n}"
+}

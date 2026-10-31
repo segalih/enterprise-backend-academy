@@ -1,0 +1,169 @@
+{
+  "id": "lesson-04-05",
+  "levelId": "level-04",
+  "moduleId": "mod-04-03",
+  "order": 5,
+  "title": "Modern Serialization: System.Text.Json, Custom Converters \u0026 Versioning",
+  "slug": "modern-serialization-system-text-json",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 40,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mendalami serialisasi payload JSON modern di backend enterprise: performa tinggi System.Text.Json berbasis Span\u003Cbyte\u003E, pembuatan Custom JsonConverter\u003CT\u003E, penanganan siklus referensi, dan strategi evolusi skema API (backward compatibility).",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-04-03",
+      "title": "High-Performance C#: Span\u003CT\u003E",
+      "levelName": "LEVEL 04",
+      "context": "Memahami bagaimana System.Text.Json memproses byte mentah UTF-8 menggunakan Span."
+    }
+  ],
+  "introduces": [
+    "System.Text.Json vs Newtonsoft.Json",
+    "JsonSerializerOptions",
+    "Custom JsonConverter\u003CT\u003E",
+    "Utf8JsonReader / Utf8JsonWriter",
+    "JsonNamingPolicy (camelCase vs snake_case)",
+    "Schema Versioning \u0026 Missing Members"
+  ],
+  "learningObjectives": [
+    "Mengonfigurasi JsonSerializerOptions untuk keamanan dan performa Web API tingkat enterprise.",
+    "Membangun Custom JsonConverter untuk tipe data bisnis kustom (misal format DateTime atau Currency).",
+    "Menerapkan strategi evolusi kontrak JSON yang tahan terhadap perubahan skema (backward compatible)."
+  ],
+  "markdownContent": "# Modern Serialization: System.Text.Json, Custom Converters \u0026 Versioning\n\n## Mengapa .NET Menggantikan Newtonsoft.Json?\nSelama lebih dari satu dekade, library pihak ketiga \u0060Newtonsoft.Json (Json.NET)\u0060 menjadi standar de-facto. Namun pada throughput tinggi:\n- Newtonsoft berbasis pembacaan string memori Heap dan refleksi runtime, menciptakan tekanan alokasi GC yang besar.\n- Di .NET Core 3.0 hingga .NET 8, Microsoft merancang **\u0060System.Text.Json\u0060 (STJ)** dari nol:\n  - Beroperasi langsung pada **UTF-8 Byte Stream** mentah tanpa perlu mengonversi byte ke string C# terlebih dahulu.\n  - Memanfaatkan \u0060ReadOnlySpan\u003Cbyte\u003E\u0060 dan pooling buffer (\u0060ArrayPool\u0060).\n  - **Hasil: 2x hingga 3x lebih cepat dengan alokasi memori mendekati nol!**\n\n---\n\n## Konfigurasi Standar Enterprise Web API\nHindari memanggil \u0060JsonSerializer.Serialize\u0060 tanpa options. Di backend enterprise, konfigurasikan options standar:\n\n\u0060\u0060\u0060csharp\npublic static readonly JsonSerializerOptions EnterpriseJsonOptions = new()\n{\n    PropertyNamingPolicy = JsonNamingPolicy.CamelCase, // Standar JSON frontend: { \u0022accountNumber\u0022: \u0022123\u0022 }\n    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, // Menghemat bandwidth dari field bernilai null\n    WriteIndented = false, // Menghilangkan spasi/enter yang membuang bandwidth produksi\n    Converters = { new JsonStringEnumConverter() } // Serialisasi Enum sebagai string \u0022Active\u0022, bukan angka 0\n};\n\u0060\u0060\u0060\n\n---\n\n## Menulis Custom \u0060JsonConverter\u003CT\u003E\u0060\nBagaimana jika Anda memiliki tipe data khusus yang membutuhkan serialisasi kustom? (Misalnya tipe \u0060Money\u0060 yang ingin diserialisasikan sebagai string format rupiah: \u0060\u0022Rp 50.000\u0022\u0060):\n\n\u0060\u0060\u0060csharp\npublic class MoneyJsonConverter : JsonConverter\u003CMoney\u003E\n{\n    public override Money Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)\n    {\n        string? raw = reader.GetString();\n        // Parse format \u0022Rp 50000\u0022 kembali ke struct Money\n        decimal nominal = decimal.Parse(raw?.Replace(\u0022Rp \u0022, \u0022\u0022) ?? \u00220\u0022);\n        return new Money(nominal, \u0022IDR\u0022);\n    }\n\n    public override void Write(Utf8JsonWriter writer, Money value, JsonSerializerOptions options)\n    {\n        // Tulis langsung ke buffer output tanpa alokasi perantara\n        writer.WriteStringValue($\u0022Rp {value.Amount:N0}\u0022);\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## Strategi Evolusi Skema JSON (Backward \u0026 Forward Compatibility)\nDalam sistem backend microservices yang terus berkembang:\n1. **Aturan Emas**: **Jangan pernah menghapus atau mengganti nama properti JSON yang sudah rilis ke publik!** Tandai sebagai \u0060[Obsolete]\u0060 dan buat properti baru berdampingan.\n2. **Toleran Terhadap Field Baru (Forward Compatible)**: Konfigurasikan consumer API agar mengabaikan field tak dikenal yang dikirim oleh service versi baru, alih-alih melempar exception crash (\u0060JsonSerializerOptions.UnmappedMemberHandling\u0060).",
+  "starterCode": "using System;\nusing System.Text.Json;\nusing System.Text.Json.Serialization;\n\n// PROGRAM: Eksperimen Serialisasi Modern System.Text.Json\npublic record PaymentPayload(\n    [property: JsonPropertyName(\u0022transaction_id\u0022)] string TxId,\n    [property: JsonPropertyName(\u0022amount\u0022)] decimal Amount,\n    [property: JsonConverter(typeof(JsonStringEnumConverter))] PaymentStatus Status\n);\n\npublic enum PaymentStatus { Pending, Settled, Failed }\n\npublic class Program\n{\n    public static void Main()\n    {\n        var payload = new PaymentPayload(\u0022TX-007\u0022, 750_000m, PaymentStatus.Settled);\n        \n        // Serialisasi ke format JSON\n        var options = new JsonSerializerOptions\n        {\n            WriteIndented = true,\n            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull\n        };\n        \n        string jsonString = JsonSerializer.Serialize(payload, options);\n        Console.WriteLine(\u0022=== HASIL SERIALISASI JSON ===\u0022);\n        Console.WriteLine(jsonString);\n        \n        // Deserialisasi kembali ke Objek C#\n        var deserialized = JsonSerializer.Deserialize\u003CPaymentPayload\u003E(jsonString, options);\n        Console.WriteLine($\u0022\\nDeserialized Sukses -\u003E Status: {deserialized?.Status}, Nominal: Rp {deserialized?.Amount:N0}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-04-05-1",
+      "type": "MultipleChoice",
+      "question": "Apa keunggulan arsitektural utama System.Text.Json dibandingkan library Newtonsoft.Json tradisional?",
+      "options": [
+        "System.Text.Json otomatis menyimpan file ke cloud storage Azure",
+        "System.Text.Json memproses byte stream UTF-8 secara langsung menggunakan ReadOnlySpan tanpa alokasi konversi string perantara, menghasilkan performa jauh lebih tinggi",
+        "System.Text.Json tidak membutuhkan namespace using",
+        "System.Text.Json hanya mendukung file XML"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "System.Text.Json dirancang menggunakan Span\u003Cbyte\u003E dan Utf8JsonReader untuk mem-parsing payload UTF-8 langsung dari network stream dengan Zero Memory Allocation.",
+      "optionExplanations": [
+        "Salah. System.Text.Json adalah serializer data, bukan cloud connector.",
+        "Benar! Pemrosesan langsung pada stream UTF-8 memangkas alokasi string di Heap.",
+        "Salah. Tetap memerlukan using System.Text.Json.",
+        "Salah. Library ini khusus untuk format JSON."
+      ],
+      "sectionRef": "Mengapa .NET Menggantikan Newtonsoft.Json?",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-04-05-2",
+      "type": "MultipleChoice",
+      "question": "Converter bawaan apakah yang harus didaftarkan di \u0060JsonSerializerOptions.Converters\u0060 agar nilai Enum diserialisasikan sebagai teks (misal: \u0027Settled\u0027) alih-alih nilai integer numeriknya (misal: 1)?",
+      "options": [
+        "JsonNumberEnumConverter",
+        "JsonStringEnumConverter",
+        "EnumTextSerializer",
+        "XmlEnumConverter"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060JsonStringEnumConverter\u0060 adalah converter resmi di System.Text.Json.Serialization untuk mengubah enum menjadi representasi string deskriptif.",
+      "optionExplanations": [
+        "Salah. Secara default enum sudah diserialisasikan sebagai angka.",
+        "Benar! \u0060JsonStringEnumConverter\u0060 mengubah representasi enum menjadi teks string.",
+        "Salah. Bukan nama class yang valid di Base Class Library.",
+        "Salah. XmlEnumConverter digunakan untuk XML serializer."
+      ],
+      "sectionRef": "Konfigurasi Standar Enterprise Web API",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-04-05",
+    "Title": "Serialisasi DTO dengan System.Text.Json CamelCase \u0026 Enum String",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat program yang membaca data akun dari stdin: \u0027\u003CId\u003E \u003CUsername\u003E \u003CStatus\u003E\u0027 di mana Status adalah enum \u0060AccountStatus { Active, Inactive, Suspended }\u0060.\nSerialisasikan objek C# tersebut ke format JSON menggunakan \u0060System.Text.Json\u0060 dengan aturan:\n1. Naming policy: \u0060JsonNamingPolicy.CamelCase\u0060 (sehingga properti Id menjadi id, Username menjadi username)\n2. Nilai enum diserialisasikan sebagai string (bukan integer) menggunakan \u0060JsonStringEnumConverter\u0060.\nCetak string JSON satu baris kompak tanpa indentasi.",
+    "InputFormat": "Satu baris: \u0027\u003CId\u003E \u003CUsername\u003E \u003CStatus\u003E\u0027.",
+    "OutputFormat": "Satu baris string JSON kompak.",
+    "Constraints": "Status salah satu dari Active, Inactive, Suspended.",
+    "Examples": [
+      {
+        "Input": "101 john_doe Active",
+        "Output": "{\u0022id\u0022:101,\u0022username\u0022:\u0022john_doe\u0022,\u0022status\u0022:\u0022Active\u0022}",
+        "Explanation": "JSON dengan camelCase dan enum sebagai string."
+      },
+      {
+        "Input": "202 admin Suspended",
+        "Output": "{\u0022id\u0022:202,\u0022username\u0022:\u0022admin\u0022,\u0022status\u0022:\u0022Suspended\u0022}",
+        "Explanation": "Enum Suspended tercetak string."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Text.Json;\nusing System.Text.Json.Serialization;\n\npublic enum AccountStatus { Active, Inactive, Suspended }\n\npublic class UserAccount\n{\n    public int Id { get; set; }\n    public string Username { get; set; } = \u0022\u0022;\n    public AccountStatus Status { get; set; }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        // TODO: Konfigurasikan JsonSerializerOptions dengan CamelCase dan JsonStringEnumConverter.\n        Console.WriteLine(\u0022{}\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Text.Json;\nusing System.Text.Json.Serialization;\n\npublic enum AccountStatus { Active, Inactive, Suspended }\n\npublic class UserAccount\n{\n    public int Id { get; set; }\n    public string Username { get; set; } = \u0022\u0022;\n    public AccountStatus Status { get; set; }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) return;\n        var p = line.Trim().Split(\u0027 \u0027, StringSplitOptions.RemoveEmptyEntries);\n        if (p.Length \u003C 3) return;\n\n        int id = int.Parse(p[0]);\n        string user = p[1];\n        var status = Enum.Parse\u003CAccountStatus\u003E(p[2], true);\n\n        var account = new UserAccount { Id = id, Username = user, Status = status };\n\n        var options = new JsonSerializerOptions\n        {\n            PropertyNamingPolicy = JsonNamingPolicy.CamelCase\n        };\n        options.Converters.Add(new JsonStringEnumConverter());\n\n        string json = JsonSerializer.Serialize(account, options);\n        Console.WriteLine(json);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Active)",
+        "Description": "Contoh 1 (Active): input \u0027101 john_doe Active\u0027 -\u003E expected \u0027{\u0022id\u0022:101,\u0022username\u0022:\u0022john_doe\u0022,\u0022status\u0022:\u0022Active\u0022}\u0027",
+        "Input": "101 john_doe Active",
+        "ExpectedOutput": "{\u0022id\u0022:101,\u0022username\u0022:\u0022john_doe\u0022,\u0022status\u0022:\u0022Active\u0022}",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Suspended)",
+        "Description": "Contoh 2 (Suspended): input \u0027202 admin Suspended\u0027 -\u003E expected \u0027{\u0022id\u0022:202,\u0022username\u0022:\u0022admin\u0022,\u0022status\u0022:\u0022Suspended\u0022}\u0027",
+        "Input": "202 admin Suspended",
+        "ExpectedOutput": "{\u0022id\u0022:202,\u0022username\u0022:\u0022admin\u0022,\u0022status\u0022:\u0022Suspended\u0022}",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Inactive Huruf Kecil",
+        "Description": "Inactive Huruf Kecil: input \u0027303 guest inactive\u0027 -\u003E expected \u0027{\u0022id\u0022:303,\u0022username\u0022:\u0022guest\u0022,\u0022status\u0022:\u0022Inactive\u0022}\u0027",
+        "Input": "303 guest inactive",
+        "ExpectedOutput": "{\u0022id\u0022:303,\u0022username\u0022:\u0022guest\u0022,\u0022status\u0022:\u0022Inactive\u0022}",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Id Nol",
+        "Description": "Id Nol: input \u00270 root Active\u0027 -\u003E expected \u0027{\u0022id\u0022:0,\u0022username\u0022:\u0022root\u0022,\u0022status\u0022:\u0022Active\u0022}\u0027",
+        "Input": "0 root Active",
+        "ExpectedOutput": "{\u0022id\u0022:0,\u0022username\u0022:\u0022root\u0022,\u0022status\u0022:\u0022Active\u0022}",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Atur options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase.",
+      "Tambahkan options.Converters.Add(new JsonStringEnumConverter())."
+    ],
+    "Explanation": "System.Text.Json adalah serializer modern berkecepatan tinggi di .NET dengan alokasi memori minimal, menggantikan Newtonsoft.Json pada aplikasi web enterprise."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-11-04",
+      "title": "Standar REST Enterprise: JSON Payload",
+      "levelName": "LEVEL 11",
+      "context": "Mengonfigurasi JSON serializer terpusat pada pipeline ASP.NET Core."
+    },
+    {
+      "lessonId": "lesson-14-02",
+      "title": "Event-Driven Architecture",
+      "levelName": "LEVEL 14",
+      "context": "Serialisasi dan deserialisasi event message antrian Kafka/RabbitMQ."
+    }
+  ],
+  "references": [
+    {
+      "title": "How to serialize and deserialize JSON in C# - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/how-to"
+    },
+    {
+      "title": "Migrate from Newtonsoft.Json to System.Text.Json",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/migrate-from-newtonsoft"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Text.Json;\n\npublic class OrderJsonSerializer\n{\n    private static readonly JsonSerializerOptions Options = new()\n    {\n        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,\n        WriteIndented = false\n    };\n\n    public static string SerializeOrder(string orderId, decimal amount, bool isPaid)\n    {\n        var data = new\n        {\n            OrderId = orderId,\n            Amount = amount,\n            IsPaid = isPaid\n        };\n\n        return JsonSerializer.Serialize(data, Options);\n    }\n\n    public static void Main()\n    {\n        Console.WriteLine(SerializeOrder(\u0022ORD-1\u0022, 50000m, true));\n    }\n}"
+}

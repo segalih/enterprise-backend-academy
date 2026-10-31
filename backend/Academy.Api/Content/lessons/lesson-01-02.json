@@ -1,0 +1,108 @@
+{
+    "id":  "lesson-01-02",
+    "levelId":  "level-01",
+    "moduleId":  "mod-01-01",
+    "order":  2,
+    "title":  "Paradigma Pemrograman: Imperatif, Terstruktur, OOP, dan Fungsional",
+    "slug":  "programming-paradigms",
+    "difficulty":  "Beginner",
+    "estimatedMinutes":  35,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Membandingkan empat paradigma pemrograman utama dan bagaimana C# modern mengadopsi pendekatan multi-paradigma (Object-Oriented + Functional Programming) untuk membangun sistem backend yang tangguh.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-01-01",
+                              "title":  "Bagaimana Komputer Mengeksekusi Kode",
+                              "levelName":  "LEVEL 01",
+                              "context":  "Memahami model eksekusi instruksi."
+                          }
+                      ],
+    "introduces":  [
+                       "Imperative Programming",
+                       "Structured Programming",
+                       "Object-Oriented Programming (OOP)",
+                       "Functional Programming (FP)",
+                       "Pure Functions \u0026 Side Effects",
+                       "Multi-Paradigm C#"
+                   ],
+    "learningObjectives":  [
+                               "Membedakan gaya berpikir imperatif vs deklaratif/fungsional.",
+                               "Menjelaskan keuntungan Pure Function dalam mengurangi bug konkurensi di backend.",
+                               "Menerapkan teknik kombinasi OOP (domain modeling) dan FP (data transformation) di C#."
+                           ],
+    "markdownContent":  "# Paradigma Pemrograman: Imperatif, Terstruktur, OOP, dan Fungsional\n\n## Apa Itu Paradigma Pemrograman?\nParadigma pemrograman adalah **kerangka berpikir atau filosofi cara kita menstrukturkan kode dan menyelesaikan masalah**. Paradigma bukanlah bahasa, melainkan cara kita memandang aliran logika.\n\nC# modern adalah bahasa **Multi-Paradigma**: Anda dapat menulis kode berbasis Object-Oriented yang kuat, sekaligus memanfaatkan kekuatan ekspresif Functional Programming melalui LINQ, pattern matching, dan immutability.\n\n---\n\n## Evolusi 4 Paradigma Utama\n\n```text\n[1. IMPERATIF]     GOTO, manipulasi memori mentah, fokus pada \"BAGAIMANA\" langkah dieksekusi\n       |\n[2. TERSTRUKTUR]   Menghilangkan GOTO; mengganti dengan if/else, while/for loop, subrutin\n       |\n[3. OBJECT-ORIENTED] Mengelompokkan data (state) dan perilaku (behavior) dalam kelas (Enkapsulasi)\n       |\n[4. FUNGSIONAL]    Fokus pada \"APA\" hasilnya (Deklaratif); Pure Functions, Immutability, No Side Effects\n```\n\n---\n\n## Perbandingan Langsung: Imperatif vs Fungsional di C#\nMisalkan kita ingin memfilter daftar transaksi perbankan di atas Rp 1.000.000 dan menghitung total pajaknya (11%):\n\n### Pendekatan 1: Gaya Imperatif Klasik (Mengubah State / Mutasi)\n```csharp\ndecimal totalPajak = 0;\nfor (int i = 0; i \u003c transaksiList.Count; i++)\n{\n    if (transaksiList[i].Nominal \u003e 1_000_000)\n    {\n        decimal pajak = transaksiList[i].Nominal * 0.11m;\n        totalPajak += pajak; // Mutasi variabel state eksternal\n    }\n}\n```\n\n### Pendekatan 2: Gaya Fungsional / Deklaratif (LINQ Tanpa Mutasi State)\n```csharp\ndecimal totalPajak = transaksiList\n    .Where(t =\u003e t.Nominal \u003e 1_000_000)\n    .Select(t =\u003e t.Nominal * 0.11m)\n    .Sum();\n```\n\n### Mengapa Enterprise Menyukai Gaya Fungsional (Pure Functions)?\n1. **Tidak Ada Side Effects**: Pure function tidak mengubah state global, database, atau variabel di luar dirinya. Input yang sama selalu menghasilkan output yang sama.\n2. **Thread-Safe by Design**: Ketika data bersifat *immutable* (tidak bisa diubah setelah dibuat), sepuluh thread yang membaca objek tersebut secara konkuren tidak akan pernah mengalami race condition!",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\n// PROGRAM: Membandingkan Pendekatan Imperatif vs Deklaratif (Fungsional)\nvar angka = new List\u003cint\u003e { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };\n\n// 1. Gaya Imperatif: Menggunakan loop eksplisit dan mutasi variabel lokal\nvar genapKuadratImperatif = new List\u003cint\u003e();\nforeach (var n in angka)\n{\n    if (n % 2 == 0)\n    {\n        genapKuadratImperatif.Add(n * n);\n    }\n}\nConsole.WriteLine($\"Imperatif: {string.Join(\", \", genapKuadratImperatif)}\");\n\n// 2. Gaya Deklaratif (LINQ): Menjelaskan APA transformasi yang diinginkan\nvar genapKuadratFungsional = angka\n    .Where(n =\u003e n % 2 == 0)\n    .Select(n =\u003e n * n)\n    .ToList();\n\nConsole.WriteLine($\"Fungsional: {string.Join(\", \", genapKuadratFungsional)}\");\n\n// TODO: Tambahkan agregasi .Sum() pada gaya fungsional untuk menjumlahkan seluruh hasil kuadrat!",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-01-02-1",
+                              "type":  "MultipleChoice",
+                              "question":  "Karakteristik utama apakah yang mendefinisikan sebuah \u0027Pure Function\u0027 dalam paradigma fungsional?",
+                              "options":  [
+                                              "Method harus ditulis di dalam sebuah class statis tanpa pewarisan",
+                                              "Method selalu mengembalikan output yang identik untuk input yang sama dan tidak memicu efek samping (side effects)",
+                                              "Method harus menggunakan loop while dan keyword return",
+                                              "Method harus mengeksekusi operasi asinkronus (async/await)"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Pure function bersifat deterministik (input sama selalu menghasilkan output sama) dan tidak memodifikasi state eksternal atau melakukan I/O (bebas side effect).",
+                              "optionExplanations":  [
+                                                         "Salah. Class statis bisa saja memiliki static mutable state yang menyebabkan impure function.",
+                                                         "Benar! Deterministik dan bebas efek samping adalah definisi mutlak Pure Function.",
+                                                         "Salah. Loop while adalah konstruksi imperatif, bukan syarat pure function.",
+                                                         "Salah. Operasi I/O asinkronus justru sering kali menghasilkan side effect."
+                                                     ],
+                              "sectionRef":  "Mengapa Enterprise Menyukai Gaya Fungsional (Pure Functions)?",
+                              "difficulty":  "Beginner"
+                          },
+                          {
+                              "id":  "q-01-02-2",
+                              "type":  "MultipleChoice",
+                              "question":  "Manakah contoh implementasi paradigma fungsional bawaan yang paling sering digunakan dalam ekosistem C#?",
+                              "options":  [
+                                              "Windows Forms Designer",
+                                              "LINQ (Language Integrated Query)",
+                                              "Pola Abstract Factory",
+                                              "Thread.Sleep()"
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "LINQ adalah implementasi monad fungsional di C# yang memungkinkan manipulasi sequence data secara deklaratif dengan Pure Functions (Where, Select, Aggregate).",
+                              "optionExplanations":  [
+                                                         "Salah. Windows Forms adalah framework UI event-driven berorientasi objek.",
+                                                         "Benar! LINQ menyediakan operasi pemrosesan data berbasis fungsi matematika deklaratif tingkat tinggi.",
+                                                         "Salah. Abstract Factory adalah design pattern Object-Oriented (GoF).",
+                                                         "Salah. Thread.Sleep adalah pemanggilan thread scheduling sistem imperatif."
+                                                     ],
+                              "sectionRef":  "Perbandingan Langsung: Imperatif vs Fungsional di C#",
+                              "difficulty":  "Beginner"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           {
+                               "lessonId":  "lesson-03-01",
+                               "title":  "Kelas, Objek \u0026 Enkapsulasi",
+                               "levelName":  "LEVEL 03",
+                               "context":  "Mendalami pilar Object-Oriented Programming di C#."
+                           },
+                           {
+                               "lessonId":  "lesson-04-01",
+                               "title":  "LINQ Deep Dive: Deferred Execution",
+                               "levelName":  "LEVEL 04",
+                               "context":  "Bagaimana compiler C# mengubah pipeline LINQ menjadi state machine enumerator."
+                           }
+                       ],
+    "references":  [
+                       {
+                           "title":  "Functional Programming in C# - Enrico Buonanno",
+                           "url":  "https://www.manning.com/books/functional-programming-in-c-sharp"
+                       },
+                       {
+                           "title":  "LINQ (Language-Integrated Query) Overview - Microsoft",
+                           "url":  "https://learn.microsoft.com/en-us/dotnet/csharp/linq/"
+                       }
+                   ],
+    "solutionCode":  "using System;\nusing System.Linq;\n\npublic class FunctionalTransform\n{\n    public static int SumOfDoubledOdds(int[] numbers)\n    {\n        if (numbers == null) return 0;\n        return numbers\n            .Where(n =\u003e n % 2 != 0)\n            .Select(n =\u003e n * 2)\n            .Sum();\n    }\n\n    public static void Main()\n    {\n        int[] data = { 1, 2, 3, 4, 5 };\n        Console.WriteLine($\"Total: {SumOfDoubledOdds(data)}\");\n    }\n}"
+}

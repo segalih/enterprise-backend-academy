@@ -1,0 +1,175 @@
+{
+  "id": "lesson-03-06",
+  "levelId": "level-03",
+  "moduleId": "mod-03-03",
+  "order": 6,
+  "title": "Mastering C# Generics: Type Constraints, Covariance, dan Contravariance",
+  "slug": "csharp-generics-type-constraints-variance",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 50,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Menguasai pemrograman Generics tingkat lanjut: type constraints (where T : class, struct, new(), IEntity), open vs closed generic types, serta konsep Covariance (\u0027out\u0027) dan Contravariance (\u0027in\u0027) pada antarmuka.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-05",
+      "title": "Boxing, Unboxing \u0026 Generics",
+      "levelName": "LEVEL 02",
+      "context": "Memahami bagaimana Generics mengeliminasi overhead boxing."
+    },
+    {
+      "lessonId": "lesson-03-04",
+      "title": "Interfaces \u0026 Kontrak Abstraksi",
+      "levelName": "LEVEL 03",
+      "context": "Memahami antarmuka kontrak tipe."
+    }
+  ],
+  "introduces": [
+    "Generic Type Parameters (\u003CT\u003E)",
+    "Type Constraints (\u0027where T : ...\u0027)",
+    "new() Constructor Constraint",
+    "Covariance (out T)",
+    "Contravariance (in T)",
+    "Generic Specialization CoreCLR"
+  ],
+  "learningObjectives": [
+    "Menerapkan Type Constraints untuk membatasi tipe parameter generik secara type-safe.",
+    "Memahami prinsip Covariance (out) yang memungkinkan penetapan turunan ke basis.",
+    "Memahami prinsip Contravariance (in) untuk konsumsi parameter yang lebih umum."
+  ],
+  "markdownContent": "# Mastering C# Generics: Type Constraints, Covariance, dan Contravariance\n\n## Mengapa Generics Sangat Vital bagi Enterprise Backend?\nTanpa Generics, kita terpaksa menulis class duplikat berulang-ulang untuk setiap tipe data (\u0060IntRepository\u0060, \u0060CustomerRepository\u0060, \u0060OrderRepository\u0060), atau menggunakan \u0060object\u0060 yang lambat dan rawan runtime crash.\n\nGenerics memungkinkan kita menulis kode algoritma dan struktur data **sekali saja**, dengan type-safety 100% pada tahap kompilasi dan performa native tanpa boxing.\n\n---\n\n## 1. Generic Type Constraints (\u0060where\u0060)\nKadang kala kita ingin agar parameter \u0060T\u0060 tidak sembarang tipe, melainkan harus memiliki karakteristik tertentu:\n\n\u0060\u0060\u0060csharp\npublic class EntityRepository\u003CT\u003E \n    where T : class, IEntity, new() // BANYAK BATASAN SEKALIGUS\n{\n    public T CreateNewInstance()\n    {\n        return new T(); // Legal karena ada batasan \u0027new()\u0027\n    }\n\n    public void Save(T entity)\n    {\n        Console.WriteLine($\u0022Menyimpan entitas dengan ID: {entity.Id}\u0022); // Legal karena ada \u0027IEntity\u0027\n    }\n}\n\u0060\u0060\u0060\n\n### Macam-Macam Constraint Populer:\n- \u0060where T : struct\u0060 : \u0060T\u0060 wajib berupa Value Type (bukan nullable).\n- \u0060where T : class\u0060 : \u0060T\u0060 wajib berupa Reference Type.\n- \u0060where T : notnull\u0060 : \u0060T\u0060 tidak boleh berupa tipe bernilai null.\n- \u0060where T : new()\u0060 : \u0060T\u0060 wajib memiliki parameterless constructor publik.\n- \u0060where T : IMyInterface\u0060 : \u0060T\u0060 wajib mengimplementasikan interface tersebut.\n- \u0060where T : BaseClass\u0060 : \u0060T\u0060 wajib merupakan turunan dari \u0060BaseClass\u0060.\n\n---\n\n## 2. Variance: Covariance (\u0060out\u0060) dan Contravariance (\u0060in\u0060)\nBanyak pengembang bingung: Jika \u0060Anjing\u0060 adalah turunan dari \u0060Hewan\u0060, mengapa \u0060List\u003CAnjing\u003E\u0060 **TIDAK BISA** ditugaskan ke variabel bertipe \u0060List\u003CHewan\u003E\u0060?\nJawabannya: Karena jika diizinkan, Anda bisa memasukkan \u0060Kucing\u0060 ke dalam \u0060List\u003CAnjing\u003E\u0060 lewat referensi \u0060List\u003CHewan\u003E\u0060, merusak type safety!\n\nNamun pada Interface Read-Only, penetapan ini sepenuhnya aman:\n\n### A. Covariance (\u0060out T\u0060 - Menghasilkan / Output Data)\nJika sebuah interface HANYA mengeluarkan data (\u0060T\u0060 sebagai return type), gunakan keyword **\u0060out\u0060**:\n\u0060\u0060\u0060csharp\npublic interface IReadOnlyRepository\u003Cout T\u003E\n{\n    T GetById(int id); // T hanya sebagai return type!\n}\n\n// COVARIANCE: IReadOnlyRepository\u003CAnjing\u003E DAPAT ditugaskan ke IReadOnlyRepository\u003CHewan\u003E!\nIReadOnlyRepository\u003CHewan\u003E repo = new DogRepository(); // LEGAL 100%!\n\u0060\u0060\u0060\n\n### B. Contravariance (\u0060in T\u0060 - Menerima / Input Data)\nJika sebuah interface HANYA menerima data sebagai parameter, gunakan keyword **\u0060in\u0060**:\n\u0060\u0060\u0060csharp\npublic interface IConsumer\u003Cin T\u003E\n{\n    void Consume(T data); // T hanya sebagai parameter input!\n}\n\n// CONTRAVARIANCE: IConsumer\u003CHewan\u003E DAPAT ditugaskan ke IConsumer\u003CAnjing\u003E!\nIConsumer\u003CAnjing\u003E dogConsumer = new AnimalConsumer(); // LEGAL!\n\u0060\u0060\u0060",
+  "starterCode": "using System;\n\n// PROGRAM: Eksperimen Generic Constraints dan Covariance\npublic interface IIdentifiable\n{\n    string Id { get; }\n}\n\npublic record CustomerDto(string Id, string Name) : IIdentifiable;\n\n// Generic Class dengan Constraint: T wajib class dan mengimplementasikan IIdentifiable\npublic class CacheStorage\u003CT\u003E where T : class, IIdentifiable\n{\n    private T? _cachedItem;\n\n    public void Store(T item)\n    {\n        _cachedItem = item;\n        Console.WriteLine($\u0022[CACHE] Menyimpan item ID: {item.Id}\u0022);\n    }\n\n    public T? Retrieve() =\u003E _cachedItem;\n}\n\n// Covariant Interface (out T)\npublic interface IProducer\u003Cout T\u003E\n{\n    T Produce();\n}\n\npublic class StringProducer : IProducer\u003Cstring\u003E\n{\n    public string Produce() =\u003E \u0022Halo dari Covariant Producer!\u0022;\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var cache = new CacheStorage\u003CCustomerDto\u003E();\n        cache.Store(new CustomerDto(\u0022CUST-001\u0022, \u0022Budi Santoso\u0022));\n        \n        // Bukti Covariance: IProducer\u003Cstring\u003E aman ditugaskan ke IProducer\u003Cobject\u003E\n        IProducer\u003Cobject\u003E objProducer = new StringProducer();\n        Console.WriteLine($\u0022Output: {objProducer.Produce()}\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-03-06-1",
+      "type": "MultipleChoice",
+      "question": "Constraint apakah yang harus ditambahkan pada definisi generic \u0060class Factory\u003CT\u003E\u0060 agar method di dalamnya dapat mengeksekusi instansiasi \u0060new T()\u0060 secara legal?",
+      "options": [
+        "where T : class",
+        "where T : struct",
+        "where T : new()",
+        "where T : IDisposable"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "Constraint \u0060where T : new()\u0060 mewajibkan tipe T memiliki parameterless constructor publik, sehingga compiler mengizinkan instruksi \u0060new T()\u0060.",
+      "optionExplanations": [
+        "Salah. \u0060where T : class\u0060 hanya membatasi T sebagai reference type, belum tentu memiliki parameterless constructor.",
+        "Salah. \u0060where T : struct\u0060 membatasi value type.",
+        "Benar! \u0060where T : new()\u0060 adalah constructor constraint resmi C#.",
+        "Salah. \u0060IDisposable\u0060 adalah interface untuk resource disposal."
+      ],
+      "sectionRef": "1. Generic Type Constraints (where)",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-03-06-2",
+      "type": "MultipleChoice",
+      "question": "Keyword apakah yang digunakan pada interface generik (seperti \u0060IEnumerable\u003Cout T\u003E\u0060) untuk mengaktifkan Covariance sehingga turunan dapat ditugaskan ke tipe basis yang lebih umum?",
+      "options": [
+        "in",
+        "out",
+        "ref",
+        "covariant"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "Keyword \u0060out\u0060 menandai bahwa parameter tipe T bersifat covariant (hanya digunakan sebagai output/return type).",
+      "optionExplanations": [
+        "Salah. Keyword \u0060in\u0060 digunakan untuk Contravariance.",
+        "Benar! \u0060out T\u0060 mengaktifkan Covariance pada deklarasi interface.",
+        "Salah. \u0060ref\u0060 adalah modifier pass-by-reference.",
+        "Salah. \u0060covariant\u0060 bukan keyword C#."
+      ],
+      "sectionRef": "A. Covariance (out T - Menghasilkan / Output Data)",
+      "difficulty": "Intermediate"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-03-06",
+    "Title": "Penyaring Repositori Berbasis Generic Constraints",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat antarmuka \u0060IEntity { int Id { get; } }\u0060 dan kelas generic \u0060Repository\u003CT\u003E where T : class, IEntity\u0060.\nBuat kelas \u0060User : IEntity\u0060 dengan properti \u0060Id (int)\u0060 dan \u0060Name (string)\u0060.\nBaca data user dari stdin berformat \u0027ID:Name\u0027 dipisahkan koma, lalu baca target ID di baris berikutnya.\nCari dan cetak \u0027FOUND: \u003CName\u003E\u0027 jika ada, atau \u0027NOT_FOUND\u0027.",
+    "InputFormat": "Dua baris stdin: baris 1 kumpulan user (\u00271:Alice, 2:Bob\u0027), baris 2 target ID.",
+    "OutputFormat": "Satu baris: \u0027FOUND: \u003CName\u003E\u0027 atau \u0027NOT_FOUND\u0027.",
+    "Constraints": "ID bilangan bulat positif.",
+    "Examples": [
+      {
+        "Input": "1:Alice, 2:Bob, 3:Charlie\n2",
+        "Output": "FOUND: Bob",
+        "Explanation": "ID 2 ditemukan dengan nama Bob."
+      },
+      {
+        "Input": "1:Alice, 2:Bob\n5",
+        "Output": "NOT_FOUND",
+        "Explanation": "ID 5 tidak ada di repositori."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic interface IEntity { int Id { get; } }\n// TODO: Buat Repository\u003CT\u003E where T : class, IEntity dan method FindById(int id).\n\npublic class Solution\n{\n    public static void Main()\n    {\n        Console.WriteLine(\u0022NOT_FOUND\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic interface IEntity\n{\n    int Id { get; }\n}\n\npublic class User : IEntity\n{\n    public int Id { get; }\n    public string Name { get; }\n    public User(int id, string name) { Id = id; Name = name; }\n}\n\npublic class Repository\u003CT\u003E where T : class, IEntity\n{\n    private readonly List\u003CT\u003E _items = new();\n    public void Add(T item) =\u003E _items.Add(item);\n    public T? FindById(int id) =\u003E _items.FirstOrDefault(x =\u003E x.Id == id);\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? l1 = Console.ReadLine();\n        string? l2 = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(l1) || !int.TryParse(l2, out int targetId))\n        {\n            Console.WriteLine(\u0022NOT_FOUND\u0022);\n            return;\n        }\n\n        var repo = new Repository\u003CUser\u003E();\n        var pairs = l1.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        foreach (var p in pairs)\n        {\n            var parts = p.Trim().Split(\u0027:\u0027);\n            if (parts.Length == 2 \u0026\u0026 int.TryParse(parts[0], out int id))\n            {\n                repo.Add(new User(id, parts[1].Trim()));\n            }\n        }\n\n        var found = repo.FindById(targetId);\n        Console.WriteLine(found != null ? $\u0022FOUND: {found.Name}\u0022 : \u0022NOT_FOUND\u0022);\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (User Ditemukan)",
+        "Description": "Contoh 1 (User Ditemukan): input \u00271:Alice, 2:Bob, 3:Charlie\n2\u0027 -\u003E expected \u0027FOUND: Bob\u0027",
+        "Input": "1:Alice, 2:Bob, 3:Charlie\n2",
+        "ExpectedOutput": "FOUND: Bob",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (User Tidak Ada)",
+        "Description": "Contoh 2 (User Tidak Ada): input \u00271:Alice, 2:Bob\n5\u0027 -\u003E expected \u0027NOT_FOUND\u0027",
+        "Input": "1:Alice, 2:Bob\n5",
+        "ExpectedOutput": "NOT_FOUND",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Item Pertama",
+        "Description": "Item Pertama: input \u002710:ServerAdmin, 20:Guest\n10\u0027 -\u003E expected \u0027FOUND: ServerAdmin\u0027",
+        "Input": "10:ServerAdmin, 20:Guest\n10",
+        "ExpectedOutput": "FOUND: ServerAdmin",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Koleksi Kosong",
+        "Description": "Koleksi Kosong: input \u0027\n1\u0027 -\u003E expected \u0027NOT_FOUND\u0027",
+        "Input": "\n1",
+        "ExpectedOutput": "NOT_FOUND",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Terapkan constraint \u0060where T : class, IEntity\u0060 agar compiler mengetahui bahwa properti Id tersedia pada tipe T.",
+      "Gunakan LINQ FirstOrDefault(x =\u003E x.Id == id)."
+    ],
+    "Explanation": "Generic type constraints memastikan type-safety pada saat kompilasi tanpa perlu runtime reflection atau casting berbahaya."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-02-08",
+      "title": "Koleksi Data C#",
+      "levelName": "LEVEL 02",
+      "context": "Penerapan Generics pada List\u003CT\u003E dan Dictionary\u003CK,V\u003E."
+    },
+    {
+      "lessonId": "lesson-10-04",
+      "title": "Pola Akses Data: Repository Pattern",
+      "levelName": "LEVEL 10",
+      "context": "Merancang Generic Repository IRepository\u003CT\u003E pada Entity Framework Core."
+    }
+  ],
+  "references": [
+    {
+      "title": "Constraints on type parameters - C# Guide",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/generics/constraints-on-type-parameters"
+    },
+    {
+      "title": "Covariance and Contravariance in Generics",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/generics/covariance-and-contravariance"
+    }
+  ],
+  "solutionCode": "using System;\n\npublic interface IIdentifiable\n{\n    string Id { get; }\n}\n\npublic record Account(string Id, decimal Saldo) : IIdentifiable;\n\npublic class RepositoryHelper\n{\n    public static T? FindById\u003CT\u003E(T[] items, string id) where T : class, IIdentifiable\n    {\n        if (items == null || string.IsNullOrWhiteSpace(id)) return null;\n\n        foreach (var item in items)\n        {\n            if (item != null \u0026\u0026 string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase))\n            {\n                return item;\n            }\n        }\n\n        return null;\n    }\n\n    public static void Main()\n    {\n        Account[] accounts = { new(\u0022ACC-1\u0022, 1000m), new(\u0022ACC-2\u0022, 5000m) };\n        var found = FindById(accounts, \u0022ACC-2\u0022);\n        Console.WriteLine($\u0022Found: {found?.Id} Saldo: {found?.Saldo}\u0022);\n    }\n}"
+}

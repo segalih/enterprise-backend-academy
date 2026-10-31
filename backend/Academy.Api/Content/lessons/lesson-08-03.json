@@ -1,0 +1,162 @@
+{
+  "id": "lesson-08-03",
+  "levelId": "level-08",
+  "moduleId": "mod-08-01",
+  "order": 3,
+  "title": "Pola Resource Cleanup: IDisposable, IAsyncDisposable, dan Finalization Guard",
+  "slug": "idisposable-iasyncdisposable-finalizer-pattern",
+  "difficulty": "Intermediate",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Mempelajari pembebasan sumber daya unmanaged di luar managed heap: implementasi pola IDisposable formal, pernyataan \u0027using\u0027, IAsyncDisposable untuk penutupan non-blocking, serta peran Finalizer (~Class) dan GC.SuppressFinalize.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-08-02",
+      "title": "Garbage Collector Internals",
+      "levelName": "LEVEL 08",
+      "context": "Memahami siklus hidup objek di Managed Heap."
+    }
+  ],
+  "introduces": [
+    "Managed vs Unmanaged Resources",
+    "IDisposable Interface",
+    "IAsyncDisposable (await using)",
+    "The Dispose(bool) Pattern",
+    "Finalizer (~Destructor)",
+    "GC.SuppressFinalize",
+    "SafeHandle Wrapper"
+  ],
+  "learningObjectives": [
+    "Membedakan antara sumber daya Managed (RAM GC) dan Unmanaged (File Handle, DB Connection, Socket).",
+    "Mengimplementasikan pola Dispose baku (Dispose Pattern) secara benar dan thread-safe.",
+    "Menggunakan \u0027await using\u0027 dan IAsyncDisposable untuk menutup network stream tanpa memblokir thread."
+  ],
+  "markdownContent": "# Pola Resource Cleanup: IDisposable, IAsyncDisposable, dan Finalization Guard\n\n## Batasan Garbage Collector: Sumber Daya Unmanaged\nGarbage Collector (GC) sangat pintar dalam membersihkan memori RAM managed. Namun, **GC sama sekali tidak tahu cara menutup**:\n- File descriptor di hard drive yang sedang terbuka (\u0060FileStream\u0060).\n- Koneksi socket jaringan aktif ke server lain (\u0060Socket\u0060).\n- Alokasi memori unmanaged C\u002B\u002B native (\u0060Marshal.AllocHGlobal\u0060).\n- Database Connection pool handle.\n\nJika aplikasi backend hanya mengandalkan GC, file dan socket handle sistem operasi akan menggantung terbuka (*Leaked OS Handles*), menyebabkan error fatal: \u0060Too many open files\u0060.\n\n---\n\n## 1. Solusi Deterministik: Interface \u0060IDisposable\u0060 dan Pernyataan \u0060using\u0060\nUntuk sumber daya unmanaged, pembersihan harus dilakukan **segera secara deterministik**, tanpa menunggu siklus GC yang tidak pasti:\n\n\u0060\u0060\u0060csharp\n// Pernyataan \u0027using\u0027 modern C# 8 (Otomatis memanggil .Dispose() saat keluar dari scope):\nusing var connection = new SqlConnection(connString);\nconnection.Open();\n// Jalankan query...\n// Saat keluar dari kurung blok method, connection.Dispose() DIJAMIN 100% dipanggil,\n// bahkan jika terjadi Exception di tengah jalan!\n\u0060\u0060\u0060\n\n---\n\n## 2. Pola Dispose Baku (.NET Standard Dispose Pattern)\nJika Anda merancang class kustom yang memegang sumber daya unmanaged murni:\n\n\u0060\u0060\u0060csharp\npublic class UnmanagedResourceHolder : IDisposable\n{\n    private bool _disposed = false;\n    private IntPtr _nativeBuffer; // Alokasi C unmanaged\n\n    public void Dispose()\n    {\n        Dispose(disposing: true);\n        // MEMBERITAHU GC: Objek ini sudah bersih, jangan panggil Finalizer lagi! (Hemat CPU!)\n        GC.SuppressFinalize(this);\n    }\n\n    protected virtual void Dispose(bool disposing)\n    {\n        if (_disposed) return;\n\n        if (disposing)\n        {\n            // 1. Bersihkan sumber daya Managed lainnya di sini\n        }\n\n        // 2. Bersihkan sumber daya Unmanaged fisik di sini\n        if (_nativeBuffer != IntPtr.Zero)\n        {\n            Marshal.FreeHGlobal(_nativeBuffer);\n            _nativeBuffer = IntPtr.Zero;\n        }\n\n        _disposed = true;\n    }\n\n    // FINALIZER: Jaring pengaman darurat jika developer LUPA memanggil Dispose()!\n    ~UnmanagedResourceHolder()\n    {\n        Dispose(disposing: false);\n    }\n}\n\u0060\u0060\u0060\n\n---\n\n## 3. Asynchronous Cleanup: \u0060IAsyncDisposable\u0060\nBagaimana jika proses pembersihan membutuhkan I/O jaringan (misal: mengirim paket pemutusan \u0060FIN\u0060 pada socket atau melakukan flush buffer 10 MB ke cloud storage)?\nMemanggil \u0060Dispose()\u0060 biasa akan memblokir thread synchronous!\n\nDi sinilah **\u0060IAsyncDisposable\u0060** digunakan:\n\u0060\u0060\u0060csharp\nawait using var fileStream = new FileStream(\u0022laporan.dat\u0022, FileMode.Open);\nawait using var transaction = await dbContext.Database.BeginTransactionAsync();\n\nawait transaction.CommitAsync();\n// Saat keluar scope, \u0027await DisposeAsync()\u0027 dieksekusi secara non-blocking!\n\u0060\u0060\u0060",
+  "starterCode": "using System;\nusing System.IO;\n\n// PROGRAM: Pembuktian Siklus Hidup IDisposable dan Blok Using\npublic class DatabaseConnectionSimulator : IDisposable\n{\n    public string ConnectionId { get; }\n    public bool IsOpen { get; private set; }\n\n    public DatabaseConnectionSimulator(string id)\n    {\n        ConnectionId = id;\n        IsOpen = true;\n        Console.WriteLine($\u0022[SOCKET OPEN] Koneksi {ConnectionId} berhasil dibuka.\u0022);\n    }\n\n    public void ExecuteQuery(string sql)\n    {\n        if (!IsOpen) throw new InvalidOperationException(\u0022Koneksi sudah tertutup!\u0022);\n        Console.WriteLine($\u0022[SQL EXEC] {ConnectionId} -\u003E {sql}\u0022);\n    }\n\n    public void Dispose()\n    {\n        if (IsOpen)\n        {\n            IsOpen = false;\n            Console.WriteLine($\u0022[SOCKET CLOSE] Koneksi {ConnectionId} dibersihkan seketika.\u0022);\n        }\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Simulasi penggunaan scope menggunakan pernyataan \u0027using\u0027\n        using (var db = new DatabaseConnectionSimulator(\u0022CONN_POOL_#1\u0022))\n        {\n            db.ExecuteQuery(\u0022SELECT * FROM Customers\u0022);\n        } // Di baris kurung tutup ini, db.Dispose() otomatis dipanggil!\n        \n        Console.WriteLine(\u0022Luar blok using: Socket sudah terbukti ditutup dengan aman.\u0022);\n    }\n}\n",
+  "quizQuestions": [
+    {
+      "id": "q-08-03-1",
+      "type": "MultipleChoice",
+      "question": "Apa fungsi pemanggilan \u0060GC.SuppressFinalize(this)\u0060 di dalam method \u0060Dispose()\u0060?",
+      "options": [
+        "Menghapus objek seketika dari RAM fisik",
+        "Memberitahu Garbage Collector bahwa sumber daya unmanaged sudah dibersihkan secara manual, sehingga CLR tidak perlu lagi memasukkan objek ke Finalization Queue yang mahal",
+        "Menonaktifkan Garbage Collector untuk seluruh aplikasi",
+        "Mempercepat kecepatan internet klien"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060GC.SuppressFinalize(this)\u0060 memberi sinyal ke CLR agar tidak mengeksekusi finalizer objek, menghemat siklus promosi ke Gen 2 dan overhead finalization thread.",
+      "optionExplanations": [
+        "Salah. Objek tetap hidup di managed heap hingga siklus GC berikutnya.",
+        "Benar! Menghindari pemanggilan finalizer sekunder yang memperberat kerja GC.",
+        "Salah. GC tetap berjalan normal.",
+        "Salah. Tidak ada korelasi dengan konektivitas internet."
+      ],
+      "sectionRef": "2. Pola Dispose Baku (.NET Standard Dispose Pattern)",
+      "difficulty": "Intermediate"
+    },
+    {
+      "id": "q-08-03-2",
+      "type": "MultipleChoice",
+      "question": "Keyword apakah di C# yang digunakan bersama \u0060IAsyncDisposable\u0060 untuk memastikan pembersihan sumber daya dieksekusi secara asinkronus non-blocking saat keluar dari scope?",
+      "options": [
+        "using",
+        "await using",
+        "async using",
+        "try using"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060await using\u0060 adalah sintaks resmi C# 8\u002B untuk mendeklarasikan resource yang mengimplementasikan \u0060IAsyncDisposable\u0060 dengan pemanggilan otomatis \u0060DisposeAsync()\u0060.",
+      "optionExplanations": [
+        "Salah. \u0060using\u0060 biasa hanya memanggil \u0060Dispose()\u0060 sinkronus.",
+        "Benar! \u0060await using\u0060 mengeksekusi \u0060DisposeAsync()\u0060 secara non-blocking.",
+        "Salah. Sintaks \u0060async using\u0060 tidak valid di C#.",
+        "Salah. \u0060try using\u0060 bukan keyword C#."
+      ],
+      "sectionRef": "3. Asynchronous Cleanup: IAsyncDisposable",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-08-03",
+    "Title": "Implementasi IDisposable pada Pelacak Waktu Operasi (Scope Timer)",
+    "Difficulty": "Intermediate",
+    "ProblemStatement": "Buat kelas \u0060ScopeTimer : IDisposable\u0060 yang menerima nama operasi (string) di konstruktornya.\nSaat diinisialisasi (konstruktor), cetak \u0027START: \u003COperationName\u003E\u0027.\nSaat dispose dipanggil (method \u0060Dispose()\u0060), cetak \u0027STOP: \u003COperationName\u003E\u0027.\nBaca nama operasi dari stdin dan jalankan dalam blok \u0060using (new ScopeTimer(op)) { Console.WriteLine(\u0022EXECUTING: ...\u0022); }\u0060.",
+    "InputFormat": "Satu baris nama operasi (misal \u0027DatabaseQuery\u0027).",
+    "OutputFormat": "Tiga baris: START, EXECUTING, STOP.",
+    "Constraints": "Nama operasi tidak kosong.",
+    "Examples": [
+      {
+        "Input": "ProcessPayment",
+        "Output": "START: ProcessPayment\nEXECUTING: ProcessPayment\nSTOP: ProcessPayment",
+        "Explanation": "Pola using menjamin Dispose dipanggil otomatis di akhir blok."
+      },
+      {
+        "Input": "AuditLogFlush",
+        "Output": "START: AuditLogFlush\nEXECUTING: AuditLogFlush\nSTOP: AuditLogFlush",
+        "Explanation": "Operasi audit flush dieksekusi dalam scope."
+      }
+    ],
+    "StarterCode": "using System;\n\npublic class ScopeTimer : IDisposable\n{\n    // TODO: Implementasikan konstruktor dan Dispose().\n    public void Dispose() {}\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? op = Console.ReadLine();\n        // TODO: Bungkus dalam using blok.\n    }\n}",
+    "SolutionCode": "using System;\n\npublic class ScopeTimer : IDisposable\n{\n    private readonly string _name;\n    private bool _disposed = false;\n\n    public ScopeTimer(string name)\n    {\n        _name = name;\n        Console.WriteLine($\u0022START: {_name}\u0022);\n    }\n\n    public void Dispose()\n    {\n        if (!_disposed)\n        {\n            Console.WriteLine($\u0022STOP: {_name}\u0022);\n            _disposed = true;\n        }\n    }\n}\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? op = Console.ReadLine()?.Trim();\n        if (string.IsNullOrEmpty(op)) return;\n\n        using (new ScopeTimer(op))\n        {\n            Console.WriteLine($\u0022EXECUTING: {op}\u0022);\n        }\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Payment)",
+        "Description": "Contoh 1 (Payment): input \u0027ProcessPayment\u0027 -\u003E expected \u0027START: ProcessPayment\nEXECUTING: ProcessPayment\nSTOP: ProcessPayment\u0027",
+        "Input": "ProcessPayment",
+        "ExpectedOutput": "START: ProcessPayment\nEXECUTING: ProcessPayment\nSTOP: ProcessPayment",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Operasi Query",
+        "Description": "Operasi Query: input \u0027QueryOrderDb\u0027 -\u003E expected \u0027START: QueryOrderDb\nEXECUTING: QueryOrderDb\nSTOP: QueryOrderDb\u0027",
+        "Input": "QueryOrderDb",
+        "ExpectedOutput": "START: QueryOrderDb\nEXECUTING: QueryOrderDb\nSTOP: QueryOrderDb",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Operasi Simbol",
+        "Description": "Operasi Simbol: input \u0027Task#123\u0027 -\u003E expected \u0027START: Task#123\nEXECUTING: Task#123\nSTOP: Task#123\u0027",
+        "Input": "Task#123",
+        "ExpectedOutput": "START: Task#123\nEXECUTING: Task#123\nSTOP: Task#123",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "Blok \u0060using\u0060 secara otomatis diterjemahkan oleh compiler C# menjadi blok \u0060try ... finally\u0060 yang memanggil \u0060Dispose()\u0060.",
+      "Pola ini umum digunakan untuk mengukur durasi atau mengelola scope resource unmanaged."
+    ],
+    "Explanation": "Antarmuka IDisposable menyediakan mekanisme pembersihan resource deterministik di C# yang dieksekusi seketika saat keluar dari lexical scope blok using."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-08-02",
+      "title": "Garbage Collector Internals",
+      "levelName": "LEVEL 08",
+      "context": "Memahami mengapa unmanaged resource harus dilepaskan di luar GC."
+    },
+    {
+      "lessonId": "lesson-10-03",
+      "title": "EF Core DbContext Lifecycle",
+      "levelName": "LEVEL 10",
+      "context": "Pelepasan koneksi database melalui IDisposable pada DbContext."
+    }
+  ],
+  "references": [
+    {
+      "title": "Standard Dispose Pattern - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/implementing-dispose"
+    },
+    {
+      "title": "Implement a DisposeAsync method - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/implementing-disposeasync"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Diagnostics;\n\npublic class OperationTimer : IDisposable\n{\n    private readonly string _operationName;\n    private readonly Stopwatch _stopwatch;\n    private bool _disposed = false;\n\n    public OperationTimer(string operationName)\n    {\n        _operationName = operationName ?? \u0022Operation\u0022;\n        _stopwatch = Stopwatch.StartNew();\n    }\n\n    public void Dispose()\n    {\n        if (_disposed) return;\n        _disposed = true;\n\n        _stopwatch.Stop();\n        Console.WriteLine($\u0022[COMPLETED] {_operationName} in {_stopwatch.ElapsedMilliseconds} ms\u0022);\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        using (new OperationTimer(\u0022DatabaseMigration\u0022))\n        {\n            System.Threading.Thread.Sleep(50);\n        }\n    }\n}"
+}

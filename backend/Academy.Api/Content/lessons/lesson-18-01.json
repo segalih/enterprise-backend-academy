@@ -1,0 +1,103 @@
+{
+    "id":  "lesson-18-01",
+    "levelId":  "level-18",
+    "moduleId":  "mod-18-01",
+    "order":  1,
+    "title":  "Arsitektur Buku Besar Finansial (Double-Entry Ledger): Invariant Debit-Kredit, Audit Trail, dan Idempotent Settlement",
+    "slug":  "double-entry-ledger-architecture",
+    "difficulty":  "Advanced",
+    "estimatedMinutes":  65,
+    "hasQuiz":  true,
+    "hasExercise":  false,
+    "simulatorType":  null,
+    "simulatorContext":  null,
+    "description":  "Merancang sistem core banking dan buku besar finansial (Double-Entry Bookkeeping): aturan invarian Debit == Kredit, append-only immutable ledger, penanganan mata uang multi-currency, dan penutupan buku periodik.",
+    "prerequisites":  [
+                          {
+                              "lessonId":  "lesson-09-03",
+                              "reason":  "Database ACID \u0026 Serializable Isolation"
+                          },
+                          {
+                              "lessonId":  "lesson-13-03",
+                              "reason":  "Domain-Driven Design Aggregates \u0026 Invariants"
+                          }
+                      ],
+    "introduces":  [
+                       "Double-Entry Bookkeeping mathematical invariant (Sum(Debits) == Sum(Credits))",
+                       "Append-Only Immutable Ledger (No SQL UPDATE or DELETE allowed)",
+                       "Chart of Accounts (Assets, Liabilities, Equity, Revenue, Expenses)",
+                       "Idempotent Transaction Settlement \u0026 Audit Trails",
+                       "Preventing Rounding Errors with Integer/Minor Units"
+                   ],
+    "learningObjectives":  [
+                               "Menjelaskan mengapa tabel saldo sederhana (`UPDATE Accounts SET Balance = Balance - X`) adalah bencana bagi sistem audit finansial",
+                               "Merancang skema database Double-Entry Ledger berbasis Append-Only di mana transaksi yang salah diperbaiki dengan Transaksi Pembalik (Reversal Entry)",
+                               "Menegakkan aturan invarian matematis bahwa total debit harus sama persis dengan total kredit pada setiap transaksi finansial",
+                               "Menghindari kesalahan floating-point rounding dengan menyimpan nilai uang dalam satuan terkecil (sen/cents) atau presisi numerik `decimal`"
+                           ],
+    "markdownContent":  "# Arsitektur Buku Besar Finansial (Double-Entry Ledger): Invariant Debit-Kredit, Audit Trail, dan Idempotent Settlement\n\nDalam sistem perbankan, dompet digital (*e-wallet*), atau gateway pembayaran berskala enterprise, satu kesalahan pembukuan senilai Rp 1.000 dapat berujung pada audit forensik OJK/BI dan kerugian jutaan dolar.\n\nBanyak programmer pemula memodelkan transfer uang seperti ini:\n```sql\n-- POLA SANGAT AMATIR \u0026 BERBAHAYA:\nUPDATE Accounts SET Balance = Balance - 100000 WHERE Id = \u0027Alice\u0027;\nUPDATE Accounts SET Balance = Balance + 100000 WHERE Id = \u0027Bob\u0027;\n```\nMengapa pola di atas dilarang keras di industri keuangan?\n1. **Tidak Ada Jejak Audit (No Audit Trail)**: Jika saldo Alice berkurang Rp 100.000, tidak ada yang tahu mengapa saldo tersebut berkurang, siapa yang memicu, dan apakah uang tersebut benar-benar sampai ke Bob.\n2. **Uang Tercipta / Hilang dari Udara Kosong**: Jika satu statement gagal atau terjadi race condition, integritas total suplai uang rusak tanpa jejak historis.\n\nStandar emas peradaban manusia sejak abad ke-15 (Luca Pacioli) untuk memecahkan masalah ini adalah **Double-Entry Bookkeeping (Pembukuan Berpasangan)**.\n\n---\n\n## 1. Prinsip Fundamental: Total Debit == Total Kredit\n\nDalam Double-Entry Bookkeeping:\n\u003e **Uang tidak pernah diciptakan atau dimusnahkan; uang hanya berpindah dari satu akun ke akun lain.**\n\u003e **Setiap transaksi finansial WAJIB memiliki minimal dua entri (Posting Entries), di mana JUMLAH TOTAL DEBIT HARUS TEPAT SAMA DENGAN JUMLAH TOTAL KREDIT.**\n\n```text\n   SUM(Debits) - SUM(Credits) == 0  (Invarian Wajib Abadi!)\n```\n\n### Lima Kelompok Akun Utama (Chart of Accounts):\n1. **Assets (Aset / Harta)**: Kas bank, piutang. (*Debit bertambah, Kredit berkurang*)\n2. **Liabilities (Kewajiban / Hutang)**: Saldo simpanan nasabah, hutang vendor. (*Kredit bertambah, Debit berkurang*)\n3. **Equity (Modal)**: Modal pemilik saham. (*Kredit bertambah*)\n4. **Revenue (Pendapatan)**: Biaya admin transaksi, bunga. (*Kredit bertambah*)\n5. **Expenses (Beban / Biaya)**: Biaya server cloud, gaji pegawai. (*Debit bertambah*)\n\n### Contoh: Alice Mentransfer Rp 100.000 ke Bob\nDalam database bank, akun simpanan nasabah adalah **Kewajiban Bank (Liabilities)** (karena bank berhutang uang tersebut kepada nasabah):\n- **Entry 1**: Debit akun Alice sebesar Rp 100.000 (Kewajiban bank ke Alice berkurang Rp 100.000).\n- **Entry 2**: Kredit akun Bob sebesar Rp 100.000 (Kewajiban bank ke Bob bertambah Rp 100.000).\n- **Hasil**: `Debit (100.000) == Kredit (100.000)`. Keseimbangan neraca bank tetap 100% terjaga!\n\n---\n\n## 2. Buku Besar Append-Only (Dilarang Menggunakan UPDATE \u0026 DELETE)\n\nAturan mutlak arsitektur buku besar enterprise:\n\u003e **Tabel Ledger bersifat Append-Only (Immutable). Perintah SQL `UPDATE` dan `DELETE` DIHAPUSKAN HAK AKSESNYA dari user aplikasi database!**\n\n### Bagaimana Jika Terjadi Kesalahan Input Transaksi?\nJika kasir salah memasukkan transfer Rp 500.000 yang seharusnya Rp 50.000:\n- **JANGAN PERNAH mengedit baris transaksi lama!**\n- Buat transaksi baru berupa **Reversal Entry (Jurnal Pembalik)** sebesar Rp 500.000 untuk menetralkan kesalahan.\n- Buat transaksi baru yang benar sebesar Rp 50.000.\nDengan cara ini, auditor keuangan dapat melihat seluruh riwayat kesalahan dan koreksi secara transparan tanpa ada data yang disembunyikan.\n\n---\n\n## 3. Presisi Nilai Uang: Haram Menggunakan `float` atau `double`!\n\nKomputer merepresentasikan bilangan floating-point (`float`, `double`) dalam biner IEEE 754, yang tidak dapat merepresentasikan pecahan desimal seperti `0.1` secara presisi:\n```csharp\ndouble a = 0.1 + 0.2; // Hasil: 0.30000000000000004 !!\n```\nDi sistem finansial, kesalahan pembulatan 0,00000000000000004 sen yang terakumulasi di miliaran transaksi akan menciptakan selisih kas raksasa (*rounding anomaly*).\n\n### Standar Enterprise di C#:\n1. Gunakan tipe **`decimal`** (128-bit fixed-point decimal yang presisi hingga 28-29 digit angka penting).\n2. Atau simpan uang dalam format **Minor Currency Units (Satuan Terkecil / Sen)** menggunakan tipe integer 64-bit (`long`), contoh: `Rp 100.000` disimpan sebagai `10000000` (jika menggunakan 2 digit desimal sen).\n\n---\n\n## 4. Ringkasan \u0026 Aturan Arsitektur Finansial\n\n1. **Tegakkan Invarian di Dua Tingkat**: Validasi `Debit == Kredit` di level C# Domain Entity, dan pasang constraint trigger / check constraint di level database SQL.\n2. **Kunci Akun dengan Idempotency Key**: Setiap transaksi transfer harus menyertakan `Idempotency-Key` unik untuk mencegah transfer ganda saat terjadi network timeout.\n3. **Kalkulasi Saldo Berbasis Agregasi**: Saldo akun saat ini adalah hasil agregasi historis `SUM(Credits) - SUM(Debits)`, yang dapat di-snapshot secara periodik untuk performa query cepat.",
+    "starterCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic enum EntryType { Debit, Credit }\n\npublic record LedgerEntry(string AccountNumber, EntryType Type, decimal Amount);\n\npublic class JournalTransaction\n{\n    public Guid Id { get; } = Guid.NewGuid();\n    public DateTime Timestamp { get; } = DateTime.UtcNow;\n    public string Description { get; }\n    private readonly List\u003cLedgerEntry\u003e _entries = new();\n\n    public IReadOnlyCollection\u003cLedgerEntry\u003e Entries =\u003e _entries.AsReadOnly();\n\n    public JournalTransaction(string description) =\u003e Description = description;\n\n    public void AddEntry(string accountNumber, EntryType type, decimal amount)\n    {\n        if (amount \u003c= 0) throw new ArgumentException(\"Nominal harus positif!\");\n        _entries.Add(new LedgerEntry(accountNumber, type, amount));\n    }\n\n    public bool ValidateBalanced()\n    {\n        // TODO:\n        // 1. Hitung total amount dari entri bertipe Debit.\n        // 2. Hitung total amount dari entri bertipe Credit.\n        // 3. Kembalikan TRUE jika totalDebit == totalCredit DAN entries.Count \u003e= 2.\n        //    Kembalikan FALSE jika tidak seimbang.\n        \n        return false;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        // Skenario: Alice mentransfer Rp 250.000 ke Bob\n        var tx = new JournalTransaction(\"Transfer Dana Alice ke Bob\");\n        tx.AddEntry(\"ACC_ALICE\", EntryType.Debit, 250_000m);\n        tx.AddEntry(\"ACC_BOB\", EntryType.Credit, 250_000m);\n\n        bool isBalanced = tx.ValidateBalanced();\n        Console.WriteLine($\"Transaksi 1 Seimbang (Debit == Kredit)? : {isBalanced} (Ekspektasi: True)\");\n\n        // Skenario Transaksi Cacat: Total debit tidak sama dengan kredit\n        var badTx = new JournalTransaction(\"Transaksi Gagal Seimbang\");\n        badTx.AddEntry(\"ACC_ALICE\", EntryType.Debit, 500_000m);\n        badTx.AddEntry(\"ACC_BOB\", EntryType.Credit, 450_000m); // Selisih 50k!\n\n        Console.WriteLine($\"Transaksi 2 Seimbang?                   : {badTx.ValidateBalanced()} (Ekspektasi: False)\");\n    }\n}",
+    "solutionCode":  "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic enum EntryType { Debit, Credit }\n\npublic record LedgerEntry(string AccountNumber, EntryType Type, decimal Amount);\n\npublic class JournalTransaction\n{\n    public Guid Id { get; } = Guid.NewGuid();\n    public DateTime Timestamp { get; } = DateTime.UtcNow;\n    public string Description { get; }\n    private readonly List\u003cLedgerEntry\u003e _entries = new();\n\n    public IReadOnlyCollection\u003cLedgerEntry\u003e Entries =\u003e _entries.AsReadOnly();\n\n    public JournalTransaction(string description) =\u003e Description = description;\n\n    public void AddEntry(string accountNumber, EntryType type, decimal amount)\n    {\n        if (amount \u003c= 0) throw new ArgumentException(\"Nominal harus positif!\");\n        _entries.Add(new LedgerEntry(accountNumber, type, amount));\n    }\n\n    public bool ValidateBalanced()\n    {\n        if (_entries.Count \u003c 2) return false;\n\n        decimal totalDebit = _entries.Where(e =\u003e e.Type == EntryType.Debit).Sum(e =\u003e e.Amount);\n        decimal totalCredit = _entries.Where(e =\u003e e.Type == EntryType.Credit).Sum(e =\u003e e.Amount);\n\n        return totalDebit == totalCredit;\n    }\n}\n\npublic class Program\n{\n    public static void Main()\n    {\n        var tx = new JournalTransaction(\"Transfer Dana Alice ke Bob\");\n        tx.AddEntry(\"ACC_ALICE\", EntryType.Debit, 250_000m);\n        tx.AddEntry(\"ACC_BOB\", EntryType.Credit, 250_000m);\n\n        bool isBalanced = tx.ValidateBalanced();\n        Console.WriteLine($\"Transaksi 1 Seimbang (Debit == Kredit)? : {isBalanced} (Ekspektasi: True)\");\n\n        var badTx = new JournalTransaction(\"Transaksi Gagal Seimbang\");\n        badTx.AddEntry(\"ACC_ALICE\", EntryType.Debit, 500_000m);\n        badTx.AddEntry(\"ACC_BOB\", EntryType.Credit, 450_000m);\n\n        Console.WriteLine($\"Transaksi 2 Seimbang?                   : {badTx.ValidateBalanced()} (Ekspektasi: False)\");\n    }\n}",
+    "quizQuestions":  [
+                          {
+                              "id":  "q-17-04-1",
+                              "type":  "single_choice",
+                              "question":  "Apa aturan invarian matematis fundamental yang wajib dipenuhi oleh setiap transaksi pada sistem Double-Entry Bookkeeping?",
+                              "options":  [
+                                              "Jumlah karakter nomor rekening harus kelipatan genap.",
+                                              "Jumlah total nominal Debit harus tepat sama dengan jumlah total nominal Kredit (Sum(Debit) == Sum(Credit)).",
+                                              "Saldo akhir semua nasabah harus selalu nol rupiah.",
+                                              "Semua akun harus memiliki mata uang Dollar Amerika."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Double-entry bookkeeping mewajibkan setiap pergerakan finansial dicatat secara berpasangan di mana total nilai debit harus tepat sama dengan total nilai kredit, menjamin bahwa kekayaan tidak tercipta atau hilang begitu saja tanpa sumber.",
+                              "optionExplanations":  [
+                                                         "Salah. Nomor rekening tidak berkaitan dengan validitas matematis buku besar.",
+                                                         "Benar! Invarian Debit == Kredit adalah hukum dasar integritas akuntansi global.",
+                                                         "Salah. Saldo nasabah bertambah atau berkurang secara wajar; yang seimbang adalah pergerakan transaksinya.",
+                                                         "Salah. Double-entry mendukung mata uang multi-currency apapun."
+                                                     ],
+                              "sectionRef":  "1. Prinsip Fundamental: Total Debit == Total Kredit",
+                              "difficulty":  "Advanced"
+                          },
+                          {
+                              "id":  "q-17-04-2",
+                              "type":  "single_choice",
+                              "question":  "Mengapa tipe data \u0027double\u0027 atau \u0027float\u0027 dilarang keras untuk digunakan dalam kalkulasi saldo transaksi finansial di C#?",
+                              "options":  [
+                                              "Karena double dan float hanya bisa menghitung angka ganjil.",
+                                              "Karena representasi binary floating-point (IEEE 754) tidak dapat merepresentasikan pecahan desimal basis-10 secara eksak, menimbulkan akumulasi kesalahan pembulatan (rounding error) pada transaksi uang.",
+                                              "Karena C# memblokir kompilasi file yang berisi tipe double.",
+                                              "Karena tipe double memakan memori harddisk 1 terabyte."
+                                          ],
+                              "correctOptionIndex":  1,
+                              "explanation":  "Tipe float dan double menggunakan pecahan biner yang rentan rounding error (misal 0.1 + 0.2 = 0.30000000000000004). Di sistem finansial, wajib menggunakan tipe \u0027decimal\u0027 (128-bit decimal floating point) atau representasi integer satuan terkecil (sen/cents).",
+                              "optionExplanations":  [
+                                                         "Salah. Floating point menangani angka genap maupun ganjil.",
+                                                         "Benar! Ketidakakuratan representasi biner pecahan desimal merusak kebenaran audit pembukuan uang.",
+                                                         "Salah. C# mendukung float/double secara legal.",
+                                                         "Salah. Ukuran double hanya 8 bytes di memori."
+                                                     ],
+                              "sectionRef":  "3. Presisi Nilai Uang: Haram Menggunakan float atau double!",
+                              "difficulty":  "Intermediate"
+                          }
+                      ],
+    "codingChallenge":  null,
+    "relatedLessons":  [
+                           "lesson-09-03",
+                           "lesson-13-03",
+                           "lesson-18-02"
+                       ],
+    "references":  [
+                       {
+                           "title":  "Designing Double-Entry Bookkeeping Systems - Martin Fowler",
+                           "url":  "https://martinfowler.com/eaaDev/AccountingTransaction.html",
+                           "type":  "article"
+                       },
+                       {
+                           "title":  "Modern Financial Ledger Architecture - Segment Engineering",
+                           "url":  "https://segment.com/blog/building-a-ledger-system/",
+                           "type":  "article"
+                       }
+                   ]
+}

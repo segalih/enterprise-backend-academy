@@ -1,0 +1,170 @@
+{
+  "id": "lesson-02-08",
+  "levelId": "level-02",
+  "moduleId": "mod-02-04",
+  "order": 8,
+  "title": "Koleksi Data C#: Array, List\u003CT\u003E, Dictionary\u003CK, V\u003E, HashSet\u003CT\u003E, Stack dan Queue",
+  "slug": "csharp-collections-deep-dive",
+  "difficulty": "Beginner",
+  "estimatedMinutes": 45,
+  "hasQuiz": true,
+  "hasExercise": true,
+  "simulatorType": null,
+  "simulatorContext": null,
+  "description": "Memilih struktur data koleksi yang tepat untuk skenario enterprise: kompleksitas Big-O waktu pencarian, mekanisme doubling capacity pada List\u003CT\u003E, bucket hashing pada Dictionary, dan integritas antrian pesanan dengan Queue.",
+  "prerequisites": [
+    {
+      "lessonId": "lesson-02-05",
+      "title": "Boxing, Unboxing \u0026 Generics",
+      "levelName": "LEVEL 02",
+      "context": "Memahami mengapa Generic Collections lebih unggul daripada non-generic."
+    }
+  ],
+  "introduces": [
+    "Array (Fixed Size Contiguous)",
+    "List\u003CT\u003E (Dynamic Array)",
+    "Dictionary\u003CTKey, TValue\u003E (O(1) Hash Table)",
+    "HashSet\u003CT\u003E (Set Unik)",
+    "Queue\u003CT\u003E (FIFO)",
+    "Stack\u003CT\u003E (LIFO)",
+    "Amortized O(1) Growth"
+  ],
+  "learningObjectives": [
+    "Menganalisis kompleksitas waktu (Big-O) untuk operasi insert, lookup, dan delete pada masing-masing koleksi.",
+    "Menghindari re-alokasi berlebih pada List\u003CT\u003E dengan memberikan initial capacity.",
+    "Memilih antara List\u003CT\u003E, Dictionary\u003CK,V\u003E, dan HashSet\u003CT\u003E berdasarkan karakteristik kebutuhan query."
+  ],
+  "markdownContent": "# Koleksi Data C#: Array, List\u003CT\u003E, Dictionary\u003CK, V\u003E, HashSet\u003CT\u003E, Stack dan Queue\n\n## Matriks Perbandingan Koleksi Utama di .NET\nMemilih struktur data yang salah dapat menghancurkan performa backend Anda dari hitungan milidetik menjadi menit:\n\n| Koleksi | Karakteristik Internal | Lookup by Index | Lookup by Value | Insert / Add | Kasus Penggunaan Ideal |\n| :--- | :--- | :---: | :---: | :---: | :--- |\n| **\u0060T[]\u0060 (Array)** | Blok memori kontigu berukuran tetap | **O(1)** | O(N) | Tidak bisa resize | Ukuran sudah pasti, buffer low-level |\n| **\u0060List\u003CT\u003E\u0060** | Array dinamis otomatis bertumbuh | **O(1)** | O(N) | Amortized **O(1)** | Koleksi umum yang sering diiterasi |\n| **\u0060Dictionary\u003CK,V\u003E\u0060** | Hash Table (Bucket \u002B Hash Code) | N/A | **O(1)** (by Key) | **O(1)** | Pencarian instan data ber-ID unik |\n| **\u0060HashSet\u003CT\u003E\u0060** | Hash Table tanpa nilai (hanya Key) | N/A | **O(1)** (Contains) | **O(1)** | Menjamin tidak ada duplikasi data |\n| **\u0060Queue\u003CT\u003E\u0060** | Circular Buffer FIFO (First-In, First-Out)| N/A | O(N) | **O(1)** (Enqueue) | Antrian tugas background, antrian order |\n| **\u0060Stack\u003CT\u003E\u0060** | Array LIFO (Last-In, First-Out) | N/A | O(N) | **O(1)** (Push) | Undo/Redo, evaluasi ekspresi parsing |\n\n---\n\n## Mekanisme Internal \u0060List\u003CT\u003E\u0060: Bahaya Alokasi Laten\nBagaimana \u0060List\u003CT\u003E\u0060 bisa membesar secara dinamis?\nSecara internal, \u0060List\u003CT\u003E\u0060 membungkus sebuah **array biasa (\u0060T[]\u0060)**:\n1. Default kapasitas awal adalah 0 atau 4 elemen.\n2. Ketika Anda menambahkan elemen ke-5, kapasitas lama **tidak mencukupi**.\n3. CLR membuat **array baru dengan kapasitas 2x lipat (8 elemen)**.\n4. Seluruh elemen lama disalin dari array lama ke array baru, lalu array lama dibuang ke Garbage Collector!\n\n\u0060\u0060\u0060csharp\n// BURUK DI SKALA TINGGI (Memicu belasan kali re-alokasi array dan GC pressure):\nvar list = new List\u003CTransaction\u003E();\nfor (int i = 0; i \u003C 1_000_000; i\u002B\u002B) list.Add(item);\n\n// PRAKTIK ENTERPRISE TERBAIK (Satu alokasi di awal, ZERO GC overhead selama penambahan):\nvar list = new List\u003CTransaction\u003E(1_000_000); // Tentukan initial capacity!\nfor (int i = 0; i \u003C 1_000_000; i\u002B\u002B) list.Add(item);\n\u0060\u0060\u0060\n\n---\n\n## \u0060Dictionary\u003CTKey, TValue\u003E\u0060 vs \u0060List\u003CT\u003E\u0060 pada Jutaan Data\nJika Anda memiliki 1.000.000 nasabah dan ingin mencari nasabah dengan ID \u0060\u0022CUST-98765\u0022\u0060:\n- **\u0060List\u003CCustomer\u003E.Find(c =\u003E c.Id == id)\u0060**: Menjalankan *Linear Scan* O(N). CPU memeriksa satu per satu dari elemen pertama. Butuh jutaan perbandingan komparasi string!\n- **\u0060Dictionary\u003Cstring, Customer\u003E\u0060**: Menghitung hash code \u0060id.GetHashCode()\u0060, langsung melompat ke slot bucket array dalam **O(1) (kurang dari 10 nanodetik)**!",
+  "starterCode": "using System;\nusing System.Collections.Generic;\nusing System.Diagnostics;\n\n// PROGRAM: Menguji Kecepatan Pencarian: List (O(N)) vs HashSet (O(1))\nconst int TotalData = 100_000;\nvar list = new List\u003Cstring\u003E(TotalData);\nvar set = new HashSet\u003Cstring\u003E(TotalData);\n\nfor (int i = 0; i \u003C TotalData; i\u002B\u002B)\n{\n    string id = $\u0022USER_{i:D6}\u0022;\n    list.Add(id);\n    set.Add(id);\n}\n\nstring targetId = \u0022USER_099999\u0022; // Elemen paling ujung akhir\n\n// 1. Pencarian di List (Linear Scan O(N))\nvar swList = Stopwatch.StartNew();\nbool foundList = false;\nfor (int r = 0; r \u003C 500; r\u002B\u002B)\n{\n    foundList = list.Contains(targetId);\n}\nswList.Stop();\nConsole.WriteLine($\u0022List.Contains (500x Lookup): {swList.ElapsedMilliseconds} ms (Found: {foundList})\u0022);\n\n// 2. Pencarian di HashSet (Hash Lookup O(1))\nvar swSet = Stopwatch.StartNew();\nbool foundSet = false;\nfor (int r = 0; r \u003C 500; r\u002B\u002B)\n{\n    foundSet = set.Contains(targetId);\n}\nswSet.Stop();\nConsole.WriteLine($\u0022HashSet.Contains (500x Lookup): {swSet.ElapsedMilliseconds} ms (Found: {foundSet})\u0022);\n\n// TODO: Perhatikan perbedaan kecepatan yang sangat signifikan di terminal!",
+  "quizQuestions": [
+    {
+      "id": "q-02-08-1",
+      "type": "MultipleChoice",
+      "question": "Koleksi manakah yang paling efisien untuk mengecek keberadaan suatu ID (apakah ID sudah pernah diproses) dengan kompleksitas waktu rata-rata O(1)?",
+      "options": [
+        "List\u003Cstring\u003E",
+        "Queue\u003Cstring\u003E",
+        "HashSet\u003Cstring\u003E",
+        "Stack\u003Cstring\u003E"
+      ],
+      "correctOptionIndex": 2,
+      "explanation": "\u0060HashSet\u003CT\u003E\u0060 menggunakan algoritma hashing pada elemen sehingga pencarian \u0060Contains\u0060 berjalan dalam waktu konstan rata-rata O(1).",
+      "optionExplanations": [
+        "Salah. List\u003CT\u003E membutuhkan pencarian linear O(N) untuk menemukan elemen.",
+        "Salah. Queue\u003CT\u003E dirancang untuk alur antrian FIFO dan pencariannya O(N).",
+        "Benar! HashSet\u003CT\u003E memberikan jaminan pencarian O(1) bebas duplikasi.",
+        "Salah. Stack\u003CT\u003E dirancang untuk LIFO dan pencariannya O(N)."
+      ],
+      "sectionRef": "Matriks Perbandingan Koleksi Utama di .NET",
+      "difficulty": "Beginner"
+    },
+    {
+      "id": "q-02-08-2",
+      "type": "MultipleChoice",
+      "question": "Apa yang dilakukan oleh runtime C# ketika elemen baru ditambahkan ke \u0060List\u003CT\u003E\u0060 yang kapasitas array internalnya sudah penuh?",
+      "options": [
+        "Melempar exception \u0060CapacityOverflowException\u0060",
+        "Membuat array baru dengan kapasitas 2 kali lipat, menyalin seluruh elemen lama, lalu membuang array lama ke GC",
+        "Menghapus elemen pertama secara otomatis (FIFO)",
+        "Menolak penambahan data secara diam-diam"
+      ],
+      "correctOptionIndex": 1,
+      "explanation": "\u0060List\u003CT\u003E\u0060 bertumbuh dengan strategi doubling (menggandakan ukuran array internal), yang membutuhkan penyalinan memori dan memicu alokasi array baru di Managed Heap.",
+      "optionExplanations": [
+        "Salah. List bertambah secara dinamis tanpa melempar exception selama RAM mencukupi.",
+        "Benar! Menggandakan kapasitas (doubling strategy) dan menyalin elemen lama ke array baru.",
+        "Salah. List tidak menghapus elemen lama saat penuh.",
+        "Salah. Penambahan data selalu diakomodasi."
+      ],
+      "sectionRef": "Mekanisme Internal List\u003CT\u003E: Bahaya Alokasi Laten",
+      "difficulty": "Beginner"
+    }
+  ],
+  "codingChallenge": {
+    "Id": "ch-02-08",
+    "Title": "Pembersih Token Duplikat Menggunakan HashSet",
+    "Difficulty": "Beginner",
+    "ProblemStatement": "Baca satu baris string daftar token yang dipisahkan koma dari stdin.\nBersihkan token dari spasi di ujung, abaikan perbedaan huruf besar/kecil (case-insensitive deduplication), dan cetak daftar token unik sesuai urutan kemunculan pertama kali (FIFO) dipisahkan oleh tanda koma dan spasi.",
+    "InputFormat": "Satu baris string berisi token dipisahkan koma.",
+    "OutputFormat": "Satu baris token unik dipisahkan \u0027, \u0027 (koma spasi).",
+    "Constraints": "Panjang baris \u003C= 1000 karakter.",
+    "Examples": [
+      {
+        "Input": "apple, BANANA, Apple, orange, banana",
+        "Output": "apple, BANANA, orange",
+        "Explanation": "\u0027Apple\u0027 dan \u0027banana\u0027 duplikat diabaikan, format awal dipertahankan."
+      },
+      {
+        "Input": "token1, token2, token1",
+        "Output": "token1, token2",
+        "Explanation": "Duplikat token1 dihapus."
+      }
+    ],
+    "StarterCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        // TODO: Gunakan HashSet\u003Cstring\u003E dengan StringComparer.OrdinalIgnoreCase.\n        Console.WriteLine(\u0022\u0022);\n    }\n}",
+    "SolutionCode": "using System;\nusing System.Collections.Generic;\n\npublic class Solution\n{\n    public static void Main()\n    {\n        string? line = Console.ReadLine();\n        if (string.IsNullOrWhiteSpace(line)) { Console.WriteLine(\u0022\u0022); return; }\n\n        var tokens = line.Split(\u0027,\u0027, StringSplitOptions.RemoveEmptyEntries);\n        var seen = new HashSet\u003Cstring\u003E(StringComparer.OrdinalIgnoreCase);\n        var orderedUnique = new List\u003Cstring\u003E();\n\n        foreach (var t in tokens)\n        {\n            string clean = t.Trim();\n            if (clean.Length \u003E 0 \u0026\u0026 seen.Add(clean))\n            {\n                orderedUnique.Add(clean);\n            }\n        }\n\n        Console.WriteLine(string.Join(\u0022, \u0022, orderedUnique));\n    }\n}",
+    "TestCases": [
+      {
+        "Name": "Contoh 1 (Case Insensitive)",
+        "Description": "Contoh 1 (Case Insensitive): input \u0027apple, BANANA, Apple, orange, banana\u0027 -\u003E expected \u0027apple, BANANA, orange\u0027",
+        "Input": "apple, BANANA, Apple, orange, banana",
+        "ExpectedOutput": "apple, BANANA, orange",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Contoh 2 (Dua Token)",
+        "Description": "Contoh 2 (Dua Token): input \u0027token1, token2, token1\u0027 -\u003E expected \u0027token1, token2\u0027",
+        "Input": "token1, token2, token1",
+        "ExpectedOutput": "token1, token2",
+        "IsHidden": false,
+        "Category": "Example"
+      },
+      {
+        "Name": "Satu Token",
+        "Description": "Satu Token: input \u0027UniqueToken\u0027 -\u003E expected \u0027UniqueToken\u0027",
+        "Input": "UniqueToken",
+        "ExpectedOutput": "UniqueToken",
+        "IsHidden": false,
+        "Category": "Normal"
+      },
+      {
+        "Name": "Semua Duplikat",
+        "Description": "Semua Duplikat: input \u0027A, a, A, a\u0027 -\u003E expected \u0027A\u0027",
+        "Input": "A, a, A, a",
+        "ExpectedOutput": "A",
+        "IsHidden": true,
+        "Category": "EdgeCase"
+      }
+    ],
+    "Hints": [
+      "HashSet.Add(item) mengembalikan boolean true hanya jika item belum pernah ada di dalam set.",
+      "Inisialisasi HashSet dengan StringComparer.OrdinalIgnoreCase."
+    ],
+    "Explanation": "HashSet\u003CT\u003E menyediakan pencarian O(1) berbasis hash table, ideal untuk deduplikasi data skala besar secara performan."
+  },
+  "relatedLessons": [
+    {
+      "lessonId": "lesson-05-02",
+      "title": "Hash Table Internals",
+      "levelName": "LEVEL 05",
+      "context": "Mendalami struktur array bucket dan resolusi tabrakan hash (hash collision)."
+    },
+    {
+      "lessonId": "lesson-04-01",
+      "title": "LINQ Deep Dive",
+      "levelName": "LEVEL 04",
+      "context": "Manipulasi data koleksi menggunakan ekspresi query terintegrasi."
+    }
+  ],
+  "references": [
+    {
+      "title": "Generic Collections in .NET - Microsoft Learn",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/collections/"
+    },
+    {
+      "title": "When to use which collection - .NET Guidelines",
+      "url": "https://learn.microsoft.com/en-us/dotnet/standard/collections/selecting-a-collection-class"
+    }
+  ],
+  "solutionCode": "using System;\nusing System.Collections.Generic;\nusing System.Linq;\n\npublic class TokenDeduplicator\n{\n    public static string[] GetUniqueSortedTokens(string?[] tokens)\n    {\n        if (tokens == null || tokens.Length == 0) return Array.Empty\u003Cstring\u003E();\n\n        var uniqueSet = new HashSet\u003Cstring\u003E(StringComparer.OrdinalIgnoreCase);\n\n        foreach (var t in tokens)\n        {\n            if (string.IsNullOrWhiteSpace(t)) continue;\n            uniqueSet.Add(t.Trim().ToUpperInvariant());\n        }\n\n        var list = uniqueSet.ToList();\n        list.Sort(StringComparer.Ordinal);\n        return list.ToArray();\n    }\n\n    public static void Main()\n    {\n        string?[] data = { \u0022tok-a\u0022, \u0022 TOK-B \u0022, \u0022tok-a\u0022, null, \u0022tok-c\u0022 };\n        var hasil = GetUniqueSortedTokens(data);\n        Console.WriteLine(string.Join(\u0022, \u0022, hasil));\n    }\n}"
+}
